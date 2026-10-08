@@ -191,3 +191,51 @@ test("menu cria o administrador e mostra o endereço para o app", () => {
   assert.ok(janela.includes("https://favbalanca-ai.github.io/MONITORAMENTO-DE-IRRIGA-O/?exec=" + encodeURIComponent("https://script.google.com/macros/s/TESTE/exec")));
   assert.match(janela, /qrcode-generator@1\.4\.4/);
 });
+
+test("catálogo de culturas vai com nome, ciclo, curva de Kc e sugestão da Embrapa", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cs = amb.get({ acao: "dados", s: adm }).cadastro.culturas;
+  assert.deepEqual(cs.map((c: { chave: string }) => c.chave), ["soja", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
+  const trigo = cs.find((c: { chave: string }) => c.chave === "trigo");
+  assert.equal(trigo.nome, "Trigo");
+  assert.equal(trigo.cicloDias, 115);
+  assert.equal(trigo.emergenciaDias, 5);
+  assert.equal(trigo.curvaKc.length, 121);
+  assert.equal(trigo.sugestao.fatorDeplecaoFixo, 0.4);
+  assert.match(trigo.fonte, /Embrapa Cerrados/);
+  const resumo = amb.get({ acao: "dados", s: adm }).resumo;
+  assert.equal(resumo.pivos[0].fimCicloDas, 120);
+  assert.equal(resumo.pivos[0].curvaKc.length, 121);
+  assert.equal(resumo.pivos[0].dae, resumo.pivos[0].das);
+});
+
+test("coluna Ciclo é opcional: planilha antiga sem ela funciona, e salvar pelo app cria a coluna", () => {
+  const amb = pronto();
+  const piv = amb.aba("PIVOS");
+  const cab = piv.getRange(1, 1, 1, piv.getLastColumn()).getValues()[0]!;
+  const idx = cab.indexOf("Ciclo (dias, vazio = padrão)");
+  assert.ok(idx >= 0);
+  piv.deleteColumns(idx + 1, 1); // planilha instalada antes desta versão
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  assert.equal(cad.pivos[0].cicloDias, "");
+  type Calc = { itens: { pivo: { cultura: { cicloDias: number; cicloPadraoDias?: number } }; linha: { alertas: string[] } }[] };
+  assert.equal((amb.chamar("calcular_", "2026-02-08") as Calc).itens[0]!.pivo.cultura.cicloDias, 120);
+
+  const r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], cultura: "milho", cicloDias: "140" }, original: "Pivô 2" } });
+  assert.equal(r.ok, true);
+  assert.equal(amb.aba("PIVOS").objetos()[0]!["Ciclo (dias, vazio = padrão)"], 140);
+  const it = (amb.chamar("calcular_", "2026-02-08") as Calc).itens[0]!;
+  assert.equal(it.pivo.cultura.cicloDias, 140);
+  assert.equal(it.pivo.cultura.cicloPadraoDias, 120);
+  assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], cicloDias: "10" }, original: "Pivô 2" } }).erro, /cicloDias/);
+});
+
+test("ciclo encerrado vira alerta no balanço", () => {
+  const amb = pronto();
+  amb.aba("PIVOS").set(2, 5, "2025-10-01"); // plantio 130 dias antes de 08/02
+  amb.aba("PIVOS").set(2, 6, "2026-01-20");
+  const it = (amb.chamar("calcular_", "2026-02-08") as { itens: { linha: { alertas: string[] } }[] }).itens[0]!;
+  assert.ok(it.linha.alertas.some((a: string) => /Ciclo da cultura encerrado há 10 dia/.test(a)));
+});

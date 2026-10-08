@@ -71,6 +71,7 @@ export class FakeSheet {
   appendRow(v: Celula[]) { const r = this.getLastRow() + 1; v.forEach((x, j) => this.set(r, j + 1, x)); }
   clearContents() { this.dados = []; }
   deleteRows(ini: number, n: number) { this.dados.splice(ini - 1, n); }
+  deleteColumns(ini: number, n: number) { this.dados.forEach((l) => { if (l.length >= ini) l.splice(ini - 1, n); }); }
   setFrozenRows() {}
   hideSheet() {}
   /** Linhas como objetos pelo cabeçalho (para os testes). */

@@ -235,6 +235,7 @@ var Motor = (function () {
           { nome: "R7", ateFracao: 1.0, kc: 0.9 },
       ],
       fonte: "Aba KC da planilha original da fazenda.",
+      sugestao: { raizMaxCm: 50, diasRaiz: 55, tensaoIrrigarKpa: -70, porque: "Raiz de 50 cm aos 55 dias e tensão de −70 kPa, como no exemplo da fazenda." },
   };
   /** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
   function porDias(ciclo, linhas) {
@@ -255,6 +256,7 @@ var Motor = (function () {
           { nome: "Maturação", ateFracao: 1.0, kc: 1.2, kcFim: 0.6 },
       ],
       fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 47 (2002) e Circular Técnica 10 / planilha de manejo de irrigação; Kc final FAO-56.",
+      sugestao: { raizMaxCm: 40, diasRaiz: 54, tensaoIrrigarKpa: -60, porque: "Embrapa Milho e Sorgo usa 40 cm de raiz efetiva, atingida no fim da fase vegetativo." },
   };
   /**
    * Sorgo granífero, ciclo de 120 dias. Fases de 24, 42, 30 e 24 dias (Embrapa, Comunicado Técnico 254,
@@ -270,6 +272,7 @@ var Motor = (function () {
           ["Maturação", 120, 1.1, 0.55],
       ]),
       fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 254 (2021), planilha para obtenção do coeficiente de cultura; Kc FAO-56.",
+      sugestao: { raizMaxCm: 40, diasRaiz: 66, tensaoIrrigarKpa: -60, porque: "Mesma raiz efetiva do milho (40 cm), atingida no fim da fase vegetativa." },
   };
   /**
    * Feijão comum, sistema convencional. Tabela de Kc por dias após a emergência (DAE) da Agência de
@@ -280,17 +283,18 @@ var Motor = (function () {
       cicloDias: 94,
       emergenciaDias: 7,
       estadios: porDias(94, [
-          ["0–14 DAE", 14, 0.49],
-          ["15–24 DAE", 24, 0.69],
-          ["25–34 DAE", 34, 0.77],
-          ["35–44 DAE", 44, 0.9],
-          ["45–54 DAE", 54, 1.06],
-          ["55–64 DAE", 64, 0.89],
-          ["65–74 DAE", 74, 0.74],
-          ["75–84 DAE", 84, 0.48],
-          ["85–94 DAE", 94, 0.27],
+          ["Emergência (0–14 DAE)", 14, 0.49],
+          ["Vegetativo (15–24 DAE)", 24, 0.69],
+          ["Vegetativo (25–34 DAE)", 34, 0.77],
+          ["Pré-floração (35–44 DAE)", 44, 0.9],
+          ["Floração (45–54 DAE)", 54, 1.06],
+          ["Vagens (55–64 DAE)", 64, 0.89],
+          ["Enchimento (65–74 DAE)", 74, 0.74],
+          ["Maturação (75–84 DAE)", 84, 0.48],
+          ["Maturação (85–94 DAE)", 94, 0.27],
       ]),
       fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (Kc por DAE, sistema convencional).",
+      sugestao: { raizMaxCm: 30, diasRaiz: 45, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
   };
   /**
    * Feijão em plantio direto (medido na cv. Aporé): germinação até início da floração 35 dias (Kc 0,69),
@@ -307,6 +311,7 @@ var Motor = (function () {
           ["Vagens/maturação", 80, 1.04],
       ]),
       fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (plantio direto, cv. Aporé).",
+      sugestao: { raizMaxCm: 30, diasRaiz: 42, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
   };
   /**
    * Trigo irrigado no Cerrado (BRS 394, Embrapa Cerrados): Kc = −0,000268·DAE² + 0,032979·DAE + 0,392945.
@@ -326,6 +331,7 @@ var Motor = (function () {
           { nome: "Enchimento/maturação", ateFracao: 1.0, kc: 1.08 },
       ],
       fonte: "Embrapa Cerrados — Coeficientes de cultura do trigo BRS 394 irrigado no Cerrado (2024).",
+      sugestao: { raizMaxCm: 40, diasRaiz: 50, fatorDeplecaoFixo: 0.4, tensaoIrrigarKpa: -50, porque: "Embrapa Cerrados: raiz de 40 cm e irrigar quando 40% da CAD foi consumida (fator fixo 0,4)." },
   };
   /**
    * Algodão herbáceo: Kc = −0,00006·DAE² + 0,009·DAE + 0,632 (Embrapa Algodão, BRS 200 Marrom).
@@ -343,10 +349,35 @@ var Motor = (function () {
           { nome: "Capulhos", ateFracao: 1.0, kc: 0.8 },
       ],
       fonte: "Embrapa Algodão — Coeficientes de cultivo do algodoeiro herbáceo (2009).",
+      sugestao: { raizMaxCm: 60, diasRaiz: 75, tensaoIrrigarKpa: -60, porque: "Raiz profunda (~60 cm) atingida na floração; conferir para o Cerrado." },
   };
   /** Dias após a semeadura. */
   function das(data, plantio) {
       return Math.round((Date.parse(data + "T00:00:00Z") - Date.parse(plantio + "T00:00:00Z")) / 86400000);
+  }
+  /**
+   * Mesma cultura com outro ciclo (a cultivar que a fazenda plantou). As frações dos estádios se mantêm;
+   * uma equação por DAE é esticada/encolhida na mesma proporção. Ciclo vazio/igual devolve a própria cultura.
+   */
+  function comCiclo(cultura, cicloDias) {
+      var _a;
+      const padrao = (_a = cultura.cicloPadraoDias) !== null && _a !== void 0 ? _a : cultura.cicloDias;
+      if (!cicloDias || cicloDias === cultura.cicloDias)
+          return cultura;
+      return { ...cultura, cicloDias, cicloPadraoDias: padrao };
+  }
+  /** Último DAS do ciclo (emergência + ciclo). Depois disso o Kc fica parado no final e o balanço avisa. */
+  function fimDoCicloDas(cultura) {
+      var _a;
+      return ((_a = cultura.emergenciaDias) !== null && _a !== void 0 ? _a : 0) + cultura.cicloDias;
+  }
+  /** Kc de cada dia, do plantio até o fim do ciclo (para desenhar a curva). */
+  function curvaKc(cultura, palhada) {
+      const fim = fimDoCicloDas(cultura);
+      const kcs = [];
+      for (let d = 0; d <= fim; d++)
+          kcs.push(Math.round(kcDoDia(cultura, d, palhada).kc * 1000) / 1000);
+      return kcs;
   }
   /** Dias após a emergência (antes da emergência conta como 0). Sem `emergenciaDias`, é o próprio DAS. */
   function dae(cultura, diasAposSemeadura) {
@@ -364,10 +395,12 @@ var Motor = (function () {
   }
   /** Kc sem a correção da palhada: equação, reta dentro do estádio ou degrau. */
   function kcBase(cultura, estadio, diasAposSemeadura) {
+      var _a;
       const d = dae(cultura, diasAposSemeadura);
       if (cultura.kcEquacao) {
           const [a, b, c] = cultura.kcEquacao;
-          const x = Math.min(d, cultura.cicloDias);
+          const padrao = (_a = cultura.cicloPadraoDias) !== null && _a !== void 0 ? _a : cultura.cicloDias;
+          const x = Math.min(d, cultura.cicloDias) * (padrao / cultura.cicloDias); // ciclo diferente: estica a equação
           return a * x * x + b * x + c;
       }
       if (estadio.kcFim === undefined)
@@ -522,6 +555,9 @@ var Motor = (function () {
           const diasSemMedicao = das(dia.data, ultimaMedicao !== null && ultimaMedicao !== void 0 ? ultimaMedicao : dias[0].data);
           if (diasSemMedicao > DIAS_MEDICAO_VELHA)
               alertas.push(`Última medição de umidade há ${diasSemMedicao} dias.`);
+          const passouCiclo = d - fimDoCicloDas(cultura);
+          if (passouCiclo > 0)
+              alertas.push(`Ciclo da cultura encerrado há ${passouCiclo} dia(s): confira o plantio ou desative o pivô.`);
           let recomendacao;
           if (pivo.equipamento) {
               recomendacao = recomendar(pivo.equipamento, deficit);
@@ -592,6 +628,8 @@ var Motor = (function () {
           nomes.add(p.nome);
           if (!CULTURAS[p.cultura])
               erros.push(`${o}: cultura "${p.cultura}" não cadastrada (há: ${Object.keys(CULTURAS).join(", ")})`);
+          if (p.cicloDias != null)
+              num(p.cicloDias, `${o}.cicloDias`, 30, 400);
           if (!DATA.test((_a = p.plantio) !== null && _a !== void 0 ? _a : ""))
               erros.push(`${o}: plantio deve ser AAAA-MM-DD`);
           if (p.inicioBalanco !== undefined && !DATA.test(p.inicioBalanco))
@@ -874,5 +912,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

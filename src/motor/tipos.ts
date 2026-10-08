@@ -71,6 +71,20 @@ export interface Cultura {
   kcJaComPalhada?: boolean;
   /** De onde vieram os números (boletim da Embrapa etc.). */
   fonte?: string;
+  /** Ciclo original do catálogo, guardado quando o pivô encurta/estica o ciclo (`comCiclo`). */
+  cicloPadraoDias?: number;
+  /** Valores que a Embrapa sugere para solo/decisão; o app oferece ao escolher a cultura. */
+  sugestao?: SugestaoCultura;
+}
+
+/** Sugestões por cultura para o cadastro do pivô (o agrônomo confirma). */
+export interface SugestaoCultura {
+  raizMaxCm: number;
+  diasRaiz: number;
+  fatorDeplecaoFixo?: number;
+  tensaoIrrigarKpa?: number;
+  /** Explicação curta mostrada no app. */
+  porque: string;
 }
 
 export interface Solo {

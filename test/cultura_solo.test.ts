@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ALGODAO, cad, CULTURAS, dae, das, deficitDaUmidade, estadioPorDas, fatorDeplecao, FEIJAO, FEIJAO_PD, kcDoDia, MILHO, profundidadeRaiz, SOJA, TRIGO } from "../src/motor/index.ts";
+import { ALGODAO, cad, comCiclo, CULTURAS, curvaKc, dae, fimDoCicloDas, das, deficitDaUmidade, estadioPorDas, fatorDeplecao, FEIJAO, FEIJAO_PD, kcDoDia, MILHO, profundidadeRaiz, SOJA, TRIGO } from "../src/motor/index.ts";
 import { PIVO2_EXEMPLO } from "./pivo2_exemplo.ts";
 
 const solo = PIVO2_EXEMPLO.solo;
@@ -68,7 +68,7 @@ test("feijão conta pelos dias após a emergência", () => {
   assert.equal(kcDoDia(FEIJAO, 21, false).kc, 0.49); // 14 DAE
   assert.equal(kcDoDia(FEIJAO, 22, false).kc, 0.69); // 15 DAE
   assert.equal(kcDoDia(FEIJAO, 7 + 50, false).kc, 1.06);
-  assert.equal(kcDoDia(FEIJAO, 7 + 90, false).estadio.nome, "85–94 DAE");
+  assert.equal(kcDoDia(FEIJAO, 7 + 90, false).estadio.nome, "Maturação (85–94 DAE)");
   // plantio direto: Kc já medido sobre palhada, não corta de novo
   assert.equal(kcDoDia(FEIJAO_PD, 10, true).kc, 0.69);
   assert.equal(kcDoDia(FEIJAO_PD, 7 + 40, true).kc, 1.28);
@@ -81,4 +81,19 @@ test("trigo e algodão seguem a equação da Embrapa por DAE", () => {
   assert.ok(Math.abs(kcDoDia(TRIGO, 300, false).kc - trigo(115)) < 1e-12); // trava no fim do ciclo
   assert.ok(Math.abs(kcDoDia(ALGODAO, 5 + 75, false).kc - 0.9695) < 1e-9);
   assert.equal(kcDoDia(TRIGO, 5 + 60, false).estadio.nome, "Alongamento/emborrachamento");
+});
+
+test("ciclo diferente do padrão estica a curva na mesma proporção", () => {
+  const m140 = comCiclo(MILHO, 140);
+  assert.equal(m140.cicloDias, 140);
+  assert.equal(comCiclo(MILHO, null), MILHO);
+  assert.ok(Math.abs(kcDoDia(m140, 63, false).kc - 1.2) < 1e-9); // 45% de 140
+  assert.equal(kcDoDia(m140, 20, false).kc, 0.5);
+  const t130 = comCiclo(TRIGO, 130);
+  assert.ok(Math.abs(kcDoDia(t130, 5 + 130, false).kc - kcDoDia(TRIGO, 5 + 115, false).kc) < 1e-9);
+  assert.equal(fimDoCicloDas(FEIJAO), 101);
+  const curva = curvaKc(MILHO, true);
+  assert.equal(curva.length, 121);
+  assert.equal(curva[0], 0.25);
+  assert.equal(curva[120], 0.6);
 });

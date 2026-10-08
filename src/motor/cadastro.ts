@@ -11,6 +11,8 @@ export interface PivoCadastro {
   nome: string;
   ativo?: boolean;
   cultura: string;
+  /** Ciclo da cultivar plantada (dias). Vazio = o padrão do catálogo. */
+  cicloDias?: number | null;
   plantio: DataISO;
   inicioBalanco?: DataISO;
   plantioDiretoPalhada: boolean;
@@ -54,6 +56,7 @@ export function validarCadastro(c: CadastroFazenda, fusoValido: (fuso: string) =
     if (nomes.has(p.nome)) erros.push(`${o}: nome repetido`);
     nomes.add(p.nome);
     if (!CULTURAS[p.cultura]) erros.push(`${o}: cultura "${p.cultura}" não cadastrada (há: ${Object.keys(CULTURAS).join(", ")})`);
+    if (p.cicloDias != null) num(p.cicloDias, `${o}.cicloDias`, 30, 400);
     if (!DATA.test(p.plantio ?? "")) erros.push(`${o}: plantio deve ser AAAA-MM-DD`);
     if (p.inicioBalanco !== undefined && !DATA.test(p.inicioBalanco)) erros.push(`${o}: inicioBalanco deve ser AAAA-MM-DD`);
     num(p.umidadeInicialPct, `${o}.umidadeInicialPct`, 0, 100);

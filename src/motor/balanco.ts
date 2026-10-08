@@ -1,4 +1,4 @@
-import { das, kcDoDia } from "./cultura.ts";
+import { das, fimDoCicloDas, kcDoDia } from "./cultura.ts";
 import { divergenciaHargreaves, et0Hargreaves, et0PenmanMonteith, LIMITE_DIVERGENCIA_HS } from "./et0.ts";
 import { recomendar, type Recomendacao } from "./equipamento.ts";
 import { cad, deficitDaUmidade, fatorDeplecao, profundidadeRaiz } from "./solo.ts";
@@ -109,6 +109,9 @@ export function simularBalanco({ pivo, estacao, dias, irrigacoes = [], ajustes =
     const diasSemMedicao = das(dia.data, ultimaMedicao ?? dias[0]!.data);
     if (diasSemMedicao > DIAS_MEDICAO_VELHA)
       alertas.push(`Última medição de umidade há ${diasSemMedicao} dias.`);
+    const passouCiclo = d - fimDoCicloDas(cultura);
+    if (passouCiclo > 0)
+      alertas.push(`Ciclo da cultura encerrado há ${passouCiclo} dia(s): confira o plantio ou desative o pivô.`);
 
     let recomendacao: Recomendacao | undefined;
     if (pivo.equipamento) {

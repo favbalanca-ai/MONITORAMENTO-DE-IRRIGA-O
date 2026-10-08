@@ -43,6 +43,7 @@ var COLUNAS_PIVOS = [
   ["nome", "Pivô"],
   ["ativo", "Ativo (SIM/NÃO)"],
   ["cultura", "Cultura"],
+  ["cicloDias", "Ciclo (dias, vazio = padrão)", true],
   ["plantio", "Plantio"],
   ["inicioBalanco", "Início do balanço"],
   ["palhada", "Plantio direto na palha (SIM/NÃO)"],
@@ -66,7 +67,7 @@ var COLUNAS_PIVOS = [
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
-var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "2025-11-25", "2026-01-20", "SIM", 30, 32, 18, 10, 50, 55, "", 5, -70,
+var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "", "2025-11-25", "2026-01-20", "SIM", 30, 32, 18, 10, 50, 55, "", 5, -70,
   400, 360, 200, 3, 10, 85, 55, 0.5];
 
 var CABECALHOS = {
@@ -112,8 +113,9 @@ function instalar() {
   var piv = criarAbaSeFaltar_(ss, ABA.PIVOS, COLUNAS_PIVOS.map(function (c) { return c[1]; }));
   if (piv.getLastRow() < 2) {
     piv.getRange(2, 1, 1, PIVO_EXEMPLO.length).setValues([PIVO_EXEMPLO]);
-    piv.getRange(2, 4, 1, 2).setNumberFormat("@");
+    piv.getRange(2, 5, 1, 2).setNumberFormat("@");
   }
+  garantirColunasPivos_();
 
   criarAbaSeFaltar_(ss, ABA.IRRIGACOES, CABECALHOS.IRRIGACOES);
   criarAbaSeFaltar_(ss, ABA.UMIDADE, CABECALHOS.UMIDADE);
@@ -261,21 +263,35 @@ function chaveCultura_(v) {
   return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Acrescenta no fim da aba PIVOS as colunas opcionais (3º item = true) que ainda não existem. */
+function garantirColunasPivos_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
+  if (!aba) return;
+  var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0] : [];
+  COLUNAS_PIVOS.forEach(function (c) {
+    if (c[2] && cab.indexOf(c[1]) < 0) {
+      aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold");
+      cab.push(c[1]);
+    }
+  });
+}
+
 function lerPivos_(cfg) {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
   if (!aba || aba.getLastRow() < 2) return [];
   var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
   var col = {};
   COLUNAS_PIVOS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
-  var faltando = COLUNAS_PIVOS.filter(function (c) { return col[c[0]] < 0; }).map(function (c) { return c[1]; });
+  var faltando = COLUNAS_PIVOS.filter(function (c) { return col[c[0]] < 0 && !c[2]; }).map(function (c) { return c[1]; });
   if (faltando.length) throw new Error("Aba PIVOS sem as colunas: " + faltando.join(", "));
-  var n = function (linha, k) { return Motor.numero(linha[col[k]]); };
+  var n = function (linha, k) { return col[k] < 0 ? null : Motor.numero(linha[col[k]]); };
   return vals.slice(1).filter(function (l) { return String(l[col.nome]).trim() !== ""; }).map(function (l) {
     var temEquip = n(l, "raioM") !== null && n(l, "vazaoM3h") !== null;
     return {
       nome: String(l[col.nome]).trim(),
       ativo: simNao_(l[col.ativo]),
       cultura: chaveCultura_(l[col.cultura]),
+      cicloDias: n(l, "cicloDias"),
       plantio: dataIso_(l[col.plantio], cfg.fuso),
       inicioBalanco: l[col.inicioBalanco] === "" ? undefined : dataIso_(l[col.inicioBalanco], cfg.fuso),
       plantioDiretoPalhada: simNao_(l[col.palhada]),
@@ -602,7 +618,7 @@ function calcular_(dia) {
   dia = dia || ultimoDiaFechado_(cfg.fuso);
   var pivos = c.pivos.filter(function (p) { return p.ativo; });
   if (!pivos.length) throw new Error("Nenhum pivô ativo na aba PIVOS.");
-  pivos.forEach(function (p) { p.cultura = Motor.CULTURAS[p.cultura]; });
+  pivos.forEach(function (p) { p.cultura = Motor.comCiclo(Motor.CULTURAS[p.cultura], p.cicloDias); });
 
   var inicio = function (p) { return p.inicioBalanco || p.plantio; };
   var iniGeral = pivos.map(inicio).filter(function (d) { return d <= dia; }).sort()[0] || dia;
@@ -663,10 +679,15 @@ function salvarResumo_(dia, cfg, clima, et0, itens) {
     clima: { et0: r2(et0), chuva: r2(clima.chuva), n: clima.n, tmax: r2(clima.tmax), tmin: r2(clima.tmin), ur: r2(clima.ur), estimados: clima.estimados || [] },
     pivos: itens.map(function (it) {
       var l = it.linha;
-      var p = { nome: it.pivo.nome, cultura: it.pivo.cultura.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "" };
+      var cult = it.pivo.cultura;
+      var p = { nome: it.pivo.nome, cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "" };
       if (!l) return p;
       p.estadio = l.estadio;
       p.das = l.das;
+      p.dae = Motor.dae(cult, l.das);
+      p.emergenciaDias = cult.emergenciaDias || 0;
+      p.fimCicloDas = Motor.fimDoCicloDas(cult);
+      p.curvaKc = Motor.curvaKc(cult, it.pivo.plantioDiretoPalhada);
       p.decisao = l.decisao;
       p.deficit = r2(l.deficit);
       p.afd = r2(l.afdMm);
@@ -979,7 +1000,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.08-3";
+var VERSAO_SERVIDOR = "2026.10.08-4";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1144,13 +1165,26 @@ function cadastroPivos_() {
     pivos = vals.slice(1).filter(function (l) { return String(l[0]).trim() !== ""; }).map(function (l) {
       var o = {};
       COLUNAS_PIVOS.forEach(function (c) {
-        var x = l[vals[0].indexOf(c[1])];
+        var i = vals[0].indexOf(c[1]);
+        var x = i < 0 ? "" : l[i];
         o[c[0]] = x instanceof Date ? dataIso_(x, fuso) : x === undefined ? "" : x;
       });
       return o;
     });
   }
-  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: Object.keys(Motor.CULTURAS) };
+  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: catalogoCulturas_() };
+}
+
+/** Catálogo de culturas para o app: nome, ciclo, curva de Kc (sem palhada), sugestões e fonte. */
+function catalogoCulturas_() {
+  return Object.keys(Motor.CULTURAS).map(function (k) {
+    var c = Motor.CULTURAS[k];
+    return {
+      chave: k, nome: c.nome, cicloDias: c.cicloDias, emergenciaDias: c.emergenciaDias || 0,
+      estadios: c.estadios.map(function (e) { return { nome: e.nome, ateFracao: e.ateFracao }; }),
+      curvaKc: Motor.curvaKc(c, false), sugestao: c.sugestao || null, fonte: c.fonte || "",
+    };
+  });
 }
 
 /* --------------------------------- lançamentos --------------------------------- */
@@ -1285,6 +1319,7 @@ function T_(v) {
 
 /** Cria ou atualiza um pivô (pelo nome original). Valida o cadastro inteiro antes de gravar. */
 function salvarPivo_(dados, nomeOriginal) {
+  garantirColunasPivos_();
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
   var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
   var nome = String(dados.nome || "").trim();

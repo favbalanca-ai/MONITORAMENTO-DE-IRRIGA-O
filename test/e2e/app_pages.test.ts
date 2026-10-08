@@ -103,7 +103,7 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   await page.getByText("🚿 IRRIGAR").waitFor();
   const card = await page.locator(".card").nth(1).innerText();
   assert.match(card, /Pivô 2/);
-  assert.match(card, /Soja R3 · 75 DAS/);
+  assert.match(card, /Soja · R3 · 75 DAS/);
   assert.match(card, /Déficit 24,\d mm/);
   assert.match(card, /PERCENTÍMETRO\s+\d+%/i);
   assert.match(await page.locator("#user-chip").innerText(), /Fabiana/);
@@ -254,5 +254,29 @@ test("link do menu (?exec=) já liga o app à planilha", async () => {
   await page.fill("#lg-pin", "4321");
   await page.locator("#f-login button[type=submit]").click();
   await page.getByText("🚿 IRRIGAR").waitFor();
+  await ctx.close();
+});
+
+test("pivôs: culturas com nome, sugestão da Embrapa preenche o solo e a curva de Kc aparece", async () => {
+  const amb = planilha();
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "fabiana", "1234");
+  await page.getByText("Curva de Kc do ciclo").first().click();
+  await page.locator("svg[aria-label='Curva de Kc']").first().waitFor();
+  await page.getByRole("link", { name: /Pivôs/ }).click();
+  await page.getByText(/Soja · plantio/).waitFor();
+  await page.getByRole("link", { name: "Editar" }).click();
+  assert.equal(await page.locator("#p_cultura option:checked").textContent(), "Soja (120 dias)");
+  await page.selectOption("#p_cultura", "trigo");
+  await page.getByText(/raiz máxima 40 cm em 50 dias, fator fixo 0,40/).waitFor();
+  await page.getByRole("button", { name: "Usar" }).click();
+  assert.equal(await page.inputValue("#p_raizMaxCm"), "40");
+  assert.equal(await page.inputValue("#p_fatorFixo"), "0,4");
+  await page.fill("#p_cicloDias", "130");
+  await page.locator("#f-pivo button[type=submit]").click();
+  await page.getByText("✅ Pivô salvo").waitFor();
+  assert.equal(amb.aba("PIVOS").objetos()[0]!["Ciclo (dias, vazio = padrão)"], 130);
+  await page.getByText(/Trigo \(130 dias\)/).waitFor();
+  await page.screenshot({ path: PRINTS + "9_culturas.png", fullPage: true });
   await ctx.close();
 });

@@ -16,6 +16,7 @@ export const SOJA: Cultura = {
     { nome: "R7", ateFracao: 1.0, kc: 0.9 },
   ],
   fonte: "Aba KC da planilha original da fazenda.",
+  sugestao: { raizMaxCm: 50, diasRaiz: 55, tensaoIrrigarKpa: -70, porque: "Raiz de 50 cm aos 55 dias e tensão de −70 kPa, como no exemplo da fazenda." },
 };
 
 /** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
@@ -38,6 +39,7 @@ export const MILHO: Cultura = {
     { nome: "Maturação", ateFracao: 1.0, kc: 1.2, kcFim: 0.6 },
   ],
   fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 47 (2002) e Circular Técnica 10 / planilha de manejo de irrigação; Kc final FAO-56.",
+  sugestao: { raizMaxCm: 40, diasRaiz: 54, tensaoIrrigarKpa: -60, porque: "Embrapa Milho e Sorgo usa 40 cm de raiz efetiva, atingida no fim da fase vegetativo." },
 };
 
 /**
@@ -54,6 +56,7 @@ export const SORGO: Cultura = {
     ["Maturação", 120, 1.1, 0.55],
   ]),
   fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 254 (2021), planilha para obtenção do coeficiente de cultura; Kc FAO-56.",
+  sugestao: { raizMaxCm: 40, diasRaiz: 66, tensaoIrrigarKpa: -60, porque: "Mesma raiz efetiva do milho (40 cm), atingida no fim da fase vegetativa." },
 };
 
 /**
@@ -65,17 +68,18 @@ export const FEIJAO: Cultura = {
   cicloDias: 94,
   emergenciaDias: 7,
   estadios: porDias(94, [
-    ["0–14 DAE", 14, 0.49],
-    ["15–24 DAE", 24, 0.69],
-    ["25–34 DAE", 34, 0.77],
-    ["35–44 DAE", 44, 0.9],
-    ["45–54 DAE", 54, 1.06],
-    ["55–64 DAE", 64, 0.89],
-    ["65–74 DAE", 74, 0.74],
-    ["75–84 DAE", 84, 0.48],
-    ["85–94 DAE", 94, 0.27],
+    ["Emergência (0–14 DAE)", 14, 0.49],
+    ["Vegetativo (15–24 DAE)", 24, 0.69],
+    ["Vegetativo (25–34 DAE)", 34, 0.77],
+    ["Pré-floração (35–44 DAE)", 44, 0.9],
+    ["Floração (45–54 DAE)", 54, 1.06],
+    ["Vagens (55–64 DAE)", 64, 0.89],
+    ["Enchimento (65–74 DAE)", 74, 0.74],
+    ["Maturação (75–84 DAE)", 84, 0.48],
+    ["Maturação (85–94 DAE)", 94, 0.27],
   ]),
   fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (Kc por DAE, sistema convencional).",
+  sugestao: { raizMaxCm: 30, diasRaiz: 45, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
 };
 
 /**
@@ -93,6 +97,7 @@ export const FEIJAO_PD: Cultura = {
     ["Vagens/maturação", 80, 1.04],
   ]),
   fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (plantio direto, cv. Aporé).",
+  sugestao: { raizMaxCm: 30, diasRaiz: 42, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
 };
 
 /**
@@ -113,6 +118,7 @@ export const TRIGO: Cultura = {
     { nome: "Enchimento/maturação", ateFracao: 1.0, kc: 1.08 },
   ],
   fonte: "Embrapa Cerrados — Coeficientes de cultura do trigo BRS 394 irrigado no Cerrado (2024).",
+  sugestao: { raizMaxCm: 40, diasRaiz: 50, fatorDeplecaoFixo: 0.4, tensaoIrrigarKpa: -50, porque: "Embrapa Cerrados: raiz de 40 cm e irrigar quando 40% da CAD foi consumida (fator fixo 0,4)." },
 };
 
 /**
@@ -131,11 +137,35 @@ export const ALGODAO: Cultura = {
     { nome: "Capulhos", ateFracao: 1.0, kc: 0.8 },
   ],
   fonte: "Embrapa Algodão — Coeficientes de cultivo do algodoeiro herbáceo (2009).",
+  sugestao: { raizMaxCm: 60, diasRaiz: 75, tensaoIrrigarKpa: -60, porque: "Raiz profunda (~60 cm) atingida na floração; conferir para o Cerrado." },
 };
 
 /** Dias após a semeadura. */
 export function das(data: DataISO, plantio: DataISO): number {
   return Math.round((Date.parse(data + "T00:00:00Z") - Date.parse(plantio + "T00:00:00Z")) / 86_400_000);
+}
+
+/**
+ * Mesma cultura com outro ciclo (a cultivar que a fazenda plantou). As frações dos estádios se mantêm;
+ * uma equação por DAE é esticada/encolhida na mesma proporção. Ciclo vazio/igual devolve a própria cultura.
+ */
+export function comCiclo(cultura: Cultura, cicloDias: number | null | undefined): Cultura {
+  const padrao = cultura.cicloPadraoDias ?? cultura.cicloDias;
+  if (!cicloDias || cicloDias === cultura.cicloDias) return cultura;
+  return { ...cultura, cicloDias, cicloPadraoDias: padrao };
+}
+
+/** Último DAS do ciclo (emergência + ciclo). Depois disso o Kc fica parado no final e o balanço avisa. */
+export function fimDoCicloDas(cultura: Cultura): number {
+  return (cultura.emergenciaDias ?? 0) + cultura.cicloDias;
+}
+
+/** Kc de cada dia, do plantio até o fim do ciclo (para desenhar a curva). */
+export function curvaKc(cultura: Cultura, palhada: boolean): number[] {
+  const fim = fimDoCicloDas(cultura);
+  const kcs: number[] = [];
+  for (let d = 0; d <= fim; d++) kcs.push(Math.round(kcDoDia(cultura, d, palhada).kc * 1000) / 1000);
+  return kcs;
 }
 
 /** Dias após a emergência (antes da emergência conta como 0). Sem `emergenciaDias`, é o próprio DAS. */
@@ -156,7 +186,8 @@ function kcBase(cultura: Cultura, estadio: Estadio, diasAposSemeadura: number): 
   const d = dae(cultura, diasAposSemeadura);
   if (cultura.kcEquacao) {
     const [a, b, c] = cultura.kcEquacao;
-    const x = Math.min(d, cultura.cicloDias);
+    const padrao = cultura.cicloPadraoDias ?? cultura.cicloDias;
+    const x = Math.min(d, cultura.cicloDias) * (padrao / cultura.cicloDias); // ciclo diferente: estica a equação
     return a * x * x + b * x + c;
   }
   if (estadio.kcFim === undefined) return estadio.kc;

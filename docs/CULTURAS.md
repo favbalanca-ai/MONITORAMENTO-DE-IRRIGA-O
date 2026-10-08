@@ -16,6 +16,21 @@ por ela — são **referência**: o agrônomo precisa validar para a fazenda e a
 
 Em plantio direto (coluna Palhada = SIM) o Kc da primeira fase cai pela metade, menos no `feijao pd`.
 
+**Ciclo diferente do padrão:** a coluna opcional **Ciclo (dias, vazio = padrão)** da aba PIVOS estica ou encurta a
+curva na mesma proporção (as fases mantêm a fração do ciclo; a equação de trigo/algodão é esticada). Passado o fim
+do ciclo o Kc fica parado no valor final e o balanço avisa "ciclo encerrado".
+
+**Sugestões por cultura** (botão *Usar* no app, ao escolher a cultura — o agrônomo confirma):
+
+| Chave | Raiz máx. | Dias até raiz máx. | Fator fixo | Tensão p/ irrigar |
+|---|---|---|---|---|
+| `soja` | 50 cm | 55 | — | −70 kPa |
+| `milho` | 40 cm | 54 | — | −60 kPa |
+| `sorgo` | 40 cm | 66 | — | −60 kPa |
+| `feijao` / `feijao pd` | 30 cm | 45 / 42 | — | −35 kPa |
+| `trigo` | 40 cm | 50 | 0,4 | −50 kPa |
+| `algodao` | 60 cm | 75 | — | −60 kPa |
+
 Cuidados:
 - **Trigo**: a equação foi ajustada com a ET₀ de Hargreaves-Samani; aqui usamos Penman-Monteith. A Embrapa
   recomenda irrigar com 40% da CAD consumida (fator fixo 0,4) e raiz de 40 cm.

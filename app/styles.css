@@ -116,6 +116,10 @@ svg text{fill:var(--muted);font-size:13px}
 .log div{padding:2px 0;border-top:1px dashed var(--line)} .log div:first-child{border-top:0}
 .log .e{color:var(--red)}
 
+.kc-det{margin-top:10px}.kc-det summary{cursor:pointer;font-size:13px}
+.sugestao{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--teal-soft);border-radius:10px;padding:8px 12px;margin-top:10px;font-size:13px}
+.sugestao .muted{font-size:12px}
+
 /* Entrar */
 body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!important}
 .entrar{max-width:380px;margin:8vh auto 0}
