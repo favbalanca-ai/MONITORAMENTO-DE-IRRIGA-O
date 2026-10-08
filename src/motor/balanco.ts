@@ -93,6 +93,7 @@ export function simularBalanco({ pivo, estacao, dias, irrigacoes = [], ajustes =
       dia.n < MIN_LEITURAS ? "SEM DADOS" : deficit >= pivo.laminaMinimaMm ? "IRRIGAR" : "NÃO IRRIGAR";
 
     const alertas: string[] = [];
+    if (dia.estimados?.length) alertas.push(`Clima estimado pelo dia vizinho (sem leitura de: ${dia.estimados.join(", ")}).`);
     if (dia.n < MIN_LEITURAS) alertas.push(`Só ${dia.n} leituras na janela (mínimo ${MIN_LEITURAS}).`);
     if (dia.rad < RAD_SUSPEITA_MJ) alertas.push(`Radiação de ${dia.rad.toFixed(2)} MJ/m² — suspeita de falha do sensor.`);
     if (divergenciaHargreaves(et0, hs) > LIMITE_DIVERGENCIA_HS)

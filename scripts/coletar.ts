@@ -1,15 +1,18 @@
 /**
  * Coletor da estação.
  *
- *   npm run coletar                                   leitura ao vivo (rodar a cada 10 min)
- *   npm run coletar -- recuperar --dias 2             preenche buracos dos últimos 2 dias (rodar 1x por hora)
+ *   npm run coletar                                   leitura ao vivo
+ *   npm run coletar -- recuperar --dias 2             preenche buracos dos últimos 2 dias
  *   npm run coletar -- recuperar --de 2026-02-08 --ate 2026-10-08   recupera um período
+ *
+ * Normalmente quem chama isso é o serviço (npm run servico); os comandos servem para testar e recuperar.
  */
 import { parseArgs } from "node:util";
+import { abrirBanco } from "../src/banco/banco.ts";
+import { RepositorioSqlite } from "../src/banco/leituras.ts";
 import { ClienteEcowitt } from "../src/coletor/ecowitt.ts";
 import { coletarAgora, recuperarLacunas } from "../src/coletor/coleta.ts";
-import { configDoAmbiente } from "../src/coletor/config.ts";
-import { RepositorioCsv } from "../src/coletor/repositorio.ts";
+import { configDoAmbiente, exigirEcowitt } from "../src/coletor/config.ts";
 import { paraLocal, somarMinutos } from "../src/coletor/tempo.ts";
 
 const { positionals, values } = parseArgs({
@@ -19,9 +22,10 @@ const { positionals, values } = parseArgs({
 
 try {
   const cfg = configDoAmbiente();
-  const cliente = new ClienteEcowitt(cfg.ecowitt);
-  const repo = new RepositorioCsv(cfg.pastaLeituras);
-  const agora = paraLocal(Date.now(), cfg.ecowitt.fuso);
+  const ecowitt = exigirEcowitt(cfg);
+  const cliente = new ClienteEcowitt(ecowitt);
+  const repo = new RepositorioSqlite(abrirBanco(cfg.banco));
+  const agora = paraLocal(Date.now(), ecowitt.fuso);
 
   if (positionals[0] === "recuperar") {
     const ini = values.de ? `${values.de}T00:00:00` : somarMinutos(agora, -1440 * Number(values.dias ?? 2));

@@ -6,32 +6,47 @@ Contexto completo e especificação: [`docs/CONTEXT.md`](docs/CONTEXT.md).
 ## Estado
 
 - [x] **Passo 1 — motor de cálculo** (`src/motor/`), validado contra a tabela da seção 7 do CONTEXT.md.
-- [x] **Passo 2 — coletor Ecowitt** (`src/coletor/`): leitura ao vivo, normalização pelo `.unit`, deduplicação e recuperação de lacunas pelo histórico do ecowitt.net. Guarda em CSV por mês até decidirmos o banco.
-- [ ] Banco · job das 18h · telas · importação do histórico da planilha · rodar em paralelo com a planilha.
+- [x] **Passo 2 — coletor Ecowitt** (`src/coletor/`): leitura ao vivo, normalização pelo `.unit`, deduplicação e recuperação de lacunas pelo histórico do ecowitt.net.
+- [x] **Passos 3 e 4 — banco e job das 18h** (`src/banco/`, `src/job/`): SQLite embutido no Node, cadastro, lançamentos, balanço diário gravado e relatório por console, arquivo e e-mail.
+- [ ] WhatsApp (falta escolher o provedor) · telas · importação do histórico da planilha · rodar em paralelo com a planilha.
 
 ## Como rodar
 
-Precisa de Node 22.18+ (roda TypeScript direto, sem build).
+Precisa de Node 22.18+ (roda TypeScript direto, sem build). O banco é SQLite embutido no Node: nada para instalar.
 
 ```bash
 npm install
 npm run check              # typecheck + testes
-npm run relatorio:exemplo  # tabela do Pivô 2 de exemplo
 ```
 
-### Coletor
+### Primeira vez
 
-1. Copie `.env.example` para `.env` e preencha com as chaves **novas** da Ecowitt e o fuso da estação.
-2. Teste: `npm run coletar` (uma leitura ao vivo, grava em `dados/leituras/AAAA-MM.csv`).
-3. Recupere o período parado: `npm run coletar -- recuperar --de 2026-02-08 --ate 2026-10-08`.
-4. Agende (crontab de exemplo; o host ainda não está decidido):
+1. `cp .env.example .env` e preencha: chaves **novas** da Ecowitt, fuso da estação e, se quiser e-mail, o SMTP.
+2. `cp config/fazenda.exemplo.json config/fazenda.json`, troque pelos valores reais e grave:
+   `npm run banco -- cadastro config/fazenda.json` (pode rodar de novo sempre que mudar algo; atualiza pelo nome do pivô).
+3. Teste a coleta: `npm run coletar`.
+4. Recupere o período parado: `npm run coletar -- recuperar --de 2026-02-08 --ate 2026-10-08`.
+5. Veja o relatório sem enviar: `npm run diario -- --sem-envio`.
+6. Deixe rodando: `npm run servico` (coleta a cada 10 min, tapa buracos 1x por hora, relatório às 18:10).
+   Para ficar sempre ligado e voltar sozinho depois de queda de energia: `pm2 start "npm run servico" --name manejo && pm2 save && pm2 startup` (Linux/Windows) ou um serviço do systemd.
 
-```cron
-*/10 * * * *  cd /caminho/do/app && npm run -s coletar >> logs/coletor.log 2>&1
-7 * * * *     cd /caminho/do/app && npm run -s coletar -- recuperar --dias 2 >> logs/coletor.log 2>&1
+### No dia a dia
+
+```bash
+npm run banco -- irrigacao "Pivô 2" 2026-10-08 12        # lâmina líquida aplicada (mm)
+npm run banco -- umidade "Pivô 2" 2026-10-08 28 --profunda 30 --tensao -40 --fonte TDR
+npm run diario -- --data 2026-10-08 --forcar             # recalcula e reenvia um dia
 ```
 
-O histórico do ecowitt.net guarda leituras de 5 min por ~90 dias e de 30 min por ~1 ano; o coletor escolhe o ciclo pela idade do buraco. Leituras de 30 min contam como 3 no mínimo de leituras do dia, então um dia recuperado inteiro não cai em "SEM DADOS".
+O relatório recalcula o balanço inteiro toda vez, então lançar uma irrigação ou medição atrasada corrige os dias seguintes automaticamente.
+
+### Regras do job
+
+- Dia do relatório = último dia com a janela 18h–18h fechada. Rodando antes das 18h, sai o de ontem.
+- Dia sem leitura nenhuma (ou sensor sem dado) usa o clima do dia válido mais próximo, com chuva 0, e a decisão sai "SEM DADOS". O relatório avisa quantos dias do balanço foram assim.
+- Cada canal recebe o relatório uma vez por dia; canal que falhou tenta de novo na próxima execução. `--forcar` reenvia.
+- Antes do relatório, o serviço tenta recuperar buracos do dia pelo histórico da Ecowitt.
+- O histórico do ecowitt.net guarda leituras de 5 min por ~90 dias e de 30 min por ~1 ano. Leituras de 30 min contam como 3 no mínimo de leituras do dia.
 
 ## Estrutura
 
@@ -45,13 +60,16 @@ src/motor/        cálculo puro, sem rede nem banco
   solo.ts           raiz, CAD, fator de depleção, déficit por umidade medida
   equipamento.ts    área, volta, lâmina, percentímetro, energia e custo
   balanco.ts        balanço diário, decisão e alertas
+src/banco/        SQLite: esquema/migrações, leituras, cadastro, lançamentos, resultados
+src/job/          relatório do dia: cálculo de todos os pivôs, mensagem, envio, agenda
 src/coletor/      coleta da estação
   ecowitt.ts        cliente da API v3 (tempo real e histórico) e conversão para leituras
   coleta.ts         leitura ao vivo sem duplicar; recuperação de lacunas
   lacunas.ts        onde faltam leituras
-  repositorio.ts    armazenamento (CSV por mês por enquanto)
+  repositorio.ts    interface de armazenamento (+ CSV, para importar coletas antigas)
   tempo.ts / config.ts   fuso da estação; configuração do .env
-scripts/          linha de comando (coletar, relatório de exemplo)
+config/           cadastro da fazenda (fazenda.exemplo.json → fazenda.json)
+scripts/          linha de comando: coletar, banco, diario, servico
 test/             testes (node:test) e fixtures
   fixtures/         20 dias agregados + leituras brutas do METEO corrigido
 docs/             CONTEXT.md e o Apps Script antigo (referência)

@@ -12,10 +12,17 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
     "relatorio:exemplo": "node --disable-warning=ExperimentalWarning scripts/relatorio_exemplo.ts",
-    "coletar": "node --disable-warning=ExperimentalWarning scripts/coletar.ts"
+    "coletar": "node --disable-warning=ExperimentalWarning scripts/coletar.ts",
+    "banco": "node --disable-warning=ExperimentalWarning scripts/banco.ts",
+    "diario": "node --disable-warning=ExperimentalWarning scripts/diario.ts",
+    "servico": "node --disable-warning=ExperimentalWarning scripts/servico.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "nodemailer": "^10.0.16"
   }
 }

@@ -1,0 +1,40 @@
+{
+  "_leia": "Copie para config/fazenda.json e troque pelos valores reais. TODOS os números abaixo são exemplos (CONTEXT.md seção 6), não medições da fazenda.",
+  "estacao": {
+    "latitude": -14.74,
+    "altitude": 900,
+    "alturaAnemometro": 2,
+    "fuso": "America/Sao_Paulo"
+  },
+  "pivos": [
+    {
+      "nome": "Pivô 2",
+      "ativo": true,
+      "cultura": "soja",
+      "plantio": "2025-11-25",
+      "inicioBalanco": "2026-01-20",
+      "plantioDiretoPalhada": true,
+      "umidadeInicialPct": 30,
+      "solo": {
+        "cc": 32,
+        "pmp": 18,
+        "raizIniCm": 10,
+        "raizMaxCm": 50,
+        "diasRaiz": 55,
+        "fatorDeplecaoFixo": null
+      },
+      "laminaMinimaMm": 5,
+      "tensaoIrrigarKpa": -70,
+      "equipamento": {
+        "raioM": 400,
+        "anguloGraus": 360,
+        "vazaoM3h": 200,
+        "velocidadeUltimaTorreMMin": 3,
+        "percentimetroMinPct": 10,
+        "eficienciaPct": 85,
+        "potenciaKw": 55,
+        "tarifaRsKwh": 0.5
+      }
+    }
+  ]
+}

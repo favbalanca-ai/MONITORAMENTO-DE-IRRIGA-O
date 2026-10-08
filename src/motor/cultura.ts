@@ -39,3 +39,6 @@ export function kcDoDia(cultura: Cultura, diasAposSemeadura: number, palhada: bo
   const primeiro = estadio === cultura.estadios[0];
   return { estadio, kc: palhada && primeiro ? estadio.kc * 0.5 : estadio.kc };
 }
+
+/** Catálogo de culturas por chave (a usada no cadastro do pivô). Milho e feijão entram com o protótipo. */
+export const CULTURAS: Record<string, Cultura> = { soja: SOJA };

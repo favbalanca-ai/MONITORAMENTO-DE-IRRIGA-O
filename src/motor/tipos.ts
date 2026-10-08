@@ -35,6 +35,8 @@ export interface DiaClima {
   chuva: number;
   /** Leituras na janela, em equivalentes de 10 min (144 = dia completo). */
   n: number;
+  /** Campos que faltaram na janela e foram preenchidos com o dia válido mais próximo. */
+  estimados?: string[];
 }
 
 export interface Estacao {
@@ -96,6 +98,8 @@ export interface Pivo {
   solo: Solo;
   /** Déficit a partir do qual a decisão é IRRIGAR (mm). */
   laminaMinimaMm: number;
+  /** Data em que a umidade inicial vale e o balanço começa (padrão: plantio). */
+  inicioBalanco?: DataISO;
   /** Tensão a partir da qual o tensiômetro indica irrigar (kPa, negativo). */
   tensaoIrrigarKpa: number;
   equipamento?: Equipamento;

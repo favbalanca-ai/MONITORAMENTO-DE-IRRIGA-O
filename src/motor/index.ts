@@ -1,6 +1,7 @@
 export * from "./tipos.ts";
 export * from "./unidades.ts";
 export * from "./agregacao.ts";
+export * from "./completar.ts";
 export * from "./et0.ts";
 export * from "./cultura.ts";
 export * from "./solo.ts";
