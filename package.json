@@ -1,0 +1,18 @@
+{
+  "name": "manejo-irrigacao-agua-viva",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Manejo de irrigação por pivô — Fazenda Água Viva",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "relatorio:exemplo": "node --disable-warning=ExperimentalWarning scripts/relatorio_exemplo.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

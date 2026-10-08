@@ -1,0 +1,402 @@
+/************************************************* MANEJO DE IRRIGAÇÃO -
+FAZENDA ÁGUA VIVA VERSÃO DE DESENVOLVIMENTO
+*************************************************/
+
+/************************************************* BACKUP AUTOMÁTICO
+*************************************************/ function
+backupPlanilhaManejo() { const ss =
+SpreadsheetApp.getActiveSpreadsheet(); const file =
+DriveApp.getFileById(ss.getId());
+
+const parents = file.getParents(); let pasta = null;
+
+while (parents.hasNext()) { pasta = parents.next(); }
+
+if (!pasta) return;
+
+const pastasBackup = pasta.getFoldersByName(“BACKUP”); if
+(!pastasBackup.hasNext()) return;
+
+const pastaBackup = pastasBackup.next();
+
+const hoje = Utilities.formatDate( new Date(),
+Session.getScriptTimeZone(), “yyyy-MM-dd” );
+
+const nome = “MANEJO_IRRIGACAO_BACKUP_” + hoje; file.makeCopy(nome,
+pastaBackup); }
+
+/************************************************* IMPORTAÇÃO ECOWITT
+*************************************************/ function
+importarEcowittSeguro() { try { importarEcowitt(); } catch (e) {
+Logger.log(“Falha Ecowitt:” + e.message); } }
+
+function importarEcowitt() { const ss = SpreadsheetApp.getActive();
+const cfg = ss.getSheetByName(“CONFIG”); const meteo =
+ss.getSheetByName(“METEO”);
+
+if (!cfg || !meteo) return;
+
+const API_KEY = cfg.getRange(“B1”).getValue(); const APP_KEY =
+cfg.getRange(“B2”).getValue(); const MAC =
+cfg.getRange(“B3”).getValue();
+
+if (!API_KEY || !APP_KEY || !MAC) { throw new Error(“Credenciais Ecowitt
+incompletas.”); }
+
+const url = “https://api.ecowitt.net/api/v3/device/real_time” +
+“?application_key=” + encodeURIComponent(APP_KEY) + “&api_key=” +
+encodeURIComponent(API_KEY) + “&mac=” + encodeURIComponent(MAC);
+
+const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+
+if (resp.getResponseCode() !== 200) { throw new Error(“Erro HTTP
+Ecowitt:” + resp.getResponseCode()); }
+
+const json = JSON.parse(resp.getContentText()); const d = json.data; if
+(!d) throw new Error(“Ecowitt retornou dados vazios.”);
+
+const agora = new Date();
+
+let temp = ““; let ur =”“; let vento =”“; let chuva = 0; let rad_MJ = 0;
+
+if (d?.outdoor?.temperature) { let v =
+Number(d.outdoor.temperature.value); temp = d.outdoor.temperature.unit
+=== “ºF” ? (v - 32) * 5 / 9 : v; temp = Math.round(temp * 10) / 10; }
+
+if (d?.outdoor?.humidity) { ur = Number(d.outdoor.humidity.value); }
+
+if (d?.solar_and_uvi?.solar) { const w =
+Number(d.solar_and_uvi.solar.value); if (!isNaN(w)) rad_MJ = (w * 600) /
+1000000; }
+
+if (d?.rainfall?.daily) { chuva = Number(d.rainfall.daily.value) * 25.4;
+}
+
+if (d?.wind?.wind_speed) { const ws = Number(d.wind.wind_speed.value);
+vento = d.wind.wind_speed.unit === “mph” ? ws * 0.44704 : ws; vento =
+Math.round(vento * 10) / 10; }
+
+// Evita gravações repetidas em intervalo inferior a 8 minutos. const
+ultimaLinha = meteo.getLastRow(); if (ultimaLinha > 1) { const
+ultimaData = meteo.getRange(ultimaLinha, 1).getValue(); if (ultimaData
+instanceof Date) { const diffMin = (agora - ultimaData) / 60000; if
+(diffMin < 8) return; } }
+
+meteo.appendRow([ agora, chuva, temp, ur, rad_MJ, vento, “Ecowitt” ]); }
+
+/************************************************* ETo FAO-56
+*************************************************/ function
+gravarEToDiariaManejo() { const ss = SpreadsheetApp.getActive(); const
+meteo = ss.getSheetByName(“METEO”); const cfg =
+ss.getSheetByName(“CONFIG”);
+
+if (!meteo || !cfg || meteo.getLastRow() < 2) return;
+
+const tz = ss.getSpreadsheetTimeZone(); const hoje =
+Utilities.formatDate(new Date(), tz, “yyyy-MM-dd”);
+
+const ultimaLinha = meteo.getLastRow(); const linhas = Math.min(144,
+ultimaLinha - 1);
+
+if (linhas <= 0) return;
+
+const dados = meteo.getRange( ultimaLinha - linhas + 1, 1, linhas, 6
+).getValues();
+
+let tSum = 0, urSum = 0, radSum = 0, vSum = 0; let nT = 0, nUR = 0, nV =
+0; let tMin = Infinity, tMax = -Infinity;
+
+dados.forEach(l => { if (!(l[0] instanceof Date)) return;
+
+    const dia = Utilities.formatDate(l[0], tz, "yyyy-MM-dd");
+    if (dia !== hoje) return;
+
+    const t = Number(l[2]);
+    const ur = Number(l[3]);
+    const rad = Number(l[4]);
+    const v = Number(l[5]);
+
+    if (!isNaN(t)) {
+      tSum += t;
+      nT++;
+      tMin = Math.min(tMin, t);
+      tMax = Math.max(tMax, t);
+    }
+
+    if (!isNaN(ur)) {
+      urSum += ur;
+      nUR++;
+    }
+
+    if (!isNaN(rad)) radSum += rad;
+
+    if (!isNaN(v)) {
+      vSum += v;
+      nV++;
+    }
+
+});
+
+if (nT === 0 || nUR === 0 || nV === 0) return;
+
+const tMed = tSum / nT; const urMed = urSum / nUR; const Rs = radSum;
+const u2 = vSum / nV;
+
+const z = Number(cfg.getRange(“B4”).getValue()) || 500;
+
+const es = T => 0.6108 * Math.exp((17.27 * T) / (T + 237.3)); const
+esMed = (es(tMax) + es(tMin)) / 2; const ea = esMed * (urMed / 100);
+
+const P = 101.3 * Math.pow((293 - 0.0065 * z) / 293, 5.26); const gamma
+= 0.000665 * P; const delta = (4098 * es(tMed)) / Math.pow(tMed + 237.3,
+2);
+
+// Aproximação de radiação líquida utilizada nesta versão. const Rn =
+0.77 * Rs;
+
+const ETo = (0.408 * delta * Rn + gamma * (900 / (tMed + 273)) * u2 *
+(esMed - ea)) / (delta + gamma * (1 + 0.34 * u2));
+
+const etoDia = Math.max(0, Math.round(ETo * 100) / 100);
+
+gravarEToNosPivos(etoDia); }
+
+/************************************************* IDENTIFICA ABAS DE
+PIVÔ *************************************************/ function
+ehAbaPivo_(nome) { const ignorar = [ “CONFIG”, “METEO”, “Dados”,
+“Dados-culturas”, “PAINEL_IRRIGACAO”, “PREVISAO_CLIMA”,
+“PREVISAO_IRRIGACAO” ];
+
+return !ignorar.includes(nome); }
+
+/************************************************* GRAVA ETo NOS PIVÔS -
+COLUNA D *************************************************/ function
+gravarEToNosPivos(eto) { const ss = SpreadsheetApp.getActive(); const tz
+= ss.getSpreadsheetTimeZone(); const hoje = Utilities.formatDate(new
+Date(), tz, “yyyy-MM-dd”);
+
+ss.getSheets().forEach(aba => { const nome = aba.getName(); if
+(!ehAbaPivo_(nome)) return;
+
+    const ultima = aba.getLastRow();
+    if (ultima < 18) return;
+
+    const datas = aba.getRange(18, 1, ultima - 17, 1).getValues();
+
+    for (let i = 0; i < datas.length; i++) {
+      const data = datas[i][0];
+      if (!(data instanceof Date)) continue;
+
+      const dia = Utilities.formatDate(data, tz, "yyyy-MM-dd");
+
+      if (dia === hoje) {
+        // Atualiza durante o dia para que às 17h esteja com o valor mais recente.
+        aba.getRange(i + 18, 4).setValue(eto);
+        break;
+      }
+    }
+
+}); }
+
+/************************************************* CHUVA DIÁRIA
+*************************************************/ function
+gravarChuvaDiariaManejo() { const ss = SpreadsheetApp.getActive(); const
+meteo = ss.getSheetByName(“METEO”);
+
+if (!meteo || meteo.getLastRow() < 2) return;
+
+const tz = ss.getSpreadsheetTimeZone(); const hoje =
+Utilities.formatDate(new Date(), tz, “yyyy-MM-dd”);
+
+const ultimaLinha = meteo.getLastRow(); const linhas = Math.min(144,
+ultimaLinha - 1);
+
+if (linhas <= 0) return;
+
+const dados = meteo.getRange( ultimaLinha - linhas + 1, 1, linhas, 2
+).getValues();
+
+let chuvaDia = 0;
+
+dados.forEach(l => { if (!(l[0] instanceof Date)) return;
+
+    const dia = Utilities.formatDate(l[0], tz, "yyyy-MM-dd");
+
+    if (dia === hoje) {
+      const chuva = Number(l[1]);
+      if (!isNaN(chuva)) chuvaDia = Math.max(chuvaDia, chuva);
+    }
+
+});
+
+gravarChuvaNosPivos(chuvaDia); }
+
+/************************************************* GRAVA CHUVA NOS
+PIVÔS - COLUNA E *************************************************/
+function gravarChuvaNosPivos(chuva) { const ss =
+SpreadsheetApp.getActive(); const tz = ss.getSpreadsheetTimeZone();
+const hoje = Utilities.formatDate(new Date(), tz, “yyyy-MM-dd”);
+
+ss.getSheets().forEach(aba => { const nome = aba.getName(); if
+(!ehAbaPivo_(nome)) return;
+
+    const ultima = aba.getLastRow();
+    if (ultima < 18) return;
+
+    const datas = aba.getRange(18, 1, ultima - 17, 1).getValues();
+
+    for (let i = 0; i < datas.length; i++) {
+      const data = datas[i][0];
+      if (!(data instanceof Date)) continue;
+
+      const dia = Utilities.formatDate(data, tz, "yyyy-MM-dd");
+
+      if (dia === hoje) {
+        aba.getRange(i + 18, 5).setValue(Math.round(chuva * 10) / 10);
+        break;
+      }
+    }
+
+}); }
+
+/************************************************* RELATÓRIO CONSOLIDADO
+DE IRRIGAÇÃO - 17H A PLANILHA CALCULA A RECOMENDAÇÃO/LÂMINA. O SCRIPT
+APENAS LÊ E ENVIA. *************************************************/
+function enviarRelatorioIrrigacao() { const ss =
+SpreadsheetApp.getActive(); const tz = ss.getSpreadsheetTimeZone();
+
+const agora = new Date(); const hora =
+Number(Utilities.formatDate(agora, tz, “H”));
+
+if (hora !== 17) return;
+
+enviarRelatorioIrrigacaoInterno_(false); }
+
+/************************************************* TESTE MANUAL DO
+RELATÓRIO IGNORA A TRAVA DAS 17H
+*************************************************/ function
+testarRelatorioIrrigacao() { enviarRelatorioIrrigacaoInterno_(true); }
+
+function enviarRelatorioIrrigacaoInterno_(teste) { const ss =
+SpreadsheetApp.getActive(); const tz = ss.getSpreadsheetTimeZone();
+
+const hoje = Utilities.formatDate(new Date(), tz, “yyyy-MM-dd”); const
+hojeBR = Utilities.formatDate(new Date(), tz, “dd/MM/yyyy”);
+
+let relatorio = (teste ? “TESTE –” : ““) +”RELATÓRIO DE IRRIGAÇÃO –
+FAZENDA ÁGUA VIVA” + “Data:” + hojeBR + “”;
+
+let encontrados = 0;
+
+ss.getSheets().forEach(aba => { const nome = aba.getName(); if
+(!ehAbaPivo_(nome)) return;
+
+    const ultima = aba.getLastRow();
+    if (ultima < 18) return;
+
+    const dados = aba.getRange(18, 1, ultima - 17, 7).getValues();
+
+    for (let i = 0; i < dados.length; i++) {
+      const data = dados[i][0];
+      if (!(data instanceof Date)) continue;
+
+      const dia = Utilities.formatDate(data, tz, "yyyy-MM-dd");
+      if (dia !== hoje) continue;
+
+      const eto = dados[i][3];    // D
+      const chuva = dados[i][4];  // E
+      const recomendacao = dados[i][5]; // F
+      const lamina = Number(dados[i][6]); // G
+
+      relatorio += "Pivô: " + nome + "\n";
+      relatorio += "ETo: " + (eto === "" ? "-" : eto + " mm") + "\n";
+      relatorio += "Chuva: " + (chuva === "" ? "-" : chuva + " mm") + "\n";
+
+      if (!isNaN(lamina) && lamina > 0) {
+        relatorio += "Recomendação: IRRIGAR\n";
+        relatorio += "Lâmina recomendada: " + lamina + " mm\n";
+      } else {
+        relatorio += "Recomendação: " +
+          (recomendacao ? recomendacao : "NÃO IRRIGAR") + "\n";
+      }
+
+      relatorio += "\n";
+      encontrados++;
+      break;
+    }
+
+});
+
+if (encontrados === 0) { relatorio += “Nenhuma linha correspondente à
+data de hoje foi encontrada nas abas dos pivôs.”; }
+
+MailApp.sendEmail({ to: “EMAIL_DA_FAZENDA@exemplo.com”, subject: (teste ?
+“TESTE –” : ““) +”RELATÓRIO DE IRRIGAÇÃO – FAZENDA”, body: relatorio });
+}
+
+/************************************************* LIMPAR METEO – MANTER
+ÚLTIMOS 60 DIAS *************************************************/
+function limparMeteoAntigo() { const ss = SpreadsheetApp.getActive();
+const meteo = ss.getSheetByName(“METEO”);
+
+if (!meteo || meteo.getLastRow() < 3) return;
+
+const limite = new Date(); limite.setDate(limite.getDate() - 60);
+
+const ultimaLinha = meteo.getLastRow(); const dados = meteo.getRange(2,
+1, ultimaLinha - 1, 1).getValues();
+
+let quantidadeApagar = 0;
+
+for (let i = 0; i < dados.length; i++) { const data = dados[i][0];
+
+    if (data instanceof Date && data < limite) {
+      quantidadeApagar++;
+    } else {
+      break;
+    }
+
+}
+
+if (quantidadeApagar > 0) { meteo.deleteRows(2, quantidadeApagar); } }
+
+/************************************************* PREVISÃO CLIMÁTICA -
+OPEN-METEO Somente informativa. Não substitui a lâmina calculada pela
+planilha de manejo. CONFIG: B5 latitude / B6 longitude
+*************************************************/ function
+atualizarPrevisaoClima() { const ss = SpreadsheetApp.getActive(); const
+cfg = ss.getSheetByName(“CONFIG”);
+
+if (!cfg) return;
+
+const lat = cfg.getRange(“B5”).getValue(); const lon =
+cfg.getRange(“B6”).getValue();
+
+if (lat === “” || lon === ““) return;
+
+let aba = ss.getSheetByName(“PREVISAO_CLIMA”); if (!aba) aba =
+ss.insertSheet(“PREVISAO_CLIMA”);
+
+const url = “https://api.open-meteo.com/v1/forecast” + “?latitude=” +
+encodeURIComponent(lat) + “&longitude=” + encodeURIComponent(lon) +
+“&daily=temperature_2m_max,temperature_2m_min,precipitation_sum” +
+“&forecast_days=5” + “&timezone=auto”;
+
+const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+
+if (resp.getResponseCode() !== 200) { throw new Error(“Erro HTTP
+Open-Meteo:” + resp.getResponseCode()); }
+
+const json = JSON.parse(resp.getContentText()); if (!json.daily) return;
+
+aba.clearContents();
+
+aba.getRange(1, 1, 1, 4).setValues([[ “Data”, “Temp Max”, “Temp Min”,
+“Chuva prevista” ]]);
+
+const linhas = json.daily.time.map((data, i) => [ data,
+json.daily.temperature_2m_max[i], json.daily.temperature_2m_min[i],
+json.daily.precipitation_sum[i] ]);
+
+if (linhas.length) { aba.getRange(2, 1, linhas.length,
+4).setValues(linhas); } }
