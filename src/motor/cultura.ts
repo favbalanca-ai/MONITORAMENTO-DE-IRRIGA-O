@@ -15,6 +15,122 @@ export const SOJA: Cultura = {
     { nome: "R5", ateFracao: 0.83, kc: 1.2 },
     { nome: "R7", ateFracao: 1.0, kc: 0.9 },
   ],
+  fonte: "Aba KC da planilha original da fazenda.",
+};
+
+/** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
+function porDias(ciclo: number, linhas: [string, number, number, number?][]): Estadio[] {
+  return linhas.map(([nome, ateDia, kc, kcFim]) => ({ nome, ateFracao: ateDia / ciclo, kc, ...(kcFim === undefined ? {} : { kcFim }) }));
+}
+
+/**
+ * Milho grão, ciclo de 120 dias. Curva de 4 fases da Embrapa Milho e Sorgo (planilha de manejo e
+ * Comunicado Técnico 47): fases de 17%, 28%, 33% e 22% do ciclo; Kc 0,50 na fase inicial, sobe em
+ * linha reta até 1,20 no florescimento/enchimento e desce até 0,60 na maturação (FAO-56, adotado pela Embrapa).
+ */
+export const MILHO: Cultura = {
+  nome: "Milho",
+  cicloDias: 120,
+  estadios: [
+    { nome: "Inicial", ateFracao: 0.17, kc: 0.5 },
+    { nome: "Vegetativo", ateFracao: 0.45, kc: 0.5, kcFim: 1.2 },
+    { nome: "Florescimento/enchimento", ateFracao: 0.78, kc: 1.2 },
+    { nome: "Maturação", ateFracao: 1.0, kc: 1.2, kcFim: 0.6 },
+  ],
+  fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 47 (2002) e Circular Técnica 10 / planilha de manejo de irrigação; Kc final FAO-56.",
+};
+
+/**
+ * Sorgo granífero, ciclo de 120 dias. Fases de 24, 42, 30 e 24 dias (Embrapa, Comunicado Técnico 254,
+ * 2021); Kc 0,50 → 1,10 → 0,55 (FAO-56, faixa 1,00–1,15 citada pela Embrapa).
+ */
+export const SORGO: Cultura = {
+  nome: "Sorgo",
+  cicloDias: 120,
+  estadios: porDias(120, [
+    ["Inicial", 24, 0.5],
+    ["Vegetativo", 66, 0.5, 1.1],
+    ["Florescimento/enchimento", 96, 1.1],
+    ["Maturação", 120, 1.1, 0.55],
+  ]),
+  fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 254 (2021), planilha para obtenção do coeficiente de cultura; Kc FAO-56.",
+};
+
+/**
+ * Feijão comum, sistema convencional. Tabela de Kc por dias após a emergência (DAE) da Agência de
+ * Informação Embrapa (Embrapa Arroz e Feijão, manejo de irrigação). Ciclo de 94 DAE.
+ */
+export const FEIJAO: Cultura = {
+  nome: "Feijão",
+  cicloDias: 94,
+  emergenciaDias: 7,
+  estadios: porDias(94, [
+    ["0–14 DAE", 14, 0.49],
+    ["15–24 DAE", 24, 0.69],
+    ["25–34 DAE", 34, 0.77],
+    ["35–44 DAE", 44, 0.9],
+    ["45–54 DAE", 54, 1.06],
+    ["55–64 DAE", 64, 0.89],
+    ["65–74 DAE", 74, 0.74],
+    ["75–84 DAE", 84, 0.48],
+    ["85–94 DAE", 94, 0.27],
+  ]),
+  fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (Kc por DAE, sistema convencional).",
+};
+
+/**
+ * Feijão em plantio direto (medido na cv. Aporé): germinação até início da floração 35 dias (Kc 0,69),
+ * floração 25 dias (1,28), formação de vagens até maturação 20 dias (1,04). Já medido sobre palhada.
+ */
+export const FEIJAO_PD: Cultura = {
+  nome: "Feijão plantio direto",
+  cicloDias: 80,
+  emergenciaDias: 7,
+  kcJaComPalhada: true,
+  estadios: porDias(80, [
+    ["Vegetativo", 35, 0.69],
+    ["Floração", 60, 1.28],
+    ["Vagens/maturação", 80, 1.04],
+  ]),
+  fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (plantio direto, cv. Aporé).",
+};
+
+/**
+ * Trigo irrigado no Cerrado (BRS 394, Embrapa Cerrados): Kc = −0,000268·DAE² + 0,032979·DAE + 0,392945.
+ * Médias por fase no trabalho: 0,57 / 0,97 / 1,28 / 1,39 / 1,08. Ciclo de ~115 DAE.
+ * Atenção: o Kc foi ajustado com a ET₀ de Hargreaves-Samani.
+ */
+export const TRIGO: Cultura = {
+  nome: "Trigo",
+  cicloDias: 115,
+  emergenciaDias: 5,
+  kcEquacao: [-0.000268, 0.032979, 0.392945],
+  estadios: [
+    { nome: "Estabelecimento", ateFracao: 0.2, kc: 0.57 },
+    { nome: "Perfilhamento", ateFracao: 0.4, kc: 0.97 },
+    { nome: "Alongamento/emborrachamento", ateFracao: 0.6, kc: 1.28 },
+    { nome: "Espigamento/floração", ateFracao: 0.8, kc: 1.39 },
+    { nome: "Enchimento/maturação", ateFracao: 1.0, kc: 1.08 },
+  ],
+  fonte: "Embrapa Cerrados — Coeficientes de cultura do trigo BRS 394 irrigado no Cerrado (2024).",
+};
+
+/**
+ * Algodão herbáceo: Kc = −0,00006·DAE² + 0,009·DAE + 0,632 (Embrapa Algodão, BRS 200 Marrom).
+ * Pico de ~0,97 aos 75 DAE. Ciclo de 150 DAE. Dados do Nordeste: conferir para o Cerrado.
+ */
+export const ALGODAO: Cultura = {
+  nome: "Algodão",
+  cicloDias: 150,
+  emergenciaDias: 5,
+  kcEquacao: [-0.00006, 0.009, 0.632],
+  estadios: [
+    { nome: "Inicial", ateFracao: 0.2, kc: 0.7 },
+    { nome: "Botão floral", ateFracao: 0.4, kc: 0.9 },
+    { nome: "Floração", ateFracao: 0.7, kc: 0.97 },
+    { nome: "Capulhos", ateFracao: 1.0, kc: 0.8 },
+  ],
+  fonte: "Embrapa Algodão — Coeficientes de cultivo do algodoeiro herbáceo (2009).",
 };
 
 /** Dias após a semeadura. */
@@ -22,12 +138,32 @@ export function das(data: DataISO, plantio: DataISO): number {
   return Math.round((Date.parse(data + "T00:00:00Z") - Date.parse(plantio + "T00:00:00Z")) / 86_400_000);
 }
 
+/** Dias após a emergência (antes da emergência conta como 0). Sem `emergenciaDias`, é o próprio DAS. */
+export function dae(cultura: Cultura, diasAposSemeadura: number): number {
+  return Math.max(0, diasAposSemeadura - (cultura.emergenciaDias ?? 0));
+}
+
 /** Estádio pela fração do ciclo. Depois do fim do ciclo, fica no último estádio. */
 export function estadioPorDas(cultura: Cultura, diasAposSemeadura: number): Estadio {
-  const f = Math.max(0, diasAposSemeadura) / cultura.cicloDias;
+  const f = dae(cultura, diasAposSemeadura) / cultura.cicloDias;
   const e = cultura.estadios.find((x) => f <= x.ateFracao) ?? cultura.estadios[cultura.estadios.length - 1];
   if (!e) throw new Error(`Cultura ${cultura.nome} sem estádios cadastrados.`);
   return e;
+}
+
+/** Kc sem a correção da palhada: equação, reta dentro do estádio ou degrau. */
+function kcBase(cultura: Cultura, estadio: Estadio, diasAposSemeadura: number): number {
+  const d = dae(cultura, diasAposSemeadura);
+  if (cultura.kcEquacao) {
+    const [a, b, c] = cultura.kcEquacao;
+    const x = Math.min(d, cultura.cicloDias);
+    return a * x * x + b * x + c;
+  }
+  if (estadio.kcFim === undefined) return estadio.kc;
+  const i = cultura.estadios.indexOf(estadio);
+  const ini = i > 0 ? cultura.estadios[i - 1]!.ateFracao : 0;
+  const t = Math.min(1, Math.max(0, (d / cultura.cicloDias - ini) / (estadio.ateFracao - ini)));
+  return estadio.kc + (estadio.kcFim - estadio.kc) * t;
 }
 
 /**
@@ -36,9 +172,21 @@ export function estadioPorDas(cultura: Cultura, diasAposSemeadura: number): Esta
  */
 export function kcDoDia(cultura: Cultura, diasAposSemeadura: number, palhada: boolean): { estadio: Estadio; kc: number } {
   const estadio = estadioPorDas(cultura, diasAposSemeadura);
+  const kc = kcBase(cultura, estadio, diasAposSemeadura);
   const primeiro = estadio === cultura.estadios[0];
-  return { estadio, kc: palhada && primeiro ? estadio.kc * 0.5 : estadio.kc };
+  return { estadio, kc: palhada && primeiro && !cultura.kcJaComPalhada ? kc * 0.5 : kc };
 }
 
-/** Catálogo de culturas por chave (a usada no cadastro do pivô). Milho e feijão entram com o protótipo. */
-export const CULTURAS: Record<string, Cultura> = { soja: SOJA };
+/**
+ * Catálogo de culturas por chave (a escrita na coluna Cultura da aba PIVOS).
+ * Valores de boletins da Embrapa — referência; o agrônomo precisa validar para a fazenda.
+ */
+export const CULTURAS: Record<string, Cultura> = {
+  soja: SOJA,
+  milho: MILHO,
+  sorgo: SORGO,
+  feijao: FEIJAO,
+  "feijao pd": FEIJAO_PD,
+  trigo: TRIGO,
+  algodao: ALGODAO,
+};

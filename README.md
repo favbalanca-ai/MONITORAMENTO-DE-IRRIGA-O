@@ -62,7 +62,7 @@ src/motor/        cálculo puro, sem rede nem banco
   unidades.ts       normalização de unidades pelo .unit da Ecowitt
   agregacao.ts      leituras → dia (janela 18h–18h, regra da chuva, radiação por média)
   et0.ts            Penman-Monteith FAO-56 e Hargreaves-Samani (conferência)
-  cultura.ts        DAS, estádio, Kc (soja) e palhada
+  cultura.ts        DAS, estádio, Kc e palhada — soja, milho, sorgo, feijão, trigo, algodão (docs/CULTURAS.md)
   solo.ts           raiz, CAD, fator de depleção, déficit por umidade medida
   equipamento.ts    área, volta, lâmina, percentímetro, energia e custo
   balanco.ts        balanço diário, decisão e alertas

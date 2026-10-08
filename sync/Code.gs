@@ -256,6 +256,11 @@ function dataIso_(v, fuso) {
   return s;
 }
 
+/** "Feijão PD" → "feijao pd": sem acento, minúsculo, espaços simples (chave do Motor.CULTURAS). */
+function chaveCultura_(v) {
+  return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function lerPivos_(cfg) {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
   if (!aba || aba.getLastRow() < 2) return [];
@@ -270,7 +275,7 @@ function lerPivos_(cfg) {
     return {
       nome: String(l[col.nome]).trim(),
       ativo: simNao_(l[col.ativo]),
-      cultura: String(l[col.cultura]).trim().toLowerCase(),
+      cultura: chaveCultura_(l[col.cultura]),
       plantio: dataIso_(l[col.plantio], cfg.fuso),
       inicioBalanco: l[col.inicioBalanco] === "" ? undefined : dataIso_(l[col.inicioBalanco], cfg.fuso),
       plantioDiretoPalhada: simNao_(l[col.palhada]),
@@ -974,7 +979,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.08-2";
+var VERSAO_SERVIDOR = "2026.10.08-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

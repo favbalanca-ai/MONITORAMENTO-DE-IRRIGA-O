@@ -52,13 +52,25 @@ export interface Estadio {
   nome: string;
   /** Fração do ciclo (DAS/ciclo) até a qual vale este estádio. */
   ateFracao: number;
+  /** Kc do estádio (ou do começo dele, quando há `kcFim`). */
   kc: number;
+  /** Se existir, o Kc anda em linha reta de `kc` até `kcFim` ao longo do estádio (curva FAO/Embrapa). */
+  kcFim?: number;
 }
 
 export interface Cultura {
   nome: string;
+  /** Duração do ciclo (dias). Conta a partir da emergência quando há `emergenciaDias`. */
   cicloDias: number;
   estadios: Estadio[];
+  /** Dias da semeadura até a emergência. As tabelas que contam em DAE descontam isso do DAS. */
+  emergenciaDias?: number;
+  /** Kc = a·DAE² + b·DAE + c (equação ajustada em experimento). Os estádios ficam só como nome. */
+  kcEquacao?: [number, number, number];
+  /** Os Kc já foram medidos em plantio direto: a palhada não corta o primeiro estádio de novo. */
+  kcJaComPalhada?: boolean;
+  /** De onde vieram os números (boletim da Embrapa etc.). */
+  fonte?: string;
 }
 
 export interface Solo {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cad, das, deficitDaUmidade, estadioPorDas, fatorDeplecao, kcDoDia, profundidadeRaiz, SOJA } from "../src/motor/index.ts";
+import { ALGODAO, cad, CULTURAS, dae, das, deficitDaUmidade, estadioPorDas, fatorDeplecao, FEIJAO, FEIJAO_PD, kcDoDia, MILHO, profundidadeRaiz, SOJA, TRIGO } from "../src/motor/index.ts";
 import { PIVO2_EXEMPLO } from "./pivo2_exemplo.ts";
 
 const solo = PIVO2_EXEMPLO.solo;
@@ -35,4 +35,50 @@ test("CAD, déficit pela umidade e fator de depleção", () => {
   assert.equal(deficitDaUmidade(solo, 35, 50), 0); // acima da CC não vira déficit negativo
   assert.deepEqual([2.5, 2.51, 5, 7.5, 8].map((e) => fatorDeplecao(solo, e)), [0.75, 0.6, 0.6, 0.5, 0.4]);
   assert.equal(fatorDeplecao({ ...solo, fatorDeplecaoFixo: 0.5 }, 1), 0.5);
+});
+
+test("catálogo tem as culturas da Embrapa, cada uma com fonte e estádios em ordem", () => {
+  assert.deepEqual(Object.keys(CULTURAS), ["soja", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
+  for (const c of Object.values(CULTURAS)) {
+    assert.ok(c.fonte, c.nome);
+    const fr = c.estadios.map((e) => e.ateFracao);
+    assert.deepEqual([...fr].sort((a, b) => a - b), fr, c.nome);
+    assert.equal(fr[fr.length - 1], 1, c.nome);
+    for (let d = 0; d <= c.cicloDias + 30; d++) {
+      const kc = kcDoDia(c, d, false).kc;
+      assert.ok(kc > 0.2 && kc < 1.45, `${c.nome} DAS ${d}: Kc ${kc}`);
+    }
+  }
+});
+
+test("milho: Kc sobe em linha reta no vegetativo e desce na maturação", () => {
+  const kc = (d: number) => kcDoDia(MILHO, d, false).kc;
+  assert.equal(kc(10), 0.5);
+  assert.equal(kc(20.4), 0.5); // fim da fase inicial (17% de 120)
+  assert.ok(Math.abs(kc(37.2) - 0.85) < 1e-9); // meio do vegetativo
+  assert.ok(Math.abs(kc(54) - 1.2) < 1e-9);
+  assert.equal(kc(80), 1.2);
+  assert.ok(Math.abs(kc(120) - 0.6) < 1e-9);
+  assert.ok(Math.abs(kc(150) - 0.6) < 1e-9); // passou do ciclo: fica no final
+  assert.equal(kcDoDia(MILHO, 10, true).kc, 0.25); // palhada corta a fase inicial
+});
+
+test("feijão conta pelos dias após a emergência", () => {
+  assert.equal(dae(FEIJAO, 3), 0);
+  assert.equal(kcDoDia(FEIJAO, 21, false).kc, 0.49); // 14 DAE
+  assert.equal(kcDoDia(FEIJAO, 22, false).kc, 0.69); // 15 DAE
+  assert.equal(kcDoDia(FEIJAO, 7 + 50, false).kc, 1.06);
+  assert.equal(kcDoDia(FEIJAO, 7 + 90, false).estadio.nome, "85–94 DAE");
+  // plantio direto: Kc já medido sobre palhada, não corta de novo
+  assert.equal(kcDoDia(FEIJAO_PD, 10, true).kc, 0.69);
+  assert.equal(kcDoDia(FEIJAO_PD, 7 + 40, true).kc, 1.28);
+});
+
+test("trigo e algodão seguem a equação da Embrapa por DAE", () => {
+  const trigo = (x: number) => -0.000268 * x * x + 0.032979 * x + 0.392945;
+  assert.ok(Math.abs(kcDoDia(TRIGO, 5 + 60, false).kc - trigo(60)) < 1e-12);
+  assert.ok(Math.abs(kcDoDia(TRIGO, 5 + 60, false).kc - 1.4069) < 1e-3); // pico ~1,41
+  assert.ok(Math.abs(kcDoDia(TRIGO, 300, false).kc - trigo(115)) < 1e-12); // trava no fim do ciclo
+  assert.ok(Math.abs(kcDoDia(ALGODAO, 5 + 75, false).kc - 0.9695) < 1e-9);
+  assert.equal(kcDoDia(TRIGO, 5 + 60, false).estadio.nome, "Alongamento/emborrachamento");
 });

@@ -96,8 +96,15 @@ test("irrigação e medição lançadas nas abas (com data de célula) entram no
 
 test("cadastro com erro não calcula e explica o problema", () => {
   const amb = comLeiturasPivo2();
-  amb.aba("PIVOS").set(2, 3, "algodão");
-  assert.throws(() => amb.chamar("calcular_", "2026-02-08"), /Cadastro com problemas[\s\S]*algodão/);
+  amb.aba("PIVOS").set(2, 3, "girassol");
+  assert.throws(() => amb.chamar("calcular_", "2026-02-08"), /Cadastro com problemas[\s\S]*girassol/);
+});
+
+test("cultura escrita com acento e maiúscula na planilha é reconhecida", () => {
+  const amb = comLeiturasPivo2();
+  amb.aba("PIVOS").set(2, 3, " Feijão  PD ");
+  const r = amb.chamar("calcular_", "2026-02-08") as { itens: { pivo: { cultura: { nome: string } } }[] };
+  assert.equal(r.itens[0]!.pivo.cultura.nome, "Feijão plantio direto");
 });
 
 test("relatório do gatilho sem chaves da Ecowitt ainda sai com o que tem, e o erro vai pro LOG", () => {
