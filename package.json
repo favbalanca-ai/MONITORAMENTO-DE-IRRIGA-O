@@ -15,7 +15,8 @@
     "coletar": "node --disable-warning=ExperimentalWarning scripts/coletar.ts",
     "banco": "node --disable-warning=ExperimentalWarning scripts/banco.ts",
     "diario": "node --disable-warning=ExperimentalWarning scripts/diario.ts",
-    "servico": "node --disable-warning=ExperimentalWarning scripts/servico.ts"
+    "servico": "node --disable-warning=ExperimentalWarning scripts/servico.ts",
+    "gerar:apps-script": "node --disable-warning=ExperimentalWarning scripts/gerar_apps_script.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -2,9 +2,15 @@ import type { LinhaBalanco } from "../motor/balanco.ts";
 import type { DataISO, DiaClima } from "../motor/tipos.ts";
 import { diaAnterior } from "../motor/agregacao.ts";
 
-const n1 = (x: number) => x.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const n2 = (x: number) => x.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const n0 = (x: number) => Math.round(x).toLocaleString("pt-BR");
+/** Número no formato brasileiro (1.234,5) sem depender do Intl — o Apps Script nem sempre tem pt-BR. */
+function br_(x: number, casas: number): string {
+  const [int, dec] = Math.abs(x).toFixed(casas).split(".");
+  const milhar = int!.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${x < 0 && Number(x.toFixed(casas)) !== 0 ? "-" : ""}${milhar}${dec ? "," + dec : ""}`;
+}
+const n1 = (x: number) => br_(x, 1);
+const n2 = (x: number) => br_(x, 2);
+const n0 = (x: number) => br_(x, 0);
 const br = (d: DataISO) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 function horas(h: number): string {

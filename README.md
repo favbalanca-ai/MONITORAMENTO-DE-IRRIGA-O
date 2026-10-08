@@ -1,5 +1,8 @@
 # Manejo de irrigação — Fazenda Água Viva
 
+> **Versão em uso: Google Sheets + Apps Script** — ver [`apps-script/LEIA-ME.md`](apps-script/LEIA-ME.md).
+> O motor de cálculo em `src/` é o mesmo nas duas versões (o `apps-script/Motor.gs` é gerado dele e testado no Node).
+
 App que substitui a planilha de manejo: coleta a estação Ecowitt, calcula o balanço hídrico por pivô e manda a decisão do dia às 18h.
 Contexto completo e especificação: [`docs/CONTEXT.md`](docs/CONTEXT.md).
 
@@ -8,6 +11,7 @@ Contexto completo e especificação: [`docs/CONTEXT.md`](docs/CONTEXT.md).
 - [x] **Passo 1 — motor de cálculo** (`src/motor/`), validado contra a tabela da seção 7 do CONTEXT.md.
 - [x] **Passo 2 — coletor Ecowitt** (`src/coletor/`): leitura ao vivo, normalização pelo `.unit`, deduplicação e recuperação de lacunas pelo histórico do ecowitt.net.
 - [x] **Passos 3 e 4 — banco e job das 18h** (`src/banco/`, `src/job/`): SQLite embutido no Node, cadastro, lançamentos, balanço diário gravado e relatório por console, arquivo e e-mail.
+- [x] **Versão Google Sheets** (`apps-script/`): mesma lógica rodando na planilha, com gatilhos, e-mail e backup no Drive. Testada no Node com uma imitação do Apps Script.
 - [ ] WhatsApp (falta escolher o provedor) · telas · importação do histórico da planilha · rodar em paralelo com a planilha.
 
 ## Como rodar
@@ -68,6 +72,7 @@ src/coletor/      coleta da estação
   lacunas.ts        onde faltam leituras
   repositorio.ts    interface de armazenamento (+ CSV, para importar coletas antigas)
   tempo.ts / config.ts   fuso da estação; configuração do .env
+apps-script/      versão Google Sheets: Codigo.gs (planilha, gatilhos, e-mail, Drive) + Motor.gs (gerado)
 config/           cadastro da fazenda (fazenda.exemplo.json → fazenda.json)
 scripts/          linha de comando: coletar, banco, diario, servico
 test/             testes (node:test) e fixtures

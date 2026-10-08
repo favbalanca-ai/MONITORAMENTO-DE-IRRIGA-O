@@ -25,7 +25,7 @@ export function das(data: DataISO, plantio: DataISO): number {
 /** Estádio pela fração do ciclo. Depois do fim do ciclo, fica no último estádio. */
 export function estadioPorDas(cultura: Cultura, diasAposSemeadura: number): Estadio {
   const f = Math.max(0, diasAposSemeadura) / cultura.cicloDias;
-  const e = cultura.estadios.find((x) => f <= x.ateFracao) ?? cultura.estadios.at(-1);
+  const e = cultura.estadios.find((x) => f <= x.ateFracao) ?? cultura.estadios[cultura.estadios.length - 1];
   if (!e) throw new Error(`Cultura ${cultura.nome} sem estádios cadastrados.`);
   return e;
 }
