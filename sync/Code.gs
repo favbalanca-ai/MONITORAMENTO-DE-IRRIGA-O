@@ -19,6 +19,7 @@ var ABA = {
   CLIMA: "CLIMA",
   LEITURAS: "LEITURAS",
   LOG: "LOG",
+  PREVISAO: "PREVISAO",
   CACHE: "CACHE",
   USUARIOS: "USUÁRIOS APP",
   CONFIG_APP: "CONFIG APP",
@@ -32,11 +33,13 @@ var LIMITE_EXECUCAO_MS = 4.5 * 60 * 1000; // o Apps Script corta em 6 min
 /** Campos da aba ESTACAO, na ordem das linhas. */
 var CAMPOS_ESTACAO = [
   ["latitude", "Latitude (graus, negativo no sul)", -14.74, "Confirmar a posição real da estação."],
+  ["longitude", "Longitude (graus, negativo no oeste)", -46.24, "Confirmar. Usada na previsão de chuva (Open-Meteo)."],
   ["altitude", "Altitude (m)", 900, "Confirmar."],
   ["alturaAnemometro", "Altura do anemômetro (m)", 2, "Confirmar. Se não for 2 m, o vento é corrigido."],
   ["fuso", "Fuso horário", "America/Sao_Paulo", "Mato Grosso: America/Cuiaba."],
   ["grupoChuva", "Pluviômetro", "rainfall", "rainfall (báscula) ou rainfall_piezo (WS90)."],
   ["emails", "E-mails do relatório (separe por vírgula)", "", "Quem recebe o relatório das 18h."],
+  ["ibge", "Município (código IBGE) p/ previsão do INMET", 3126208, "Formoso-MG = 3126208. Vazio = sem a previsão do INMET."],
 ];
 
 var COLUNAS_PIVOS = [
@@ -64,6 +67,10 @@ var COLUNAS_PIVOS = [
   ["eficienciaPct", "Eficiência (%)"],
   ["potenciaKw", "Potência (kW)"],
   ["tarifaRsKwh", "Tarifa (R$/kWh)"],
+  // opcionais (3º item = true): criadas no fim da aba quando faltam
+  ["latitude", "Latitude (centro)", true],
+  ["longitude", "Longitude (centro)", true],
+  ["contorno", "Contorno (do KMZ)", true],
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
@@ -77,6 +84,7 @@ var CABECALHOS = {
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas"],
   LOG: ["Quando", "Ação", "Status", "Detalhe", "Dia do relatório"],
+  PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes"],
 };
 
 /* =========================== MENU E INSTALAÇÃO =========================== */
@@ -94,6 +102,7 @@ function onOpen() {
     .addItem("Testar conexão Ecowitt", "testarEcowitt")
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
+    .addItem("🌧 Atualizar previsão do tempo", "menuPrevisao")
     .addSeparator()
     .addItem("📱 Endereço para o app", "menuLinkApp")
     .addItem("👤 Criar administrador do app", "menuCriarAdmin")
@@ -108,6 +117,12 @@ function instalar() {
   var est = criarAbaSeFaltar_(ss, ABA.ESTACAO, ["Campo", "Valor", "Observação"]);
   if (est.getLastRow() < 2) {
     est.getRange(2, 1, CAMPOS_ESTACAO.length, 3).setValues(CAMPOS_ESTACAO.map(function (c) { return [c[1], c[2], c[3]]; }));
+  } else {
+    // planilha de versão anterior: acrescenta os campos novos no fim
+    var atuais = est.getRange(2, 1, est.getLastRow() - 1, 1).getValues().map(function (l) { return String(l[0]).trim(); });
+    CAMPOS_ESTACAO.forEach(function (c) {
+      if (atuais.indexOf(c[1]) < 0) est.appendRow([c[1], c[2], c[3]]);
+    });
   }
 
   var piv = criarAbaSeFaltar_(ss, ABA.PIVOS, COLUNAS_PIVOS.map(function (c) { return c[1]; }));
@@ -124,6 +139,7 @@ function instalar() {
   var lei = criarAbaSeFaltar_(ss, ABA.LEITURAS, CABECALHOS.LEITURAS);
   lei.getRange("A:A").setNumberFormat("@"); // texto: não deixa o Sheets converter a hora
   criarAbaSeFaltar_(ss, ABA.LOG, CABECALHOS.LOG);
+  criarAbaSeFaltar_(ss, ABA.PREVISAO, CABECALHOS.PREVISAO);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
   abaUsuarios_();
@@ -151,7 +167,7 @@ function criarAbaSeFaltar_(ss, nome, cabecalho) {
 }
 
 function recriarGatilhos_(fuso) {
-  var nossos = ["coletar", "recuperarRecentes", "relatorioDiario", "backupDiario", "continuarRecuperacao"];
+  var nossos = ["coletar", "recuperarRecentes", "relatorioDiario", "backupDiario", "continuarRecuperacao", "atualizarPrevisao"];
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (nossos.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -160,6 +176,7 @@ function recriarGatilhos_(fuso) {
   // nearMinute(20): roda entre 18:05 e 18:35, depois que a janela do dia fecha às 18h.
   ScriptApp.newTrigger("relatorioDiario").timeBased().atHour(18).nearMinute(20).everyDays(1).inTimezone(fuso).create();
   ScriptApp.newTrigger("backupDiario").timeBased().atHour(4).everyDays(1).inTimezone(fuso).create();
+  ScriptApp.newTrigger("atualizarPrevisao").timeBased().everyHours(3).create();
 }
 
 /** Tira espaços, quebras de linha e caracteres invisíveis que vêm junto ao copiar. */
@@ -227,7 +244,7 @@ function lerEstacao_() {
       for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === c[1] && vals[i][1] !== "") cfg[c[0]] = vals[i][1];
     });
   }
-  ["latitude", "altitude", "alturaAnemometro"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
+  ["latitude", "longitude", "altitude", "alturaAnemometro", "ibge"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
   cfg.fuso = String(cfg.fuso).trim();
   cfg.grupoChuva = String(cfg.grupoChuva).trim() || "rainfall";
   cfg.emails = String(cfg.emails || "").split(/[,;\s]+/).filter(function (e) { return e.indexOf("@") > 0; });
@@ -302,6 +319,9 @@ function lerPivos_(cfg) {
       },
       laminaMinimaMm: n(l, "laminaMinimaMm"),
       tensaoIrrigarKpa: n(l, "tensaoIrrigarKpa"),
+      latitude: n(l, "latitude"),
+      longitude: n(l, "longitude"),
+      contorno: contornoLido_(col.contorno < 0 ? "" : l[col.contorno]),
       equipamento: temEquip ? {
         raioM: n(l, "raioM"), anguloGraus: n(l, "anguloGraus"), vazaoM3h: n(l, "vazaoM3h"),
         velocidadeUltimaTorreMMin: n(l, "velocidadeUltimaTorreMMin"), percentimetroMinPct: n(l, "percentimetroMinPct"),
@@ -309,6 +329,16 @@ function lerPivos_(cfg) {
       } : undefined,
     };
   });
+}
+
+/** Contorno do pivô gravado como JSON [[lat,lon],…]; qualquer coisa estranha vira "sem contorno". */
+function contornoLido_(v) {
+  try {
+    var c = JSON.parse(String(v || ""));
+    return Array.isArray(c) && c.length >= 3 ? c : undefined;
+  } catch (e) {
+    return undefined;
+  }
 }
 
 function fusoValido_(fuso) {
@@ -664,14 +694,15 @@ function calcular_(dia) {
 
   var climaDia = clima[clima.length - 1];
   var et0Dia = Motor.et0PenmanMonteith(climaDia, estacao);
-  var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens);
+  var previsao = lerPrevisao_();
+  var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens, previsao ? previsao.dias : []);
   escreverPainel_(dia, climaDia, et0Dia, itens, msg);
-  salvarResumo_(dia, cfg, climaDia, et0Dia, itens);
+  salvarResumo_(dia, cfg, climaDia, et0Dia, itens, previsao);
   return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, itens: itens };
 }
 
 /** Resumo do último cálculo para o app abrir rápido (aba oculta CACHE, célula A1). */
-function salvarResumo_(dia, cfg, clima, et0, itens) {
+function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
   var r2 = function (x) { return Math.round(x * 100) / 100; };
   var resumo = {
     dia: dia,
@@ -680,8 +711,14 @@ function salvarResumo_(dia, cfg, clima, et0, itens) {
     pivos: itens.map(function (it) {
       var l = it.linha;
       var cult = it.pivo.cultura;
-      var p = { nome: it.pivo.nome, cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "" };
+      var eq = it.pivo.equipamento;
+      var p = {
+        nome: it.pivo.nome, cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "",
+        latitude: it.pivo.latitude, longitude: it.pivo.longitude, contorno: it.pivo.contorno || null,
+        raioM: eq ? eq.raioM : null, anguloGraus: eq ? eq.anguloGraus : null,
+      };
       if (!l) return p;
+      if (l.decisao === "IRRIGAR" && previsao) p.avisoChuva = Motor.avisoChuva(l.deficit, previsao.dias, dia);
       p.estadio = l.estadio;
       p.das = l.das;
       p.dae = Motor.dae(cult, l.das);
@@ -708,6 +745,64 @@ function salvarResumo_(dia, cfg, clima, et0, itens) {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
   aba.getRange(1, 1).setValue(JSON.stringify(resumo));
   return resumo;
+}
+
+/* ------------------------------ previsão do tempo ------------------------------ */
+
+/** Gatilho (a cada 3 h) e menu: busca Open-Meteo (mm, %) e INMET (texto) e grava na aba PREVISAO + CACHE. */
+function atualizarPrevisao() {
+  var cfg = lerEstacao_();
+  var fontes = [], erros = [], om = [], inmet = [];
+  if (cfg.latitude !== null && cfg.longitude !== null) {
+    try {
+      om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
+      fontes.push("Open-Meteo");
+    } catch (e) { erros.push("Open-Meteo: " + e.message); }
+  } else erros.push("Open-Meteo: preencha latitude e longitude na aba ESTACAO.");
+  if (cfg.ibge) {
+    try {
+      inmet = Motor.lerInmet(buscarJson_(Motor.INMET_URL + Math.round(cfg.ibge)));
+      fontes.push("INMET");
+    } catch (e) { erros.push("INMET: " + e.message); }
+  }
+  var dias = Motor.juntarPrevisao(om, inmet);
+  if (!dias.length) {
+    log_("previsão", "erro", erros.join(" | "));
+    return null;
+  }
+  var previsao = { atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes };
+  criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
+  escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, dias.map(function (d) {
+    return [d.data, d.chuvaMm === null ? "" : d.chuvaMm, d.probPct === null ? "" : d.probPct, d.tmin === null ? "" : d.tmin,
+      d.tmax === null ? "" : d.tmax, d.resumo || "", previsao.atualizadoEm, fontes.join(", ")];
+  }));
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
+  aba.getRange(2, 1).setValue(JSON.stringify(previsao));
+  log_("previsão", erros.length ? "parcial" : "ok", fontes.join(", ") + (erros.length ? " | " + erros.join(" | ") : ""));
+  return previsao;
+}
+
+function buscarJson_(url) {
+  var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var code = resp.getResponseCode();
+  if (code !== 200) throw new Error("HTTP " + code);
+  return JSON.parse(resp.getContentText());
+}
+
+function lerPrevisao_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
+  if (!aba || aba.getLastRow() < 2) return null;
+  var t = aba.getRange(2, 1).getValue();
+  try { return t ? JSON.parse(t) : null; } catch (e) { return null; }
+}
+
+function menuPrevisao() {
+  var p = atualizarPrevisao();
+  if (!p) { aviso_("Não consegui buscar a previsão. Veja a aba LOG."); return; }
+  var prox = p.dias.slice(0, 4).map(function (d) {
+    return d.data.split("-").reverse().slice(0, 2).join("/") + ": " + (d.chuvaMm === null ? "?" : d.chuvaMm) + " mm" + (d.probPct === null ? "" : " (" + d.probPct + "%)") + (d.resumo ? " — " + d.resumo : "");
+  });
+  aviso_("Previsão atualizada (" + p.fontes.join(", ") + "):\n" + prox.join("\n"));
 }
 
 function lerResumo_() {
@@ -1000,7 +1095,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.08-4";
+var VERSAO_SERVIDOR = "2026.10.08-5";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1109,6 +1204,7 @@ function dadosApp_(u) {
     usuario: u ? usuarioPublico_(u) : null,
     exigido: loginExigido_(),
     resumo: resumo,
+    previsao: lerPrevisao_(),
     erroCalculo: erroCalculo,
     ultimaLeitura: ultimaLeitura_(),
     cadastro: cadastroPivos_(),
@@ -1123,7 +1219,8 @@ function hashDados_() {
   var ss = SpreadsheetApp.getActive();
   var n = function (nome) { var a = ss.getSheetByName(nome); return a ? a.getLastRow() : 0; };
   var ult = ultimaLeitura_();
-  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), ult ? ult.quando : ""].join("|");
+  var prev = lerPrevisao_();
+  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), ult ? ult.quando : "", prev ? prev.atualizadoEm : ""].join("|");
 }
 
 function recalcularApp_() {
@@ -1336,6 +1433,7 @@ function salvarPivo_(dados, nomeOriginal) {
     var v = dados[c[0]];
     if (c[0] === "ativo" || c[0] === "palhada") return v === true || String(v).toUpperCase() === "SIM" ? "SIM" : "NÃO";
     if (c[0] === "nome" || c[0] === "cultura" || c[0] === "plantio" || c[0] === "inicioBalanco") return T_(String(v == null ? "" : v).trim());
+    if (c[0] === "contorno") return T_(contornoLido_(typeof v === "string" ? v : JSON.stringify(v)) ? (typeof v === "string" ? v : JSON.stringify(v)) : "");
     var n = Motor.numero(v);
     return n === null ? "" : n;
   });

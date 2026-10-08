@@ -7,12 +7,18 @@ feitos sem internet.
 ## Telas
 
 - **Hoje** — a decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
-  tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**.
+  tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**. Cartão **Próximos dias**
+  com a previsão de chuva (mm e % do Open-Meteo, texto do INMET) e aviso quando a chuva prevista cobre o
+  déficit. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar · cinza sem dados.
 - **Lançar** — irrigação (mm aplicados) ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — gráfico de déficit, AFD, lâmina mínima, chuva e irrigação (15 a 120 dias) e tabela.
+- **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
+  abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede).
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê.
+  Posição: **Importar KMZ com os pivôs** (um desenho por pivô, casado pelo nome ou número), ou no pivô
+  **KMZ/KML** de um desenho só, ou **📍 Usar minha posição** parado no centro do pivô.
 - **Ajustes** — endereço da planilha (/exec), puxar/enviar agora, lançamentos recusados, conta,
   usuários (administrador) e o registro das conversas com a planilha.
 - **Entrar** — login + PIN. **Minha conta** — trocar PIN, sair.

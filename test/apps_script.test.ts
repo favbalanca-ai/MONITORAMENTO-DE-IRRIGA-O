@@ -38,12 +38,12 @@ test("instalar cria abas, exemplo do Pivô 2, pastas no Drive e gatilhos — e p
   for (const a of ["PAINEL", "PIVOS", "ESTACAO", "IRRIGACOES", "UMIDADE", "BALANCO", "CLIMA", "LEITURAS", "LOG"]) assert.ok(amb.abas.has(a), a);
   assert.equal(amb.aba("PIVOS").objetos()[0]!["Pivô"], "Pivô 2");
   assert.deepEqual(amb.pastaApp.pastas.map((p) => p.nome).sort(), ["BACKUP", "RELATORIOS"]);
-  assert.deepEqual(amb.gatilhos.map((g) => g.funcao).sort(), ["backupDiario", "coletar", "recuperarRecentes", "relatorioDiario"]);
+  assert.deepEqual(amb.gatilhos.map((g) => g.funcao).sort(), ["atualizarPrevisao", "backupDiario", "coletar", "recuperarRecentes", "relatorioDiario"]);
   const rel = amb.gatilhos.find((g) => g.funcao === "relatorioDiario")!;
   assert.deepEqual(rel.chamadas.find(([n]) => n === "atHour")![1], [18]);
 
   amb.chamar("instalar");
-  assert.equal(amb.gatilhos.length, 4);
+  assert.equal(amb.gatilhos.length, 5);
   assert.equal(amb.aba("PIVOS").objetos().length, 1);
   assert.equal(amb.pastaApp.pastas.length, 2);
 });

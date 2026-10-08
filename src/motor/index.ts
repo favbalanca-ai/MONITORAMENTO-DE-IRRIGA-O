@@ -8,3 +8,4 @@ export * from "./solo.ts";
 export * from "./equipamento.ts";
 export * from "./balanco.ts";
 export * from "./cadastro.ts";
+export * from "./previsao.ts";

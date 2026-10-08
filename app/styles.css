@@ -116,6 +116,17 @@ svg text{fill:var(--muted);font-size:13px}
 .log div{padding:2px 0;border-top:1px dashed var(--line)} .log div:first-child{border-top:0}
 .log .e{color:var(--red)}
 
+.card.sem-bom{border-left:5px solid #2e7d32}.card.sem-atencao{border-left:5px solid #f0b429}
+.card.sem-ruim{border-left:5px solid #c62828}.card.sem-sem{border-left:5px solid #9e9e9e}
+.prev{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
+.prev-dia{background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center;font-size:12px;color:var(--muted);min-width:0}
+.prev-dia.chuva{background:var(--blue-soft)}
+.prev-dia small{display:block;font-weight:600}
+.prev-dia b{display:block;font-size:16px;color:var(--blue);font-variant-numeric:tabular-nums}
+.prev-dia b em{font-style:normal;font-size:10px}
+.prev-dia span{display:block}
+.mapa{height:min(70vh,560px);min-height:300px;background:#dfe7ea}
+.rotulo-pivo{background:rgba(22,64,77,.85);color:#fff;font-weight:700;font-size:12px;padding:2px 7px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-50%)}
 .kc-det{margin-top:10px}.kc-det summary{cursor:pointer;font-size:13px}
 .sugestao{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--teal-soft);border-radius:10px;padding:8px 12px;margin-top:10px;font-size:13px}
 .sugestao .muted{font-size:12px}
@@ -137,7 +148,7 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
     background:#16404d;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.15)}
   .brand,.sidebar-foot{display:none}
   #nav{flex-direction:row;padding:4px 2px;gap:0}
-  #nav a{flex:1;flex-direction:column;gap:2px;padding:7px 2px 6px;font-size:11px;border-radius:8px;justify-content:center;min-height:52px}
+  #nav a{flex:1;flex-direction:column;gap:2px;padding:7px 1px 6px;font-size:10.5px;border-radius:8px;justify-content:center;min-height:52px}
   #nav a .ico{font-size:19px;width:auto}
   .topbar{padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px))}
   #page-title{font-size:17px}

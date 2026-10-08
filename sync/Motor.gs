@@ -646,6 +646,12 @@ var Motor = (function () {
               num(p.solo.fatorDeplecaoFixo, `${o}.solo.fatorDeplecaoFixo`, 0.05, 1);
           num(p.laminaMinimaMm, `${o}.laminaMinimaMm`, 0, 100);
           num(p.tensaoIrrigarKpa, `${o}.tensaoIrrigarKpa`, -1500, 0);
+          if (p.latitude != null)
+              num(p.latitude, `${o}.latitude`, -90, 90);
+          if (p.longitude != null)
+              num(p.longitude, `${o}.longitude`, -180, 180);
+          if ((p.latitude == null) !== (p.longitude == null))
+              erros.push(`${o}: latitude e longitude precisam vir juntas`);
           if (p.equipamento) {
               const e = p.equipamento;
               num(e.raioM, `${o}.equipamento.raioM`, 1);
@@ -659,6 +665,113 @@ var Motor = (function () {
           }
       });
       return erros;
+  }
+  // ---- src/motor/previsao.ts ----
+  const INMET_URL = "https://apiprevmet3.inmet.gov.br/previsao/";
+  function urlOpenMeteo(latitude, longitude, fuso, dias = 7) {
+      return ("https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
+          "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min" +
+          "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
+  }
+  const num = (v) => {
+      const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.replace(",", ".")) : NaN;
+      return Number.isFinite(n) ? n : null;
+  };
+  /** Resposta do Open-Meteo (`daily.time[]` + séries) → um item por dia. */
+  function lerOpenMeteo(json) {
+      const d = json === null || json === void 0 ? void 0 : json.daily;
+      if (!d || !Array.isArray(d["time"]))
+          throw new Error("Open-Meteo: resposta sem a série diária.");
+      return d["time"].map((t, i) => {
+          var _a, _b, _c, _d;
+          return ({
+              data: String(t).slice(0, 10),
+              chuvaMm: num((_a = d["precipitation_sum"]) === null || _a === void 0 ? void 0 : _a[i]),
+              probPct: num((_b = d["precipitation_probability_max"]) === null || _b === void 0 ? void 0 : _b[i]),
+              tmax: num((_c = d["temperature_2m_max"]) === null || _c === void 0 ? void 0 : _c[i]),
+              tmin: num((_d = d["temperature_2m_min"]) === null || _d === void 0 ? void 0 : _d[i]),
+          });
+      });
+  }
+  /**
+   * Resposta do INMET (`{ "<ibge>": { "dd/mm/aaaa": { manha, tarde, noite } | {...} } }`) → um item por dia,
+   * com o resumo por turno. Os dois primeiros dias vêm por turno; os demais, inteiros.
+   */
+  function lerInmet(json) {
+      var _a;
+      const raiz = json;
+      const porCidade = raiz && Object.values(raiz)[0];
+      if (!porCidade || typeof porCidade !== "object")
+          throw new Error("INMET: resposta sem previsão para o município.");
+      const dias = [];
+      for (const [dataBr, v] of Object.entries(porCidade)) {
+          const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataBr);
+          if (!m || !v || typeof v !== "object")
+              continue;
+          const data = `${m[3]}-${m[2]}-${m[1]}`;
+          const turnos = ["manha", "tarde", "noite"].filter((t) => v[t] && typeof v[t] === "object");
+          const partes = turnos.length ? turnos.map((t) => v[t]) : [v];
+          const rotulo = { manha: "manhã", tarde: "tarde", noite: "noite" };
+          const resumo = turnos.length
+              ? turnos.map((t, i) => { var _a; return `${rotulo[t]}: ${String((_a = partes[i]["resumo"]) !== null && _a !== void 0 ? _a : "").toLowerCase()}`; }).join("; ")
+              : String((_a = v["resumo"]) !== null && _a !== void 0 ? _a : "").toLowerCase();
+          const tmaxs = partes.map((p) => num(p["temp_max"])).filter((x) => x !== null);
+          const tmins = partes.map((p) => num(p["temp_min"])).filter((x) => x !== null);
+          dias.push({
+              data,
+              chuvaMm: null,
+              probPct: null,
+              tmax: tmaxs.length ? Math.max(...tmaxs) : null,
+              tmin: tmins.length ? Math.min(...tmins) : null,
+              resumo: resumo.replace(/\s+/g, " ").trim(),
+          });
+      }
+      return dias.sort((a, b) => (a.data < b.data ? -1 : 1));
+  }
+  /** Junta números do Open-Meteo com o texto do INMET pela data. Qualquer uma das listas pode faltar. */
+  function juntarPrevisao(openMeteo, inmet) {
+      const porData = new Map();
+      for (const d of openMeteo)
+          porData.set(d.data, { ...d });
+      for (const d of inmet) {
+          const x = porData.get(d.data);
+          if (x) {
+              x.resumo = d.resumo;
+              if (x.tmax === null)
+                  x.tmax = d.tmax;
+              if (x.tmin === null)
+                  x.tmin = d.tmin;
+          }
+          else
+              porData.set(d.data, { ...d });
+      }
+      return [...porData.values()].sort((a, b) => (a.data < b.data ? -1 : 1));
+  }
+  /** Chuva prevista (mm) e probabilidade máxima nos próximos `dias` depois de `hoje`. */
+  function chuvaPrevista(previsao, hoje, dias = 2) {
+      var _a;
+      const prox = previsao.filter((d) => d.data > hoje).slice(0, dias);
+      let mm = 0, prob = null;
+      for (const d of prox) {
+          mm += (_a = d.chuvaMm) !== null && _a !== void 0 ? _a : 0;
+          if (d.probPct !== null)
+              prob = Math.max(prob !== null && prob !== void 0 ? prob : 0, d.probPct);
+      }
+      return { mm: Math.round(mm * 10) / 10, probPct: prob, ate: prox.length ? prox[prox.length - 1].data : null };
+  }
+  const dBr = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  /**
+   * Aviso para um pivô com decisão IRRIGAR: se a chuva prevista nos próximos 2 dias cobre ≥ 80% do déficit
+   * com probabilidade ≥ 50%, vale pensar em adiar. Sem previsão numérica, não avisa.
+   */
+  function avisoChuva(deficitMm, previsao, hoje) {
+      const p = chuvaPrevista(previsao, hoje, 2);
+      if (!p.ate || p.mm <= 0 || deficitMm <= 0)
+          return null;
+      if (p.mm < 0.8 * deficitMm || (p.probPct !== null && p.probPct < 50))
+          return null;
+      const prob = p.probPct !== null ? ` (${Math.round(p.probPct)}% de chance)` : "";
+      return `Previsão de ${p.mm.toFixed(1).replace(".", ",")} mm de chuva até ${dBr(p.ate)}${prob} cobre o déficit: avalie adiar a irrigação.`;
   }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
@@ -860,8 +973,8 @@ var Motor = (function () {
       return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, "0")} min`;
   }
   /** Texto do relatório do dia — curto para caber no WhatsApp, com *negrito* no estilo do WhatsApp. */
-  function montarMensagem(data, clima, itens) {
-      var _a, _b;
+  function montarMensagem(data, clima, itens, previsao = []) {
+      var _a, _b, _c;
       const irrigar = itens.filter((i) => { var _a; return ((_a = i.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; }).length;
       const assunto = `Manejo ${br(data)}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
       const l = [
@@ -871,16 +984,28 @@ var Motor = (function () {
       ];
       if ((_a = clima.estimados) === null || _a === void 0 ? void 0 : _a.length)
           l.push(`⚠️ Estação sem dado de ${clima.estimados.join(", ")}: valores do dia vizinho.`);
+      const prox = previsao.filter((d) => d.data > data).slice(0, 3);
+      if (prox.length) {
+          const p = chuvaPrevista(previsao, data, 2);
+          l.push(`🌧 Previsão: ${prox.map((d) => `${br(d.data)} ${d.chuvaMm === null ? "?" : n1(d.chuvaMm)} mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")}` +
+              ` — ${n1(p.mm)} mm em 2 dias`);
+          const r = (_b = prox[0]) === null || _b === void 0 ? void 0 : _b.resumo;
+          if (r)
+              l.push(`   INMET amanhã: ${r}`);
+      }
       for (const it of itens) {
           l.push("");
           const x = it.linha;
           if (!x) {
-              l.push(`*${it.pivo.nome}* — ${(_b = it.aviso) !== null && _b !== void 0 ? _b : "sem cálculo"}`);
+              l.push(`*${it.pivo.nome}* — ${(_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo"}`);
               continue;
           }
           l.push(`*${it.pivo.nome}* — ${it.pivo.cultura.nome} ${x.estadio}, ${x.das} DAS`);
           if (x.decisao === "IRRIGAR") {
               l.push(`🚿 *IRRIGAR* — repor ${n1(x.deficit)} mm`);
+              const chuva = avisoChuva(x.deficit, previsao, data);
+              if (chuva)
+                  l.push(`   🌧 ${chuva}`);
               const r = x.recomendacao;
               if (r) {
                   l.push(`   Percentímetro *${n0(r.percentimetroPct)}%* · volta ${horas(r.tempoVoltaH)} · ${n1(r.laminaBrutaMm)} mm brutos`);
@@ -912,5 +1037,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

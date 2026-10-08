@@ -15,10 +15,14 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 5. **💧 Manejo → 1. Instalar / atualizar**. O Google vai pedir autorização (planilha, Drive, e-mail, acesso à internet para a Ecowitt). Aceite. Isso cria as abas, as pastas `BACKUP` e `RELATORIOS` ao lado da planilha e os gatilhos.
 6. **💧 Manejo → 2. Configurar chaves Ecowitt**: cole as chaves **novas** (as antigas ficaram expostas na planilha MASTER). Elas ficam guardadas nas propriedades do script, não aparecem na planilha nem nos backups.
 7. Revise as abas:
-   - **ESTACAO**: latitude, altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`) e **e-mails do relatório**.
+   - **ESTACAO**: latitude, **longitude**, altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`),
+     **e-mails do relatório** e o **código IBGE do município** (Formoso-MG = 3126208) para a previsão do INMET.
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
      Na coluna **Cultura** vale `soja`, `milho`, `sorgo`, `feijao`, `feijao pd`, `trigo` ou `algodao` (ver `docs/CULTURAS.md`).
      A coluna **Ciclo (dias, vazio = padrão)** é opcional: preenchida, estica/encurta a curva de Kc para a cultivar plantada.
+   - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
+     mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
+     só avisa — não entra no balanço.
 8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 

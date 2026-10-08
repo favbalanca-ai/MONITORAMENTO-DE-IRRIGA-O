@@ -7,6 +7,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 import { extname, join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { deLocal } from "../../src/coletor/tempo.ts";
@@ -61,6 +62,14 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo), headers: { "Access-Control-Allow-Origin": "*" } });
   });
+  // Mapa: o Leaflet do CDN vem da cópia local (node_modules) e as imagens de satélite viram um pixel
+  const LEAFLET = new URL("../../node_modules/leaflet/dist/", import.meta.url).pathname;
+  await ctx.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/leaflet\/1\.9\.4\/leaflet\.min\.(js|css)/, (r) => {
+    const js = r.request().url().endsWith(".js");
+    r.fulfill({ status: 200, contentType: js ? "text/javascript" : "text/css", body: readFileSync(join(LEAFLET, js ? "leaflet.js" : "leaflet.css")) });
+  });
+  const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
   const page = await ctx.newPage();
   const erros: string[] = [];
   page.on("pageerror", (e) => erros.push(e.message));
@@ -269,7 +278,7 @@ test("pivôs: culturas com nome, sugestão da Embrapa preenche o solo e a curva 
   assert.equal(await page.locator("#p_cultura option:checked").textContent(), "Soja (120 dias)");
   await page.selectOption("#p_cultura", "trigo");
   await page.getByText(/raiz máxima 40 cm em 50 dias, fator fixo 0,40/).waitFor();
-  await page.getByRole("button", { name: "Usar" }).click();
+  await page.getByRole("button", { name: "Usar", exact: true }).click();
   assert.equal(await page.inputValue("#p_raizMaxCm"), "40");
   assert.equal(await page.inputValue("#p_fatorFixo"), "0,4");
   await page.fill("#p_cicloDias", "130");
@@ -278,5 +287,83 @@ test("pivôs: culturas com nome, sugestão da Embrapa preenche o solo e a curva 
   assert.equal(amb.aba("PIVOS").objetos()[0]!["Ciclo (dias, vazio = padrão)"], 130);
   await page.getByText(/Trigo \(130 dias\)/).waitFor();
   await page.screenshot({ path: PRINTS + "9_culturas.png", fullPage: true });
+  await ctx.close();
+});
+
+/** KML com um desenho por pivô (contorno circular aproximado) — nomes como vêm do Google Earth. */
+function kmlExemplo(nomes: string[]): string {
+  const pm = nomes.map((n, i) => {
+    const lat0 = -14.9 - i * 0.02, lon0 = -46.25, r = 0.0036; // ~400 m
+    const pts = Array.from({ length: 36 }, (_, k) => { const a = (k / 36) * 2 * Math.PI; return `${(lon0 + r * Math.cos(a)).toFixed(6)},${(lat0 + r * Math.sin(a)).toFixed(6)},0`; });
+    return `<Placemark><name>${n}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${pts.join(" ")} ${pts[0]}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Pivôs</name>${pm.join("")}</Document></kml>`;
+}
+/** .kmz = zip com um doc.kml dentro (deflate), como o Google Earth salva. */
+function kmzDe(kml: string): Buffer {
+  const nome = Buffer.from("doc.kml"), dados = Buffer.from(kml, "utf8"), comp = deflateRawSync(dados);
+  const crc = (() => { let c = ~0; for (const b of dados) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; })();
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8); local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(comp.length, 18); local.writeUInt32LE(dados.length, 22); local.writeUInt16LE(nome.length, 26);
+  const cen = Buffer.alloc(46); cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6); cen.writeUInt16LE(8, 10); cen.writeUInt32LE(crc, 16);
+  cen.writeUInt32LE(comp.length, 20); cen.writeUInt32LE(dados.length, 24); cen.writeUInt16LE(nome.length, 28); cen.writeUInt32LE(0, 42);
+  const fim = Buffer.alloc(22); fim.writeUInt32LE(0x06054b50, 0); fim.writeUInt16LE(1, 8); fim.writeUInt16LE(1, 10);
+  fim.writeUInt32LE(cen.length + nome.length, 12); fim.writeUInt32LE(local.length + nome.length + comp.length, 16);
+  return Buffer.concat([local, nome, comp, cen, nome, fim]);
+}
+
+test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
+  const amb = planilha();
+  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("../fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  amb.chamar("atualizarPrevisao");
+  amb.chamar("calcular_", "2026-02-08");
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "jose", "4321");
+  await page.getByText("🌧 Próximos dias").waitFor();
+  await page.getByText("20,5 mm em 2 dias").waitFor();
+  await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
+  await page.getByText(/Previsão de 20,5 mm de chuva até 10\/02/).waitFor();
+  assert.equal(await page.locator(".card.sem-ruim").count(), 1);
+  await page.screenshot({ path: PRINTS + "10_previsao.png", fullPage: true });
+  await ctx.close();
+});
+
+test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro preenche centro e raio", async () => {
+  const amb = planilha();
+  const adm = amb.post({ __login: { login: "fabiana", pin: "1234" } }).token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 3", raioM: "" }, original: null } });
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "fabiana", "1234");
+  await page.getByRole("link", { name: /Mapa/ }).click();
+  await page.getByText("Nenhum pivô com posição ainda.").waitFor();
+  await page.getByText(/Sem posição: Pivô 2, Pivô 3/).waitFor();
+
+  await page.goto(base + "#/pivos");
+  await page.locator("#kmz-todos").setInputFiles({ name: "pivos.kmz", mimeType: "application/vnd.google-earth.kmz", buffer: kmzDe(kmlExemplo(["PIVO 02", "P3", "Reservatório"])) });
+  await page.getByText(/raio ≈ [34]\d\d m/).first().waitFor();
+  assert.equal(await page.locator("select[data-desenho='0'] option:checked").textContent(), "Pivô 2");
+  assert.equal(await page.locator("select[data-desenho='1'] option:checked").textContent(), "Pivô 3");
+  assert.equal(await page.locator("select[data-desenho='2'] option:checked").textContent(), "— não importar —");
+  await page.locator("#kmz-salvar").click();
+  await page.getByText("✅ 2 pivô(s) com posição salva.").waitFor();
+  const linhas = amb.aba("PIVOS").objetos();
+  assert.ok(Math.abs(Number(linhas[0]!["Latitude (centro)"]) - -14.9) < 0.001);
+  assert.ok(String(linhas[0]!["Contorno (do KMZ)"]).startsWith("[["));
+  assert.ok(Math.abs(Number(linhas[1]!["Raio (m)"]) - 400) < 30, "raio estimado pelo contorno só onde não havia");
+  assert.equal(linhas[0]!["Raio (m)"], 400);
+
+  await page.locator(".leaflet-interactive").first().waitFor();
+  assert.equal(await page.locator(".leaflet-interactive").count(), 2);
+  await page.getByText("Pivô 2", { exact: true }).first().waitFor();
+  await page.screenshot({ path: PRINTS + "11_mapa.png", fullPage: true });
+
+  // cadastro de um pivô: KML de um desenho só
+  await page.goto(base + "#/pivos/1");
+  await page.locator("#p_arquivo").setInputFiles({ name: "p3.kml", mimeType: "application/vnd.google-earth.kml+xml", buffer: Buffer.from(kmlExemplo(["Pivô 3"])) });
+  await page.getByText(/Desenho "Pivô 3" · raio ≈ [34]\d\d m · 37 pontos/).waitFor();
+  assert.equal(await page.inputValue("#p_latitude"), "-14,9");
   await ctx.close();
 });

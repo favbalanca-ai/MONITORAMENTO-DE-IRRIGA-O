@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.08-5';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.08-6';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -165,7 +165,7 @@ async function enviarFila() {
 
 /* ================= navegação ================= */
 const V = {};
-const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', historico: 'Histórico', pivos: 'Pivôs', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
+const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', historico: 'Histórico', mapa: 'Mapa', pivos: 'Pivôs', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
 function editando() { const a = document.activeElement; return !!a && /INPUT|SELECT|TEXTAREA/.test(a.tagName) && !!a.value; }
 
 function route(opts) {
@@ -207,6 +207,7 @@ V.hoje = function () {
     '<p class="muted" style="margin-top:8px">Calculado em ' + esc(dataBr(r.calculadoEm)) + ' às ' + esc((r.calculadoEm || '').slice(11, 16)) +
     (ult ? ' · última leitura ' + esc(dataBr(ult.quando)) + ' ' + esc(ult.quando.slice(11, 16)) + (ult.tempC != null ? ' (' + br(ult.tempC, 1) + ' °C)' : '') : '') + '</p>' +
     (c.estimados && c.estimados.length ? '<ul class="alertas"><li>Estação sem dado de ' + esc(c.estimados.join(', ')) + ' — usado o dia vizinho.</li></ul>' : '') + '</div>';
+  h += cardPrevisao(r.dia);
   h += r.pivos.map((p) => {
     if (!p.decisao) return '<div class="card"><h2>' + esc(p.nome) + '</h2><p class="muted">' + esc(p.aviso || 'sem cálculo') + '</p></div>';
     const pct = p.afd > 0 ? Math.min(100, (p.deficit / p.afd) * 100) : 0;
@@ -217,17 +218,40 @@ V.hoje = function () {
       : (p.decisao === 'IRRIGAR' ? '<p class="muted" style="margin-top:8px">Cadastre o equipamento do pivô para ver percentímetro, tempo e custo.</p>' : '');
     const alertas = (p.alertas || []).filter((a) => a.indexOf('Só ') !== 0 && a.indexOf('Clima estimado') !== 0);
     const fim = p.fimCicloDas != null && p.das > p.fimCicloDas;
-    return '<div class="card"><div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="muted">' + esc(p.cultura) + ' · ' + esc(p.estadio) + ' · ' + esc(p.das) + ' DAS' +
+    return '<div class="card sem-' + semaforo(p) + '"><div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="muted">' + esc(p.cultura) + ' · ' + esc(p.estadio) + ' · ' + esc(p.das) + ' DAS' +
       (p.emergenciaDias ? ' (' + esc(p.dae) + ' DAE)' : '') + ' · Kc ' + br(p.kc, 2) + (fim ? ' · <b style="color:var(--red)">ciclo encerrado</b>' : '') + '</div></div>' +
       '<span class="badge ' + classeDec(p.decisao) + '">' + (p.decisao === 'IRRIGAR' ? '🚿 ' : '') + esc(p.decisao) + '</span></div>' +
       '<div class="bar" title="Déficit em relação à AFD"><span style="width:' + pct.toFixed(1) + '%"></span>' + (marca != null ? '<i style="left:' + marca.toFixed(1) + '%"></i>' : '') + '</div>' +
       '<div class="row muted"><span>Déficit <b style="color:var(--ink)">' + br(p.deficit, 1) + ' mm</b></span><span>AFD ' + br(p.afd, 1) + ' mm · ETc ' + br(p.etc, 1) + ' mm</span></div>' +
-      rec + (alertas.length ? '<ul class="alertas">' + alertas.map((a) => '<li>⚠️ ' + esc(a) + '</li>').join('') + '</ul>' : '') +
+      rec + (p.avisoChuva ? '<ul class="alertas"><li>🌧 ' + esc(p.avisoChuva) + '</li></ul>' : '') +
+      (alertas.length ? '<ul class="alertas">' + alertas.map((a) => '<li>⚠️ ' + esc(a) + '</li>').join('') + '</ul>' : '') +
       (p.curvaKc ? '<details class="kc-det"><summary class="muted">Curva de Kc do ciclo</summary>' + graficoKc(p.curvaKc, p.das, p.emergenciaDias) + '</details>' : '') +
       (p.diasIncertos ? '<p class="muted" style="margin-top:8px">ℹ️ ' + esc(p.diasIncertos) + ' dia(s) do balanço com clima estimado ou incompleto.</p>' : '') + '</div>';
   }).join('');
   return h || '<div class="card vazio">Nenhum pivô ativo.</div>';
 };
+
+/** Semáforo do pivô: bom (verde), atencao (amarelo, déficit ≥ 70% da lâmina mínima), ruim (vermelho = IRRIGAR), sem (cinza). */
+function semaforo(p) {
+  if (!p || !p.decisao || p.decisao === 'SEM DADOS') return 'sem';
+  if (p.decisao === 'IRRIGAR') return 'ruim';
+  return p.laminaMinimaMm > 0 && p.deficit / p.laminaMinimaMm >= 0.7 ? 'atencao' : 'bom';
+}
+const SEM_COR = { bom: '#2e7d32', atencao: '#f0b429', ruim: '#c62828', sem: '#9e9e9e' };
+const SEM_ROTULO = { bom: 'Bom', atencao: 'Atenção', ruim: 'Irrigar', sem: 'Sem dados' };
+
+/** Cartão "Próximos dias" com a previsão (Open-Meteo = mm e %, INMET = texto). */
+function cardPrevisao(dia) {
+  const pv = DADOS.previsao; if (!pv || !pv.dias || !pv.dias.length) return '';
+  const prox = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 5);
+  if (!prox.length) return '';
+  const soma = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
+  return '<div class="card"><div class="row"><h2>🌧 Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span></div>' +
+    '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + '"><small>' + esc(dataBr(d.data)) + '</small><b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
+      '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' + (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') + '</div>').join('') + '</div>' +
+    (prox[0].resumo ? '<p class="muted" style="margin-top:8px">INMET amanhã — ' + esc(prox[0].resumo) + '</p>' : '') +
+    '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + '. A previsão não entra no balanço; só avisa.</p></div>';
+}
 
 /* ================= LANÇAR ================= */
 let tipoLanc = 'irrigacao';
@@ -371,11 +395,131 @@ function culturas() { return (DADOS && DADOS.cadastro && DADOS.cadastro.culturas
 function cultura(chave) { const k = String(chave || '').toLowerCase().trim(); return culturas().find((c) => c.chave === k) || null; }
 function nomeCultura(chave) { const c = cultura(chave); return c ? c.nome : String(chave || ''); }
 
+/* ================= MAPA ================= */
+let leafletP = null, mapaAtual = null;
+function carregarLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletP) return leafletP;
+  leafletP = new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
+    const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    sc.onload = res; sc.onerror = () => { leafletP = null; rej(new Error('Não consegui baixar o mapa (sem internet?).')); };
+    document.head.appendChild(sc);
+  });
+  return leafletP;
+}
+/** Pivôs com posição: junta o cadastro (lat/lon/contorno/raio) com o resumo do dia (decisão, déficit). */
+function pivosNoMapa() {
+  const cad = DADOS && DADOS.cadastro ? DADOS.cadastro.pivos : [];
+  const res = DADOS && DADOS.resumo ? DADOS.resumo.pivos : [];
+  return cad.map((c) => {
+    const r = res.find((x) => x.nome === c.nome) || {};
+    let contorno = null; try { contorno = typeof c.contorno === 'string' && c.contorno ? JSON.parse(c.contorno) : c.contorno; } catch (e) { contorno = null; }
+    const lat = Number(String(c.latitude).replace(',', '.')), lon = Number(String(c.longitude).replace(',', '.'));
+    return Object.assign({}, r, { nome: c.nome, ativo: simNao(c.ativo), cultura: nomeCultura(c.cultura), lat: isFinite(lat) && c.latitude !== '' ? lat : null, lon: isFinite(lon) && c.longitude !== '' ? lon : null,
+      contorno: Array.isArray(contorno) && contorno.length >= 3 ? contorno : null, raioM: Number(c.raioM) || null, anguloGraus: Number(c.anguloGraus) || 360 });
+  });
+}
+V.mapa = function () {
+  if (mapaAtual) { try { mapaAtual.remove(); } catch (e) { /* já foi */ } mapaAtual = null; }
+  if (!DADOS || !DADOS.cadastro) return semDados();
+  const ps = pivosNoMapa(), com = ps.filter((p) => p.lat != null && p.lon != null), sem = ps.filter((p) => p.lat == null || p.lon == null);
+  return '<div class="card" style="padding:0;overflow:hidden"><div id="mapa" class="mapa"><div class="loading" style="padding:30px;text-align:center">' + (com.length ? 'Carregando o mapa…' : 'Nenhum pivô com posição ainda.') + '</div></div></div>' +
+    '<div class="card"><div class="legenda">' + Object.keys(SEM_COR).map((k) => '<span style="--c:' + SEM_COR[k] + '">' + SEM_ROTULO[k] + '</span>').join('') + '</div>' +
+    '<ul class="lista" style="margin-top:8px">' + com.map((p) => '<li><div class="t"><b style="color:' + SEM_COR[semaforo(p)] + '">●</b> ' + esc(p.nome) + ' <span class="muted">' + esc(p.cultura) + (p.decisao ? ' · déficit ' + br(p.deficit, 1) + ' mm' : '') + '</span></div>' +
+      (p.decisao ? '<span class="badge ' + classeDec(p.decisao) + '">' + esc(p.decisao) + '</span>' : '') + '</li>').join('') + '</ul>' +
+    (sem.length ? '<p class="muted" style="margin-top:10px">Sem posição: ' + esc(sem.map((p) => p.nome).join(', ')) + '. ' + (ehAdmin() ? 'Em <a href="#/pivos">Pivôs</a>, importe o KMZ ou use "📍 Usar minha posição".' : 'O administrador cadastra pelo KMZ.') + '</p>' : '') + '</div>';
+};
+V.mapa_depois = function () {
+  const com = pivosNoMapa().filter((p) => p.lat != null && p.lon != null); if (!com.length) return;
+  carregarLeaflet().then(() => {
+    const el = $('#mapa'); if (!el || el._leaflet_id) return; el.innerHTML = '';
+    const mapa = L.map(el, { zoomControl: true, attributionControl: true }); mapaAtual = mapa;
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: 'Imagens: Esri' }).addTo(mapa);
+    const ruas = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+    L.control.layers({ 'Satélite': sat, 'Mapa': ruas }, null, { position: 'topright' }).addTo(mapa);
+    // o Leaflet só desenha depois de ter uma vista: calcula o enquadramento à mão e aplica antes das formas
+    const pontos = [];
+    com.forEach((p) => {
+      if (p.contorno) p.contorno.forEach((q) => pontos.push(q));
+      else { const d = (p.raioM || 300) / 111320; pontos.push([p.lat - d, p.lon - d], [p.lat + d, p.lon + d]); }
+    });
+    mapa.fitBounds(L.latLngBounds(pontos).pad(0.2));
+    const grupo = L.featureGroup().addTo(mapa);
+    com.forEach((p) => {
+      const cor = SEM_COR[semaforo(p)], estilo = { color: cor, weight: 2, fillColor: cor, fillOpacity: 0.35 };
+      const forma = p.contorno ? L.polygon(p.contorno, estilo) : L.circle([p.lat, p.lon], Object.assign({ radius: p.raioM || 300 }, estilo));
+      forma.bindPopup('<b>' + esc(p.nome) + '</b><br>' + esc(p.cultura) + (p.decisao ? '<br><b>' + esc(p.decisao) + '</b> · déficit ' + br(p.deficit, 1) + ' mm · AFD ' + br(p.afd, 1) + ' mm' +
+        (p.rec && p.decisao === 'IRRIGAR' ? '<br>Percentímetro ' + br(p.rec.percentimetroPct, 0) + '% · volta ' + horas(p.rec.tempoVoltaH) : '') : '<br>' + esc(p.aviso || 'sem cálculo')));
+      forma.addTo(grupo);
+      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'rotulo-pivo', html: esc(p.nome), iconSize: null }), interactive: false }).addTo(grupo);
+    });
+  }).catch((e) => { const el = $('#mapa'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; });
+};
+
+/* ================= KMZ / KML ================= */
+/** Lê um .kmz (zip) ou .kml e devolve os desenhos: [{nome, pontos:[[lat,lon]…], centro:[lat,lon], raioM}]. */
+async function lerKml(arquivo) {
+  const buf = new Uint8Array(await arquivo.arrayBuffer());
+  const xml = buf[0] === 0x50 && buf[1] === 0x4b ? await kmlDoKmz(buf) : new TextDecoder().decode(buf);
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('Arquivo KML inválido.');
+  const marcas = Array.from(doc.getElementsByTagNameNS('*', 'Placemark'));
+  const saida = [];
+  marcas.forEach((pm, i) => {
+    const nomeEl = pm.getElementsByTagNameNS('*', 'name')[0];
+    const coords = Array.from(pm.getElementsByTagNameNS('*', 'coordinates')).map((c) => c.textContent).filter(Boolean);
+    if (!coords.length) return;
+    const pontos = coords[0].trim().split(/\s+/).map((t) => t.split(',').map(Number)).filter((v) => v.length >= 2 && isFinite(v[0]) && isFinite(v[1])).map((v) => [v[1], v[0]]);
+    if (!pontos.length) return;
+    saida.push(Object.assign({ nome: (nomeEl ? nomeEl.textContent : '').trim() || 'Desenho ' + (i + 1), pontos: simplificar(pontos, 72) }, geometria(pontos)));
+  });
+  if (!saida.length) throw new Error('Não achei nenhum desenho (Placemark) no arquivo.');
+  return saida;
+}
+/** Só o arquivo .kml dentro do .kmz (zip): lê o diretório central e descompacta com a API nativa do navegador. */
+async function kmlDoKmz(buf) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), dec = new TextDecoder();
+  let fim = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { fim = i; break; }
+  if (fim < 0) throw new Error('KMZ inválido.');
+  const n = dv.getUint16(fim + 10, true); let off = dv.getUint32(fim + 16, true);
+  for (let k = 0; k < n && dv.getUint32(off, true) === 0x02014b50; k++) {
+    const metodo = dv.getUint16(off + 10, true), tam = dv.getUint32(off + 20, true), nl = dv.getUint16(off + 28, true), el = dv.getUint16(off + 30, true), cl = dv.getUint16(off + 32, true), local = dv.getUint32(off + 42, true);
+    const nome = dec.decode(buf.subarray(off + 46, off + 46 + nl)); off += 46 + nl + el + cl;
+    if (!/\.kml$/i.test(nome)) continue;
+    const ini = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true), dados = buf.subarray(ini, ini + tam);
+    if (metodo === 0) return dec.decode(dados);
+    if (metodo !== 8) throw new Error('KMZ com compressão desconhecida.');
+    if (!window.DecompressionStream) throw new Error('Este navegador não abre KMZ: exporte como KML.');
+    return await new Response(new Blob([dados]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  }
+  throw new Error('KMZ sem arquivo .kml dentro.');
+}
+function distM(a, b) { const R = 6371000, r = Math.PI / 180, dl = (b[0] - a[0]) * r, dn = (b[1] - a[1]) * r, x = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
+function geometria(pontos) {
+  const centro = [pontos.reduce((t, p) => t + p[0], 0) / pontos.length, pontos.reduce((t, p) => t + p[1], 0) / pontos.length];
+  const raioM = pontos.length >= 3 ? Math.round(pontos.reduce((t, p) => t + distM(centro, p), 0) / pontos.length) : null;
+  return { centro: [Math.round(centro[0] * 1e6) / 1e6, Math.round(centro[1] * 1e6) / 1e6], raioM };
+}
+function simplificar(pontos, max) {
+  if (pontos.length <= 3) return null;
+  const passo = Math.max(1, Math.ceil(pontos.length / max));
+  return pontos.filter((_, i) => i % passo === 0).map((p) => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]);
+}
+const chaveNome = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+/** Casa o nome do desenho com um pivô: nome igual (sem acento/espaço) ou mesmo número ("Pivô 2" ↔ "P2" ↔ "pivo_02"). */
+function pivoDoDesenho(nome, pivos) {
+  const k = chaveNome(nome), num = (k.match(/\d+/) || [''])[0].replace(/^0+/, '');
+  return pivos.find((p) => chaveNome(p.nome) === k) || (num ? pivos.find((p) => ((chaveNome(p.nome).match(/\d+/) || [''])[0].replace(/^0+/, '')) === num) : null) || null;
+}
+
 /* ================= PIVÔS ================= */
 const GRUPOS = [
   ['Identificação', ['nome', 'ativo', 'cultura', 'cicloDias', 'plantio', 'inicioBalanco', 'palhada']],
   ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
+  ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
   ['Equipamento', ['raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh']],
 ];
 const simNao = (v) => v === true || /^(SIM|S|TRUE|1|X)$/i.test(String(v).trim());
@@ -386,7 +530,41 @@ V.pivos = function (arg) {
   return c.pivos.map((p, i) => '<div class="card"><div class="row"><div><h2>' + esc(p.nome) + (simNao(p.ativo) ? '' : ' <span class="muted">(inativo)</span>') + '</h2>' +
     '<div class="muted">' + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + '</div></div>' +
     '<a class="btn btn-outline btn-sm" href="#/pivos/' + i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('') +
-    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Novo pivô</a>' : '<p class="muted">Só o administrador edita os pivôs.</p>');
+    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Novo pivô</a>' +
+      '<div class="card" style="margin-top:14px"><h2>📂 Importar KMZ com os pivôs</h2><p class="muted" style="margin:4px 0 10px">Arquivo do Google Earth com um desenho por pivô. Eu caso o nome do desenho com o pivô e guardo o centro, o contorno e o raio.</p>' +
+      '<label class="btn btn-outline">Escolher arquivo .kmz / .kml<input type="file" id="kmz-todos" accept=".kmz,.kml" hidden></label><div id="kmz-lista"></div></div>' : '<p class="muted">Só o administrador edita os pivôs.</p>');
+};
+V.pivos_depois_lista = function () {
+  const inp = $('#kmz-todos'); if (!inp) return;
+  inp.addEventListener('change', async () => {
+    const f = inp.files[0]; if (!f) return;
+    const box = $('#kmz-lista'); box.innerHTML = '<p class="muted">Lendo…</p>';
+    try {
+      const des = await lerKml(f), pivos = DADOS.cadastro.pivos;
+      box.innerHTML = '<ul class="lista">' + des.map((d, i) => { const p = pivoDoDesenho(d.nome, pivos);
+        return '<li><div class="t">' + esc(d.nome) + '<div class="muted">' + (d.raioM ? 'raio ≈ ' + d.raioM + ' m · ' : '') + d.centro[0] + ', ' + d.centro[1] + '</div></div>' +
+          '<select data-desenho="' + i + '"><option value="">— não importar —</option>' + pivos.map((x) => '<option' + (p && p.nome === x.nome ? ' selected' : '') + '>' + esc(x.nome) + '</option>').join('') + '</select></li>'; }).join('') + '</ul>' +
+        '<button class="btn btn-primary btn-block" id="kmz-salvar" type="button">Salvar posições na planilha</button>';
+      $('#kmz-salvar').addEventListener('click', async () => {
+        const btn = $('#kmz-salvar'); btn.disabled = true;
+        let n = 0;
+        try {
+          for (const sel of $$('select[data-desenho]', box)) {
+            if (!sel.value) continue;
+            const d = des[Number(sel.dataset.desenho)], p = pivos.find((x) => x.nome === sel.value);
+            btn.textContent = 'Salvando ' + p.nome + '…';
+            const dados = { nome: p.nome, latitude: d.centro[0], longitude: d.centro[1], contorno: d.pontos ? JSON.stringify(d.pontos) : '' };
+            if (d.raioM && !Number(p.raioM)) dados.raioM = d.raioM;
+            const r = await chamar('POST', null, { __pivo: { dados, original: p.nome } });
+            if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
+            DADOS.cadastro = r.cadastro; if (r.recalculo && r.recalculo.resumo) DADOS.resumo = r.recalculo.resumo; n++;
+          }
+          DADOS.hash = ''; grava(DADOS_KEY, DADOS);
+          toast('✅ ' + n + ' pivô(s) com posição salva.'); location.hash = '#/mapa'; puxar(true);
+        } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Salvar posições na planilha'; }
+      });
+    } catch (e) { box.innerHTML = '<p class="muted" style="color:var(--red)">' + esc(e.message) + '</p>'; }
+  });
 };
 function campoPivo(k, rot, v, so) {
   const id = 'p_' + k, dis = so ? ' disabled' : '';
@@ -395,6 +573,7 @@ function campoPivo(k, rot, v, so) {
   if (k === 'cicloDias') { const c = cultura($('#p_cultura') ? $('#p_cultura').value : ''); return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="numeric" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : v) + '" placeholder="padrão' + (c && c.cicloDias ? ' ' + c.cicloDias : '') + '"' + dis + '></div>'; }
   if (k === 'plantio' || k === 'inicioBalanco') return '<div><label for="' + id + '">' + esc(rot) + '</label><input type="date" id="' + id + '" name="' + k + '" value="' + esc(v) + '"' + dis + '></div>';
   if (k === 'nome') return '<div><label for="' + id + '">' + esc(rot) + '</label><input id="' + id + '" name="' + k + '" value="' + esc(v) + '" required' + dis + '></div>';
+  if (k === 'contorno') return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(typeof v === 'string' ? v : v ? JSON.stringify(v) : '') + '">';
   return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="decimal" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : String(v).replace('.', ',')) + '"' + dis + '></div>';
 }
 function formPivo(p) {
@@ -403,7 +582,9 @@ function formPivo(p) {
   const base = p || { ativo: 'SIM', cultura: cs.length ? cs[0].chave : '', palhada: 'SIM', tensaoIrrigarKpa: -70, laminaMinimaMm: 5, anguloGraus: 360, eficienciaPct: 85, percentimetroMinPct: 10 };
   return '<form class="card" id="f-pivo" data-original="' + esc(p ? p.nome : '') + '" autocomplete="off"><div class="row"><h2>' + (p ? esc(p.nome) : 'Novo pivô') + '</h2><a class="btn btn-outline btn-sm" href="#/pivos">Voltar</a></div>' +
     GRUPOS.map((g) => '<fieldset><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
-      (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') + '</fieldset>').join('') +
+      (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') +
+      (g[0] === 'Localização (mapa)' ? (so ? '' : '<div class="toolbar" style="margin-top:10px"><button type="button" class="btn btn-outline btn-sm" data-act="gps">📍 Usar minha posição</button>' +
+        '<label class="btn btn-outline btn-sm">📂 KMZ / KML do pivô<input type="file" id="p_arquivo" accept=".kmz,.kml" hidden></label></div>') + '<div id="loc-info" class="muted"></div>' : '') + '</fieldset>').join('') +
     '<p class="muted" style="margin-top:10px">Solo, Kc e equipamento precisam ser confirmados com o agrônomo e a placa do pivô.</p>' +
     (so ? '' : '<button class="btn btn-primary btn-block" type="submit">Salvar na planilha</button>') + '</form>';
 }
@@ -428,9 +609,37 @@ function infoCultura(f) {
       (dis ? '' : '<button type="button" class="btn btn-outline btn-sm" data-act="sugestao">Usar</button>') + '</div>' : '') +
     (c.fonte ? '<p class="muted" style="margin-top:6px">Fonte: ' + esc(c.fonte) + '</p>' : '');
 }
+function infoLocal(f, texto) {
+  const box = $('#loc-info', f); if (!box) return;
+  let c = null; try { c = JSON.parse($('#p_contorno', f).value || 'null'); } catch (e) { c = null; }
+  box.textContent = texto || (Array.isArray(c) && c.length ? 'Contorno do KMZ com ' + c.length + ' pontos.' : 'Sem contorno: o mapa desenha um círculo com o raio do equipamento.');
+}
 V.pivos_depois = function () {
+  if (V.pivos_depois_lista) V.pivos_depois_lista();
   const f = $('#f-pivo'); if (!f) return;
-  infoCultura(f);
+  infoCultura(f); infoLocal(f);
+  f.addEventListener('click', (ev) => {
+    if (!ev.target.closest('[data-act="gps"]')) return;
+    if (!navigator.geolocation) { toast('Este aparelho não informa a posição.', true); return; }
+    infoLocal(f, 'Pegando a posição do aparelho…');
+    navigator.geolocation.getCurrentPosition((pos) => {
+      $('#p_latitude', f).value = String(Math.round(pos.coords.latitude * 1e6) / 1e6).replace('.', ',');
+      $('#p_longitude', f).value = String(Math.round(pos.coords.longitude * 1e6) / 1e6).replace('.', ',');
+      infoLocal(f, 'Posição do aparelho (precisão ' + Math.round(pos.coords.accuracy) + ' m). Fique no centro do pivô ao usar.');
+    }, (e) => infoLocal(f, 'Não consegui a posição: ' + e.message), { enableHighAccuracy: true, timeout: 15000 });
+  });
+  const arq = $('#p_arquivo', f);
+  if (arq) arq.addEventListener('change', async () => {
+    const file = arq.files[0]; if (!file) return;
+    try {
+      const des = await lerKml(file);
+      const d = (des.length > 1 && pivoDoDesenho($('#p_nome', f).value, des.map((x) => ({ nome: x.nome })))) ? des.find((x) => x.nome === pivoDoDesenho($('#p_nome', f).value, des.map((y) => ({ nome: y.nome }))).nome) : des[0];
+      $('#p_latitude', f).value = String(d.centro[0]).replace('.', ','); $('#p_longitude', f).value = String(d.centro[1]).replace('.', ',');
+      $('#p_contorno', f).value = d.pontos ? JSON.stringify(d.pontos) : '';
+      const raio = $('#p_raioM', f); if (d.raioM && raio && !raio.value) raio.value = String(d.raioM);
+      infoLocal(f, 'Desenho "' + d.nome + '"' + (des.length > 1 ? ' (de ' + des.length + ' no arquivo)' : '') + (d.raioM ? ' · raio ≈ ' + d.raioM + ' m' : '') + (d.pontos ? ' · ' + d.pontos.length + ' pontos' : '') + '. Salve para gravar.');
+    } catch (e) { toast(e.message, true); }
+  });
   ['#p_cultura', '#p_cicloDias', '#p_plantio'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('change', () => infoCultura(f)); });
   f.addEventListener('click', (ev) => {
     if (!ev.target.closest('[data-act="sugestao"]')) return;

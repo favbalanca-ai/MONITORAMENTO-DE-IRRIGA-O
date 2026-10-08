@@ -1,6 +1,7 @@
 import type { LinhaBalanco } from "../motor/balanco.ts";
 import type { DataISO, DiaClima } from "../motor/tipos.ts";
 import { diaAnterior } from "../motor/agregacao.ts";
+import { avisoChuva, chuvaPrevista, type DiaPrevisao } from "../motor/previsao.ts";
 
 /** Número no formato brasileiro (1.234,5) sem depender do Intl — o Apps Script nem sempre tem pt-BR. */
 function br_(x: number, casas: number): string {
@@ -28,7 +29,12 @@ export interface ItemRelatorio {
 }
 
 /** Texto do relatório do dia — curto para caber no WhatsApp, com *negrito* no estilo do WhatsApp. */
-export function montarMensagem(data: DataISO, clima: DiaClima & { et0: number }, itens: ItemRelatorio[]): { assunto: string; texto: string } {
+export function montarMensagem(
+  data: DataISO,
+  clima: DiaClima & { et0: number },
+  itens: ItemRelatorio[],
+  previsao: DiaPrevisao[] = [],
+): { assunto: string; texto: string } {
   const irrigar = itens.filter((i) => i.linha?.decisao === "IRRIGAR").length;
   const assunto = `Manejo ${br(data)}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
   const l: string[] = [
@@ -37,6 +43,16 @@ export function montarMensagem(data: DataISO, clima: DiaClima & { et0: number },
     `ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${clima.n} de 144 leituras`,
   ];
   if (clima.estimados?.length) l.push(`⚠️ Estação sem dado de ${clima.estimados.join(", ")}: valores do dia vizinho.`);
+  const prox = previsao.filter((d) => d.data > data).slice(0, 3);
+  if (prox.length) {
+    const p = chuvaPrevista(previsao, data, 2);
+    l.push(
+      `🌧 Previsão: ${prox.map((d) => `${br(d.data)} ${d.chuvaMm === null ? "?" : n1(d.chuvaMm)} mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")}` +
+        ` — ${n1(p.mm)} mm em 2 dias`,
+    );
+    const r = prox[0]?.resumo;
+    if (r) l.push(`   INMET amanhã: ${r}`);
+  }
 
   for (const it of itens) {
     l.push("");
@@ -48,6 +64,8 @@ export function montarMensagem(data: DataISO, clima: DiaClima & { et0: number },
     l.push(`*${it.pivo.nome}* — ${it.pivo.cultura.nome} ${x.estadio}, ${x.das} DAS`);
     if (x.decisao === "IRRIGAR") {
       l.push(`🚿 *IRRIGAR* — repor ${n1(x.deficit)} mm`);
+      const chuva = avisoChuva(x.deficit, previsao, data);
+      if (chuva) l.push(`   🌧 ${chuva}`);
       const r = x.recomendacao;
       if (r) {
         l.push(`   Percentímetro *${n0(r.percentimetroPct)}%* · volta ${horas(r.tempoVoltaH)} · ${n1(r.laminaBrutaMm)} mm brutos`);

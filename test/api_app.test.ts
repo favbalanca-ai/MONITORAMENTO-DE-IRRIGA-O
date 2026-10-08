@@ -1,6 +1,7 @@
 /** API do app (doGet/doPost do sync/Code.gs) com a planilha simulada. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { deLocal } from "../src/coletor/tempo.ts";
 import { criarAmbiente, type Ambiente } from "./apps_script/fake.ts";
 import { leiturasMeteoCorrigido } from "./pivo2_exemplo.ts";
@@ -238,4 +239,45 @@ test("ciclo encerrado vira alerta no balanço", () => {
   amb.aba("PIVOS").set(2, 6, "2026-01-20");
   const it = (amb.chamar("calcular_", "2026-02-08") as { itens: { linha: { alertas: string[] } }[] }).itens[0]!;
   assert.ok(it.linha.alertas.some((a: string) => /Ciclo da cultura encerrado há 10 dia/.test(a)));
+});
+
+test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o relatório", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[] };
+  assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
+  assert.ok(amb.urls.some((u) => /open-meteo.*latitude=-14\.74&longitude=-46\.24/.test(u)));
+  assert.ok(amb.urls.some((u) => u.endsWith("/previsao/3126208")));
+  assert.equal(p.dias[1]!.chuvaMm, 12.4);
+  assert.match(p.dias[1]!.resumo!, /pancadas/);
+  assert.equal(amb.aba("PREVISAO").objetos().length, 7);
+
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const d = amb.get({ acao: "dados", s: adm });
+  assert.equal(d.previsao.dias.length, 7);
+  assert.match(d.resumo.pivos[0].avisoChuva, /20,5 mm/);
+  assert.match(amb.chamar<{ texto: string }>("calcular_", "2026-02-08").texto, /🌧 Previsão: 09\/02 12,4 mm/);
+
+  // INMET fora do ar: continua com o Open-Meteo e registra no LOG
+  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 503, corpo: {} });
+  const p2 = amb.chamar("atualizarPrevisao") as { fontes: string[] };
+  assert.deepEqual([...p2.fontes], ["Open-Meteo"]);
+  assert.ok(amb.aba("LOG").objetos().some((l) => l["Ação"] === "previsão" && l["Status"] === "parcial" && /INMET: HTTP 503/.test(String(l["Detalhe"]))));
+});
+
+test("pivô com latitude/longitude e contorno vai para o resumo; latitude sem longitude é recusada", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  const contorno = [[-14.9, -46.25], [-14.9, -46.24], [-14.91, -46.24], [-14.91, -46.25]];
+  const r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,905", longitude: "-46,245", contorno: JSON.stringify(contorno) }, original: "Pivô 2" } });
+  assert.equal(r.ok, true);
+  const p = r.recalculo.resumo.pivos[0];
+  assert.equal(p.latitude, -14.905);
+  assert.equal(p.longitude, -46.245);
+  assert.deepEqual(p.contorno, contorno);
+  assert.equal(p.raioM, 400);
+  assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "" }, original: "Pivô 2" } }).erro, /precisam vir juntas/);
 });

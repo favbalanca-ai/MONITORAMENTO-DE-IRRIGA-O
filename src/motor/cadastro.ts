@@ -21,6 +21,11 @@ export interface PivoCadastro {
   laminaMinimaMm: number;
   tensaoIrrigarKpa: number;
   equipamento?: Equipamento;
+  /** Centro do pivô (graus decimais), para o mapa. */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Contorno do pivô [[lat, lon], …] vindo do KMZ. */
+  contorno?: [number, number][];
 }
 
 export interface CadastroFazenda {
@@ -69,6 +74,9 @@ export function validarCadastro(c: CadastroFazenda, fusoValido: (fuso: string) =
     if (p.solo?.fatorDeplecaoFixo != null) num(p.solo.fatorDeplecaoFixo, `${o}.solo.fatorDeplecaoFixo`, 0.05, 1);
     num(p.laminaMinimaMm, `${o}.laminaMinimaMm`, 0, 100);
     num(p.tensaoIrrigarKpa, `${o}.tensaoIrrigarKpa`, -1500, 0);
+    if (p.latitude != null) num(p.latitude, `${o}.latitude`, -90, 90);
+    if (p.longitude != null) num(p.longitude, `${o}.longitude`, -180, 180);
+    if ((p.latitude == null) !== (p.longitude == null)) erros.push(`${o}: latitude e longitude precisam vir juntas`);
     if (p.equipamento) {
       const e = p.equipamento;
       num(e.raioM, `${o}.equipamento.raioM`, 1);
