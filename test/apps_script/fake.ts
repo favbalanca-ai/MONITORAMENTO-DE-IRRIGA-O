@@ -32,6 +32,7 @@ class FakeRange {
     return this;
   }
   setValue(x: Celula) { this.aba.set(this.r, this.c, x); return this; }
+  getValue() { return this.aba.dados[this.r - 1]?.[this.c - 1] ?? ""; }
   sort({ column, ascending }: { column: number; ascending: boolean }) {
     const linhas = this.getValues();
     linhas.sort((a, b) => {
@@ -70,6 +71,7 @@ export class FakeSheet {
   clearContents() { this.dados = []; }
   deleteRows(ini: number, n: number) { this.dados.splice(ini - 1, n); }
   setFrozenRows() {}
+  hideSheet() {}
   /** Linhas como objetos pelo cabeçalho (para os testes). */
   objetos(): Record<string, Celula>[] {
     const [cab, ...resto] = this.dados;
@@ -209,6 +211,10 @@ export function criarAmbiente(): Ambiente {
       getProjectTriggers: () => amb.gatilhos.map((g) => ({ getHandlerFunction: () => g.funcao, _g: g })),
       deleteTrigger: (t: { _g: Ambiente["gatilhos"][number] }) => { amb.gatilhos = amb.gatilhos.filter((g) => g !== t._g); },
       newTrigger: (funcao: string) => encadeavel((chamadas) => { amb.gatilhos.push({ funcao, chamadas: [...chamadas] }); }),
+      getService: () => ({ getUrl: () => "https://script.google.com/macros/s/TESTE/exec" }),
+    },
+    HtmlService: {
+      createHtmlOutputFromFile: (nome: string) => encadeavel(() => undefined) && { nome, ...Object.fromEntries(["setTitle", "addMetaTag"].map((m) => [m, function (this: unknown) { return this; }])) },
     },
     DriveApp: {
       getFileById: () => arquivoPlanilha,
@@ -216,7 +222,7 @@ export function criarAmbiente(): Ambiente {
     },
   };
   const ctx = vm.createContext(globais);
-  const codigo = ["Motor.gs", "Codigo.gs"].map((f) => readFileSync(new URL(`../../apps-script/${f}`, import.meta.url), "utf8")).join("\n");
+  const codigo = ["Motor.gs", "Codigo.gs", "App.gs"].map((f) => readFileSync(new URL(`../../apps-script/${f}`, import.meta.url), "utf8")).join("\n");
   vm.runInContext(codigo, ctx, { filename: "apps-script" });
   amb.ctx = ctx;
   amb.aba = (n) => { const a = abas.get(n); if (!a) throw new Error(`aba ${n} não existe`); return a; };

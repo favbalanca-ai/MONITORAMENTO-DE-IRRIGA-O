@@ -19,6 +19,7 @@ var ABA = {
   CLIMA: "CLIMA",
   LEITURAS: "LEITURAS",
   LOG: "LOG",
+  CACHE: "CACHE",
 };
 
 var PASTA_BACKUP = "BACKUP";
@@ -90,6 +91,8 @@ function onOpen() {
     .addItem("Testar conexão Ecowitt", "testarEcowitt")
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
+    .addSeparator()
+    .addItem("📱 Link do app", "menuLinkApp")
     .addToUi();
 }
 
@@ -116,6 +119,8 @@ function instalar() {
   var lei = criarAbaSeFaltar_(ss, ABA.LEITURAS, CABECALHOS.LEITURAS);
   lei.getRange("A:A").setNumberFormat("@"); // texto: não deixa o Sheets converter a hora
   criarAbaSeFaltar_(ss, ABA.LOG, CABECALHOS.LOG);
+  var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
+  cache.hideSheet();
 
   var cfg = lerEstacao_();
   ss.setSpreadsheetTimeZone(cfg.fuso);
@@ -633,7 +638,62 @@ function calcular_(dia) {
   var et0Dia = Motor.et0PenmanMonteith(climaDia, estacao);
   var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens);
   escreverPainel_(dia, climaDia, et0Dia, itens, msg);
+  salvarResumo_(dia, cfg, climaDia, et0Dia, itens);
   return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, itens: itens };
+}
+
+/** Resumo do último cálculo para o app abrir rápido (aba oculta CACHE, célula A1). */
+function salvarResumo_(dia, cfg, clima, et0, itens) {
+  var r2 = function (x) { return Math.round(x * 100) / 100; };
+  var resumo = {
+    dia: dia,
+    calculadoEm: Motor.paraLocal(Date.now(), cfg.fuso),
+    clima: { et0: r2(et0), chuva: r2(clima.chuva), n: clima.n, tmax: r2(clima.tmax), tmin: r2(clima.tmin), ur: r2(clima.ur), estimados: clima.estimados || [] },
+    pivos: itens.map(function (it) {
+      var l = it.linha;
+      var p = { nome: it.pivo.nome, cultura: it.pivo.cultura.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "" };
+      if (!l) return p;
+      p.estadio = l.estadio;
+      p.das = l.das;
+      p.decisao = l.decisao;
+      p.deficit = r2(l.deficit);
+      p.afd = r2(l.afdMm);
+      p.cad = r2(l.cadMm);
+      p.etc = r2(l.etc);
+      p.kc = l.kc;
+      p.irrigacao = r2(l.irrigacao);
+      p.alertas = l.alertas;
+      p.diasIncertos = it.diasIncertos || 0;
+      var r = l.recomendacao;
+      if (r) p.rec = {
+        laminaBrutaMm: r2(r.laminaBrutaMm), percentimetroPct: Math.round(r.percentimetroPct), tempoVoltaH: r2(r.tempoVoltaH),
+        energiaKwh: Math.round(r.energiaKwh), custoRs: r2(r.custoRs), limitado: r.limitadoPelaLaminaMax,
+      };
+      return p;
+    }),
+  };
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
+  aba.getRange(1, 1).setValue(JSON.stringify(resumo));
+  return resumo;
+}
+
+function lerResumo_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
+  if (!aba || aba.getLastRow() < 1) return null;
+  var t = aba.getRange(1, 1).getValue();
+  return t ? JSON.parse(t) : null;
+}
+
+function menuLinkApp() {
+  var url = "";
+  try {
+    url = ScriptApp.getService().getUrl();
+  } catch (e) {
+    url = "";
+  }
+  aviso_(url
+    ? "Link do app:\n\n" + url + "\n\nAbra no celular e use \"Adicionar à tela inicial\"."
+    : "O app ainda não foi publicado. No editor do Apps Script: Implantar → Nova implantação → Tipo: App da Web → Executar como: Eu → Quem pode acessar: Somente eu → Implantar.");
 }
 
 function escreverTabela_(nome, cabecalho, linhas) {

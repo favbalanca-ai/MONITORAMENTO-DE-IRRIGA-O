@@ -12,6 +12,7 @@ Contexto completo e especificação: [`docs/CONTEXT.md`](docs/CONTEXT.md).
 - [x] **Passo 2 — coletor Ecowitt** (`src/coletor/`): leitura ao vivo, normalização pelo `.unit`, deduplicação e recuperação de lacunas pelo histórico do ecowitt.net.
 - [x] **Passos 3 e 4 — banco e job das 18h** (`src/banco/`, `src/job/`): SQLite embutido no Node, cadastro, lançamentos, balanço diário gravado e relatório por console, arquivo e e-mail.
 - [x] **Versão Google Sheets** (`apps-script/`): mesma lógica rodando na planilha, com gatilhos, e-mail e backup no Drive. Testada no Node com uma imitação do Apps Script.
+- [x] **App no celular** (`apps-script/App.gs` + `App.html`): telas Hoje, Lançar, Histórico e Pivôs, publicado como app da Web do próprio script. Testado no Chromium com a planilha simulada.
 - [ ] WhatsApp (falta escolher o provedor) · telas · importação do histórico da planilha · rodar em paralelo com a planilha.
 
 ## Como rodar

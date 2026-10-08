@@ -7,3 +7,4 @@ node_modules/
 *.xls
 dados/
 config/fazenda.json
+test/e2e/prints/

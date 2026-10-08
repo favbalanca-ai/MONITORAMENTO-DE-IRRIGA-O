@@ -20,6 +20,22 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 
+## App no celular
+
+As telas ficam no mesmo projeto do Apps Script:
+
+1. No editor do Apps Script, clique em **+ → Script**, nomeie `App` e cole [`App.gs`](App.gs).
+2. Clique em **+ → HTML**, nomeie `App` (fica `App.html`) e cole [`App.html`](App.html).
+3. Salve, depois **Implantar → Nova implantação** → engrenagem → **App da Web**:
+   - Executar como: **Eu**
+   - Quem pode acessar: **Somente eu**
+   - **Implantar** (autorize se pedir).
+4. Copie o link (também aparece em **💧 Manejo → 📱 Link do app**) e abra no celular, logado na mesma conta Google. No Chrome: menu ⋮ → **Adicionar à tela inicial**. No iPhone (Safari): compartilhar → **Adicionar à Tela de Início**.
+
+Telas: **Hoje** (decisão de cada pivô, percentímetro, volta, custo e alertas), **Lançar** (irrigação ou umidade, com apagar), **Histórico** (gráfico de déficit, AFD, chuva e irrigação) e **Pivôs** (cadastro, validado antes de salvar).
+
+Quando mudar o `App.gs` ou o `App.html`, é preciso publicar de novo: **Implantar → Gerenciar implantações → lápis → Versão: Nova versão → Implantar**. O link continua o mesmo.
+
 ## O que roda sozinho
 
 | Quando | O quê |
