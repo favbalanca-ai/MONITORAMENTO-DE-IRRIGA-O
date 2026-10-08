@@ -236,3 +236,23 @@ test("administrador cria usuário pelo app; computador mostra o menu lateral", a
   await page.screenshot({ path: PRINTS + "7_computador.png" });
   await ctx.close();
 });
+
+test("link do menu (?exec=) já liga o app à planilha", async () => {
+  const amb = planilha();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+  await ctx.route(EXEC + "**", async (route) => {
+    const req = route.request();
+    const corpo = req.method() === "GET" ? amb.get(Object.fromEntries(new URL(req.url()).searchParams)) : amb.post(JSON.parse(req.postData() || "{}"));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo) });
+  });
+  const page = await ctx.newPage();
+  await page.goto(base + "?exec=" + encodeURIComponent(EXEC));
+  await page.getByText("App ligado à planilha").waitFor();
+  assert.equal(new URL(page.url()).search, "", "o endereço sai da barra");
+  await page.locator("#f-login").waitFor();
+  await page.fill("#lg-login", "jose");
+  await page.fill("#lg-pin", "4321");
+  await page.locator("#f-login button[type=submit]").click();
+  await page.getByText("🚿 IRRIGAR").waitFor();
+  await ctx.close();
+});

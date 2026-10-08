@@ -691,7 +691,12 @@ function lerResumo_() {
   return t ? JSON.parse(t) : null;
 }
 
-/** Mostra o endereço /exec para colar no app (tela Sincronizar). */
+var APP_URL = "https://favbalanca-ai.github.io/MONITORAMENTO-DE-IRRIGA-O/";
+
+/**
+ * Mostra o endereço /exec para o app: campo com botão Copiar, link que já abre o app ligado a esta
+ * planilha (?exec=…) e QR Code para abrir no celular apontando a câmera.
+ */
 function menuLinkApp() {
   var url = "";
   try {
@@ -699,9 +704,35 @@ function menuLinkApp() {
   } catch (e) {
     url = "";
   }
-  aviso_(url
-    ? "Endereço da planilha para o app:\n\n" + url + "\n\nNo app (celular), abra ⚙️ Sincronizar, cole este endereço e toque em Salvar."
-    : "A ponte com o app ainda não foi publicada. No editor do Apps Script: Implantar → Nova implantação → App da Web → Executar como: Eu → Quem pode acessar: Qualquer pessoa → Implantar.");
+  if (!url) {
+    aviso_("A ponte com o app ainda não foi publicada. No editor do Apps Script: Implantar → Nova implantação → App da Web → Executar como: Eu → Quem pode acessar: Qualquer pessoa → Implantar.");
+    return;
+  }
+  var link = APP_URL + "?exec=" + encodeURIComponent(url);
+  var esc = function (t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+  var html =
+    '<div style="font:14px Arial,sans-serif;color:#16404d">' +
+    '<p style="margin:0 0 6px"><b>1. No celular:</b> aponte a câmera para o QR Code. O app abre já ligado a esta planilha.</p>' +
+    '<div id="qr" style="text-align:center;margin:8px 0"></div>' +
+    '<p style="margin:10px 0 6px"><b>2. Ou</b> abra o app por este link:</p>' +
+    '<p style="margin:0 0 10px"><a href="' + esc(link) + '" target="_blank" style="color:#2e7d8c;font-weight:bold">Abrir o app ligado a esta planilha ↗</a></p>' +
+    '<p style="margin:10px 0 6px"><b>3. Ou</b> copie o endereço e cole em ⚙️ Ajustes no app:</p>' +
+    '<input id="u" readonly value="' + esc(url) + '" style="width:100%;padding:8px;font-size:12px;box-sizing:border-box" onclick="this.select()">' +
+    '<button id="c" style="margin-top:8px;padding:8px 14px;background:#2e7d8c;color:#fff;border:0;border-radius:6px;font-weight:bold;cursor:pointer">Copiar endereço</button>' +
+    '<span id="ok" style="margin-left:8px;color:#2e7d32"></span>' +
+    '</div>' +
+    '<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>' +
+    '<script>' +
+    'try{var q=qrcode(0,"M");q.addData(' + JSON.stringify(link) + ');q.make();document.getElementById("qr").innerHTML=q.createImgTag(4,8);}catch(e){document.getElementById("qr").textContent="(QR Code indisponível — use o link)";}' +
+    'document.getElementById("c").onclick=function(){var i=document.getElementById("u");i.select();' +
+    'var feito=function(){document.getElementById("ok").textContent="Copiado ✓";};' +
+    'try{navigator.clipboard.writeText(i.value).then(feito,function(){document.execCommand("copy");feito();});}catch(e){document.execCommand("copy");feito();}};' +
+    '</script>';
+  try {
+    SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(460).setHeight(560), "📱 Ligar o app a esta planilha");
+  } catch (e) {
+    aviso_("Endereço da planilha para o app:\n\n" + url + "\n\nOu abra: " + link);
+  }
 }
 
 function escreverTabela_(nome, cabecalho, linhas) {
@@ -943,7 +974,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.08-1";
+var VERSAO_SERVIDOR = "2026.10.08-2";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

@@ -181,6 +181,13 @@ test("menu cria o administrador e mostra o endereço para o app", () => {
   });
   amb.chamar("menuCriarAdmin");
   assert.equal(entrar(amb, "fabiana", "2468").ok, true);
+  (amb.ctx.SpreadsheetApp as { getUi: () => unknown }).getUi = () => ({
+    showModalDialog: (saida: { html: string }, titulo: string) => amb.alertas.push(titulo + "\n" + saida.html),
+  });
   amb.chamar("menuLinkApp");
-  assert.match(amb.alertas.at(-1)!, /exec[\s\S]*Sincronizar/);
+  const janela = amb.alertas.at(-1)!;
+  assert.match(janela, /Ligar o app/);
+  assert.match(janela, /value="https:\/\/script\.google\.com\/macros\/s\/TESTE\/exec"/);
+  assert.ok(janela.includes("https://favbalanca-ai.github.io/MONITORAMENTO-DE-IRRIGA-O/?exec=" + encodeURIComponent("https://script.google.com/macros/s/TESTE/exec")));
+  assert.match(janela, /qrcode-generator@1\.4\.4/);
 });

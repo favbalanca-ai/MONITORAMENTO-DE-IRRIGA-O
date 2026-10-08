@@ -171,6 +171,7 @@ export function criarAmbiente(): Ambiente {
     setSpreadsheetTimeZone: () => {},
     getUi: () => ({
       alert: (t: string) => { amb.alertas.push(t); },
+      showModalDialog: (saida: { html: string }, titulo: string) => { amb.alertas.push(titulo + "\n" + saida.html); },
       createMenu: () => encadeavel(),
       prompt: () => { throw new Error("prompt não disponível no teste"); },
     }),
@@ -236,6 +237,7 @@ export function criarAmbiente(): Ambiente {
       getService: () => ({ getUrl: () => "https://script.google.com/macros/s/TESTE/exec" }),
     },
     HtmlService: {
+      createHtmlOutput: (html: string) => ({ html, setWidth() { return this; }, setHeight() { return this; } }),
       createHtmlOutputFromFile: (nome: string) => encadeavel(() => undefined) && { nome, ...Object.fromEntries(["setTitle", "addMetaTag"].map((m) => [m, function (this: unknown) { return this; }])) },
     },
     DriveApp: {

@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.08-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.08-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -517,6 +517,17 @@ document.addEventListener('click', async (ev) => {
 document.addEventListener('change', (ev) => { if (ev.target.dataset.act === 'hist') carregarHist(); });
 
 /* ================= início ================= */
+// Link do menu da planilha (📱 Endereço para o app / QR Code): ?exec=<endereço /exec> já configura o app.
+(function () {
+  try {
+    const p = new URLSearchParams(location.search), u = (p.get('exec') || '').trim();
+    if (!u) return;
+    history.replaceState(null, '', location.pathname + (location.hash || '#/login'));
+    if (!/^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(u)) { setTimeout(() => toast('O link não tem um endereço de planilha válido.', true), 300); return; }
+    if (u !== syncUrl()) { grava(SYNC_KEY, u); DADOS = null; grava(DADOS_KEY, null); }
+    setTimeout(() => toast('✅ App ligado à planilha. Entre com seu login e PIN.'), 300);
+  } catch (e) {}
+})();
 $('#app-ver').textContent = 'v' + APP_VERSION;
 $('#btn-update').addEventListener('click', async () => {
   try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); } catch (e) {}
