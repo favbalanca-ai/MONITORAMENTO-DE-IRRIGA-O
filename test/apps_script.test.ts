@@ -206,3 +206,38 @@ test("backup copia a planilha na pasta BACKUP e mantém só as 30 mais novas", (
   assert.equal(vivos.at(-1), "MANEJO_IRRIGACAO_BACKUP_2026-10-08");
   assert.ok(!vivos.includes("MANEJO_IRRIGACAO_BACKUP_2026-08-02"));
 });
+
+test("coleta pelo menu mostra a leitura ou o erro na tela", async () => {
+  const amb = instalado();
+  amb.alertas.length = 0;
+  amb.chamar("menuColetar");
+  assert.match(amb.alertas.at(-1)!, /Não coletou[\s\S]*Chaves da Ecowitt não configuradas/);
+
+  for (const [k, v] of [["ECOWITT_APPLICATION_KEY", "A1B2C3D4E5F6"], ["ECOWITT_API_KEY", "0000-uuid"], ["ECOWITT_MAC", "AA:BB"]]) amb.props.set(k!, v!);
+  amb.respostaHttp = () => ({ code: 200, corpo: { code: 40010, msg: "Illegal Application_Key Parameter", data: [] } });
+  amb.chamar("menuColetar");
+  assert.match(amb.alertas.at(-1)!, /Illegal Application_Key/);
+
+  const corpo = await fixture("ecowitt_tempo_real.json");
+  amb.respostaHttp = () => ({ code: 200, corpo });
+  amb.chamar("menuColetar");
+  assert.match(amb.alertas.at(-1)!, /Leitura gravada[\s\S]*Temperatura: 24\.4 °C/);
+  amb.chamar("menuColetar");
+  assert.match(amb.alertas.at(-1)!, /não mandou leitura nova/);
+});
+
+test("teste de conexão mostra o que a Ecowitt mandou sem revelar as chaves", async () => {
+  const amb = instalado();
+  for (const [k, v] of [["ECOWITT_APPLICATION_KEY", "A1B2C3D4E5F60718"], ["ECOWITT_API_KEY", "0000aaaa-1111"], ["ECOWITT_MAC", "AA:BB"]]) amb.props.set(k!, v!);
+  const corpo = await fixture("ecowitt_tempo_real.json");
+  amb.respostaHttp = () => ({ code: 200, corpo });
+  const linhas = amb.chamar<string[]>("testarEcowitt").join("\n");
+  assert.match(linhas, /code 0 — success/);
+  assert.match(linhas, /outdoor\.temperature: 75\.9 ºF/);
+  assert.match(linhas, /rainfall\.daily: 0\.20 in/);
+  assert.doesNotMatch(linhas, /0718|1111/);
+  assert.match(linhas, /A1B2…18 \(16 caracteres\)/);
+
+  amb.respostaHttp = () => ({ code: 200, corpo: { code: 0, msg: "success", data: [] } });
+  assert.match(amb.chamar<string[]>("testarEcowitt").join("\n"), /lista vazia/);
+});

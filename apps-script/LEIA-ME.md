@@ -17,7 +17,7 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 7. Revise as abas:
    - **ESTACAO**: latitude, altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`) e **e-mails do relatório**.
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
-8. Teste: **Coletar leitura agora** (deve aparecer uma linha em LEITURAS) e **Calcular agora (sem enviar)** (veja o PAINEL).
+8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 
 ## O que roda sozinho

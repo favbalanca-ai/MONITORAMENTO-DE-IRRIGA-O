@@ -86,7 +86,8 @@ function onOpen() {
     .addItem("Calcular agora (sem enviar)", "menuCalcular")
     .addItem("Enviar relatório agora", "menuEnviar")
     .addSeparator()
-    .addItem("Coletar leitura agora", "coletar")
+    .addItem("Coletar leitura agora", "menuColetar")
+    .addItem("Testar conexão Ecowitt", "testarEcowitt")
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
     .addToUi();
@@ -341,23 +342,87 @@ function paramsEcowitt_(eco) {
   };
 }
 
+/** Lê a estação agora e grava. Devolve a leitura e se ela era nova. */
+function coletarAgora_() {
+  var cfg = lerEstacao_();
+  var eco = configEcowitt_(cfg);
+  var p = paramsEcowitt_(eco);
+  p.call_back = "all";
+  var leitura = Motor.leituraDoTempoReal(chamarEcowitt_("/device/real_time", p), eco);
+  return { leitura: leitura, gravada: gravarLeituras_([leitura]) > 0 };
+}
+
 /** Gatilho a cada 10 min: uma leitura ao vivo. */
 function coletar() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return;
   try {
-    var cfg = lerEstacao_();
-    var eco = configEcowitt_(cfg);
-    var p = paramsEcowitt_(eco);
-    p.call_back = "all";
-    var leitura = Motor.leituraDoTempoReal(chamarEcowitt_("/device/real_time", p), eco);
-    var n = gravarLeituras_([leitura]);
-    if (n === 0) log_("coletar", "repetida", "Estação sem dado novo desde " + leitura.quando);
+    var r = coletarAgora_();
+    if (!r.gravada) log_("coletar", "repetida", "Estação sem dado novo desde " + r.leitura.quando);
   } catch (e) {
     log_("coletar", "erro", e.message);
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Menu: coleta e mostra o resultado (ou o erro) na tela. */
+function menuColetar() {
+  try {
+    var r = coletarAgora_();
+    var l = r.leitura;
+    var f = function (x, u) { return x === null || x === undefined ? "sem dado" : (Math.round(x * 10) / 10) + " " + u; };
+    log_("coletar", r.gravada ? "ok" : "repetida", l.quando);
+    aviso_((r.gravada ? "✅ Leitura gravada na aba LEITURAS" : "ℹ️ A estação ainda não mandou leitura nova (a última já estava gravada)") +
+      "\n\nMedida em: " + l.quando.replace("T", " ") +
+      "\nTemperatura: " + f(l.tempC, "°C") + "\nUmidade: " + f(l.urPct, "%") +
+      "\nRadiação: " + f(l.radWm2, "W/m²") + "\nVento: " + f(l.ventoMs, "m/s") + "\nChuva do dia: " + f(l.chuvaAcumDia, "mm"));
+  } catch (e) {
+    log_("coletar", "erro", e.message);
+    aviso_("❌ Não coletou:\n\n" + e.message + "\n\nSe não entender o erro, use 💧 Manejo → Testar conexão Ecowitt e me mande o que aparecer.");
+  }
+}
+
+/** Menu: mostra o que a Ecowitt responde, sem revelar as chaves. Serve para diagnosticar. */
+function testarEcowitt() {
+  var linhas = [];
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var mascara = function (k) {
+      var v = props.getProperty(k);
+      return v ? v.slice(0, 4) + "…" + v.slice(-2) + " (" + v.length + " caracteres)" : "NÃO CONFIGURADA";
+    };
+    linhas.push("Application Key: " + mascara("ECOWITT_APPLICATION_KEY"));
+    linhas.push("API Key: " + mascara("ECOWITT_API_KEY"));
+    linhas.push("MAC: " + (props.getProperty("ECOWITT_MAC") || "NÃO CONFIGURADO"));
+    var cfg = lerEstacao_();
+    linhas.push("Fuso: " + cfg.fuso + " · Pluviômetro: " + cfg.grupoChuva);
+    var eco = configEcowitt_(cfg);
+    var p = paramsEcowitt_(eco);
+    p.call_back = "all";
+    var qs = Object.keys(p).map(function (k) { return k + "=" + encodeURIComponent(p[k]); }).join("&");
+    var resp = UrlFetchApp.fetch(Motor.URL_BASE + "/device/real_time?" + qs, { muteHttpExceptions: true });
+    linhas.push("HTTP: " + resp.getResponseCode());
+    var corpo = JSON.parse(resp.getContentText());
+    linhas.push("Resposta: code " + corpo.code + " — " + corpo.msg);
+    var d = corpo.data;
+    if (!d || typeof d !== "object" || Array.isArray(d)) {
+      linhas.push("Dados: vazios" + (Array.isArray(d) ? " (lista vazia — estação offline ou MAC errado?)" : ""));
+    } else {
+      linhas.push("Grupos recebidos: " + Object.keys(d).join(", "));
+      [["outdoor", "temperature"], ["outdoor", "humidity"], ["solar_and_uvi", "solar"], [cfg.grupoChuva, "daily"], ["wind", "wind_speed"]]
+        .forEach(function (c) {
+          var v = d[c[0]] && d[c[0]][c[1]];
+          linhas.push("• " + c.join(".") + ": " + (v ? v.value + " " + v.unit + " (medido " +
+            (v.time ? Motor.paraLocal(Number(v.time) * 1000, cfg.fuso).replace("T", " ") : "sem hora") + ")" : "NÃO VEIO"));
+        });
+    }
+  } catch (e) {
+    linhas.push("ERRO: " + e.message);
+  }
+  log_("testar Ecowitt", "diagnóstico", linhas.join(" | "));
+  aviso_(linhas.join("\n"));
+  return linhas;
 }
 
 function historicoEcowitt_(eco, a, b, ciclo) {

@@ -129,6 +129,7 @@ export interface Ambiente {
   raiz: FakeFolder;
   pastaApp: FakeFolder;
   urls: string[];
+  alertas: string[];
   respostaHttp: (url: string) => { code: number; corpo: unknown };
   agoraMs: number | null;
   aba(nome: string): FakeSheet;
@@ -146,6 +147,7 @@ export function criarAmbiente(): Ambiente {
     props: new Map<string, string>(),
     gatilhos: [] as Ambiente["gatilhos"],
     urls: [] as string[],
+    alertas: [] as string[],
     respostaHttp: (() => ({ code: 500, corpo: {} })) as Ambiente["respostaHttp"],
     agoraMs: null as number | null,
   } as Ambiente;
@@ -157,7 +159,7 @@ export function criarAmbiente(): Ambiente {
     getName: () => "MANEJO_IRRIGACAO",
     setSpreadsheetTimeZone: () => {},
     getUi: () => ({
-      alert: () => {},
+      alert: (t: string) => { amb.alertas.push(t); },
       createMenu: () => encadeavel(),
       prompt: () => { throw new Error("prompt não disponível no teste"); },
     }),
@@ -176,7 +178,7 @@ export function criarAmbiente(): Ambiente {
   const globais = {
     console,
     Date: DateFake,
-    SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss },
+    SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss, getUi: () => ss.getUi() },
     UrlFetchApp: {
       fetch: (url: string) => {
         amb.urls.push(url);
