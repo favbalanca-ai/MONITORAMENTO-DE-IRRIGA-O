@@ -148,22 +148,57 @@ function recriarGatilhos_(fuso) {
   ScriptApp.newTrigger("backupDiario").timeBased().atHour(4).everyDays(1).inTimezone(fuso).create();
 }
 
+/** Tira espaços, quebras de linha e caracteres invisíveis que vêm junto ao copiar. */
+function limparChave_(v) {
+  return String(v || "").replace(/[^A-Za-z0-9:\-]/g, "");
+}
+
+/** Formatos usuais: Application Key = 32 letras/números; API Key = com hífens (UUID). */
+function tipoChave_(v) {
+  if (/^[0-9A-Fa-f]{32}$/.test(v)) return "application";
+  if (/^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/.test(v)) return "api";
+  return "desconhecido";
+}
+
+/** Grava as chaves limpas; se estiverem trocadas (formato de uma no lugar da outra), desfaz a troca. */
+function guardarChaves_(app, api, mac) {
+  var props = PropertiesService.getScriptProperties();
+  var atual = function (k) { return props.getProperty(k) || ""; };
+  app = limparChave_(app) || atual("ECOWITT_APPLICATION_KEY");
+  api = limparChave_(api) || atual("ECOWITT_API_KEY");
+  mac = limparChave_(mac).toUpperCase() || atual("ECOWITT_MAC");
+  var trocadas = tipoChave_(app) === "api" && tipoChave_(api) === "application";
+  if (trocadas) {
+    var t = app;
+    app = api;
+    api = t;
+  }
+  props.setProperty("ECOWITT_APPLICATION_KEY", app);
+  props.setProperty("ECOWITT_API_KEY", api);
+  props.setProperty("ECOWITT_MAC", mac);
+  return { trocadas: trocadas, app: tipoChave_(app), api: tipoChave_(api) };
+}
+
 /** As chaves ficam nas propriedades do script — não aparecem na planilha nem nos backups. */
 function configurarChaves() {
   var ui = SpreadsheetApp.getUi();
-  var props = PropertiesService.getScriptProperties();
-  var campos = [
-    ["ECOWITT_APPLICATION_KEY", "Application Key da Ecowitt"],
-    ["ECOWITT_API_KEY", "API Key da Ecowitt"],
-    ["ECOWITT_MAC", "MAC da estação (ex.: AA:BB:CC:DD:EE:FF)"],
+  var perguntas = [
+    "Application Key (32 letras e números, sem hífen)",
+    "API Key (formato com hífens, ex.: 0000aaaa-1111-...)",
+    "MAC da estação (ex.: AA:BB:CC:DD:EE:FF)",
   ];
-  for (var i = 0; i < campos.length; i++) {
-    var r = ui.prompt("Chaves Ecowitt", campos[i][1] + "\n(deixe em branco para manter a atual)", ui.ButtonSet.OK_CANCEL);
+  var respostas = [];
+  for (var i = 0; i < perguntas.length; i++) {
+    var r = ui.prompt("Chaves Ecowitt", perguntas[i] + "\n(deixe em branco para manter a atual)", ui.ButtonSet.OK_CANCEL);
     if (r.getSelectedButton() !== ui.Button.OK) return;
-    var v = r.getResponseText().trim();
-    if (v) props.setProperty(campos[i][0], v);
+    respostas.push(r.getResponseText());
   }
-  aviso_("Chaves guardadas. Teste com 💧 Manejo → Coletar leitura agora.");
+  var g = guardarChaves_(respostas[0], respostas[1], respostas[2]);
+  var msg = "Chaves guardadas.";
+  if (g.trocadas) msg += "\n\n⚠️ As duas chaves estavam trocadas — já acertei.";
+  if (g.app !== "application") msg += "\n\n⚠️ A Application Key não tem o formato esperado (32 letras/números). Confira.";
+  if (g.api !== "api") msg += "\n\n⚠️ A API Key não tem o formato esperado (com hífens). Confira.";
+  aviso_(msg + "\n\nTeste com 💧 Manejo → Testar conexão Ecowitt.");
 }
 
 /* =============================== CONFIGURAÇÃO =============================== */
@@ -187,9 +222,9 @@ function lerEstacao_() {
 
 function configEcowitt_(cfg) {
   var p = PropertiesService.getScriptProperties();
-  var app = p.getProperty("ECOWITT_APPLICATION_KEY");
-  var api = p.getProperty("ECOWITT_API_KEY");
-  var mac = p.getProperty("ECOWITT_MAC");
+  var app = limparChave_(p.getProperty("ECOWITT_APPLICATION_KEY"));
+  var api = limparChave_(p.getProperty("ECOWITT_API_KEY"));
+  var mac = limparChave_(p.getProperty("ECOWITT_MAC"));
   if (!app || !api || !mac) throw new Error("Chaves da Ecowitt não configuradas (menu 💧 Manejo → 2. Configurar chaves Ecowitt).");
   return { applicationKey: app, apiKey: api, mac: mac, fuso: cfg.fuso, grupoChuva: cfg.grupoChuva };
 }
@@ -389,8 +424,14 @@ function testarEcowitt() {
   try {
     var props = PropertiesService.getScriptProperties();
     var mascara = function (k) {
-      var v = props.getProperty(k);
-      return v ? v.slice(0, 4) + "…" + v.slice(-2) + " (" + v.length + " caracteres)" : "NÃO CONFIGURADA";
+      var bruto = props.getProperty(k);
+      var v = limparChave_(bruto);
+      if (!v) return "NÃO CONFIGURADA";
+      var tipo = tipoChave_(v);
+      var esperado = k === "ECOWITT_APPLICATION_KEY" ? "application" : "api";
+      return v.slice(0, 4) + "…" + v.slice(-2) + " (" + v.length + " caracteres" +
+        (bruto.length !== v.length ? ", tinha " + (bruto.length - v.length) + " caractere(s) invisível(is)" : "") + ") — " +
+        (tipo === esperado ? "formato OK" : tipo === "desconhecido" ? "FORMATO ESTRANHO" : "PARECE A OUTRA CHAVE (trocadas?)");
     };
     linhas.push("Application Key: " + mascara("ECOWITT_APPLICATION_KEY"));
     linhas.push("API Key: " + mascara("ECOWITT_API_KEY"));

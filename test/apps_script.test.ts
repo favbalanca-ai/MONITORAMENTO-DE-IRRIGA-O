@@ -241,3 +241,24 @@ test("teste de conexão mostra o que a Ecowitt mandou sem revelar as chaves", as
   amb.respostaHttp = () => ({ code: 200, corpo: { code: 0, msg: "success", data: [] } });
   assert.match(amb.chamar<string[]>("testarEcowitt").join("\n"), /lista vazia/);
 });
+
+test("chaves: limpa invisíveis, desfaz troca e o teste aponta formato errado", () => {
+  const amb = instalado();
+  const APP = "A1B2C3D4E5F60718293A4B5C6D7E8F90";
+  const API = "0000aaaa-1111-4222-8333-444455556666";
+  const g = amb.chamar<{ trocadas: boolean }>("guardarChaves_", ` ${API}​\n`, `${APP} `, "aa:bb:cc:dd:ee:ff ");
+  assert.equal(g.trocadas, true);
+  assert.equal(amb.props.get("ECOWITT_APPLICATION_KEY"), APP);
+  assert.equal(amb.props.get("ECOWITT_API_KEY"), API);
+  assert.equal(amb.props.get("ECOWITT_MAC"), "AA:BB:CC:DD:EE:FF");
+
+  amb.props.set("ECOWITT_APPLICATION_KEY", API + "​");
+  amb.respostaHttp = (url) => {
+    assert.ok(!url.includes("%E2%80%8B"), "não manda caractere invisível");
+    return { code: 200, corpo: { code: 40010, msg: "Invalid application Key", data: [] } };
+  };
+  const t = amb.chamar<string[]>("testarEcowitt").join("\n");
+  assert.match(t, /Application Key: 0000…66 \(36 caracteres, tinha 1 caractere\(s\) invisível\(is\)\) — PARECE A OUTRA CHAVE/);
+  assert.match(t, /API Key: 0000…66 \(36 caracteres\) — formato OK/);
+  assert.match(t, /code 40010 — Invalid application Key/);
+});
