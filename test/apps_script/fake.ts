@@ -4,6 +4,7 @@
  */
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { paraLocal } from "../../src/coletor/tempo.ts";
 
 type Celula = unknown;
@@ -104,6 +105,11 @@ class FakeFolder {
   getFiles() { return iterador(this.arquivos.filter((f) => !f.lixeira)); }
 }
 
+/** Bytes como o Apps Script devolve: números de -128 a 127. */
+function assinados(buf: Buffer): number[] {
+  return Array.from(buf, (x) => (x > 127 ? x - 256 : x));
+}
+
 function iterador<T>(xs: T[]) {
   let i = 0;
   return { hasNext: () => i < xs.length, next: () => xs[i++]! };
@@ -136,6 +142,9 @@ export interface Ambiente {
   agoraMs: number | null;
   aba(nome: string): FakeSheet;
   chamar<T = unknown>(fn: string, ...args: unknown[]): T;
+  /** Como o app chama a planilha: GET com parâmetros e POST com corpo JSON. */
+  get(params: Record<string, string>): any;
+  post(corpo: Record<string, unknown>): any;
 }
 
 export function criarAmbiente(): Ambiente {
@@ -205,6 +214,19 @@ export function criarAmbiente(): Ambiente {
         throw new Error(`formato não suportado no fake: ${fmt}`);
       },
       sleep: () => {},
+      getUuid: () => randomUUID(),
+      DigestAlgorithm: { SHA_256: "sha256" },
+      Charset: { UTF_8: "utf8" },
+      computeDigest: (alg: string, texto: string) => assinados(createHash(alg).update(texto, "utf8").digest()),
+      computeHmacSha256Signature: (texto: string, chave: string) => assinados(createHmac("sha256", chave).update(texto, "utf8").digest()),
+      base64Encode: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64"),
+      base64EncodeWebSafe: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url") + "=".repeat((4 - (Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url").length % 4)) % 4),
+      base64DecodeWebSafe: (t: string) => assinados(Buffer.from(t.replace(/=+$/, ""), "base64url")),
+      newBlob: (b: number[]) => ({ getDataAsString: () => Buffer.from(Uint8Array.from(b, (x) => x & 255)).toString("utf8") }),
+    },
+    ContentService: {
+      MimeType: { JSON: "application/json" },
+      createTextOutput: (texto: string) => ({ texto, setMimeType() { return this; } }),
     },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     ScriptApp: {
@@ -222,10 +244,12 @@ export function criarAmbiente(): Ambiente {
     },
   };
   const ctx = vm.createContext(globais);
-  const codigo = ["Motor.gs", "Codigo.gs", "App.gs"].map((f) => readFileSync(new URL(`../../apps-script/${f}`, import.meta.url), "utf8")).join("\n");
+  const codigo = ["Motor.gs", "Code.gs"].map((f) => readFileSync(new URL(`../../sync/${f}`, import.meta.url), "utf8")).join("\n");
   vm.runInContext(codigo, ctx, { filename: "apps-script" });
   amb.ctx = ctx;
   amb.aba = (n) => { const a = abas.get(n); if (!a) throw new Error(`aba ${n} não existe`); return a; };
   amb.chamar = (fn, ...args) => (ctx[fn] as (...a: unknown[]) => unknown)(...args) as never;
+  amb.get = (params) => JSON.parse((amb.chamar<{ texto: string }>("doGet", { parameter: params })).texto);
+  amb.post = (corpo) => JSON.parse((amb.chamar<{ texto: string }>("doPost", { postData: { contents: JSON.stringify(corpo) } })).texto);
   return amb;
 }

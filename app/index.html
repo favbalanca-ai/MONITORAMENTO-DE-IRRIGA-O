@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Manejo de Irrigação</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#16404d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Irrigação">
+<meta http-equiv="Cache-Control" content="no-store">
+<!-- sem cache: o CSS é pedido com um carimbo de hora, então nunca vem uma versão velha do cache do navegador -->
+<script>document.write('<link rel="stylesheet" href="styles.css?t=' + Date.now() + '">');</script>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand" data-go="#/hoje" title="Hoje" style="cursor:pointer">
+      <span class="brand-logo">💧</span>
+      <div>
+        <div class="brand-title">Irrigação</div>
+        <div class="brand-sub">Fazenda Água Viva</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <a href="#/hoje" data-view="hoje"><span class="ico">📋</span><span class="lbl">Hoje</span></a>
+      <a href="#/lancar" data-view="lancar"><span class="ico">✏️</span><span class="lbl">Lançar</span></a>
+      <a href="#/historico" data-view="historico"><span class="ico">📈</span><span class="lbl">Histórico</span></a>
+      <a href="#/pivos" data-view="pivos"><span class="ico">🎯</span><span class="lbl">Pivôs</span></a>
+      <a href="#/sync" data-view="sync"><span class="ico">⚙️</span><span class="lbl">Ajustes</span></a>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="btn-update" class="btn btn-ghost btn-sm" type="button" title="Baixar a versão nova do app">🔄 Atualizar app</button>
+      <div id="app-ver" class="app-ver"></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h1 id="page-title">Hoje</h1>
+      <div class="topbar-right">
+        <a href="#/sync" id="sync-status" class="sync-status" title="Estado da sincronização"><span class="dot"></span><span class="sync-status-txt">Local</span></a>
+        <a href="#/conta" id="user-chip" class="user-chip" hidden title="Minha conta"></a>
+      </div>
+    </header>
+    <div id="fila-bar" class="fila-bar" hidden></div>
+    <section id="content" class="content"><div class="loading">Carregando…</div></section>
+  </main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script>
+/* Registra o service worker: mantém o app sempre atualizado (sem cache)
+   e recarrega sozinho quando uma versão nova assume o controle. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      var refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshing) return; refreshing = true; window.location.reload();
+      });
+      try { reg.update(); } catch (e) {}
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') { try { reg.update(); } catch (e) {} }
+      });
+    }).catch(function () {});
+  });
+}
+</script>
+<!-- sem cache: o app.js também é pedido com carimbo de hora (sempre a versão publicada mais nova) -->
+<script>document.write('<script src="app.js?t=' + Date.now() + '"><\/script>');</script>
+</body>
+</html>

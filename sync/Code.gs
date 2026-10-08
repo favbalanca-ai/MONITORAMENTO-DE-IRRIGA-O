@@ -20,6 +20,8 @@ var ABA = {
   LEITURAS: "LEITURAS",
   LOG: "LOG",
   CACHE: "CACHE",
+  USUARIOS: "USUÁRIOS APP",
+  CONFIG_APP: "CONFIG APP",
 };
 
 var PASTA_BACKUP = "BACKUP";
@@ -68,8 +70,8 @@ var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "2025-11-25", "2026-01-20", "SIM",
   400, 360, 200, 3, 10, 85, 55, 0.5];
 
 var CABECALHOS = {
-  IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs."],
-  UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte"],
+  IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs.", "Por", "ID"],
+  UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas"],
@@ -92,7 +94,8 @@ function onOpen() {
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
     .addSeparator()
-    .addItem("📱 Link do app", "menuLinkApp")
+    .addItem("📱 Endereço para o app", "menuLinkApp")
+    .addItem("👤 Criar administrador do app", "menuCriarAdmin")
     .addToUi();
 }
 
@@ -121,6 +124,10 @@ function instalar() {
   criarAbaSeFaltar_(ss, ABA.LOG, CABECALHOS.LOG);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
+  abaUsuarios_();
+  abaConfigApp_();
+  garantirColunaId_(ABA.IRRIGACOES);
+  garantirColunaId_(ABA.UMIDADE);
 
   var cfg = lerEstacao_();
   ss.setSpreadsheetTimeZone(cfg.fuso);
@@ -684,6 +691,7 @@ function lerResumo_() {
   return t ? JSON.parse(t) : null;
 }
 
+/** Mostra o endereço /exec para colar no app (tela Sincronizar). */
 function menuLinkApp() {
   var url = "";
   try {
@@ -692,8 +700,8 @@ function menuLinkApp() {
     url = "";
   }
   aviso_(url
-    ? "Link do app:\n\n" + url + "\n\nAbra no celular e use \"Adicionar à tela inicial\"."
-    : "O app ainda não foi publicado. No editor do Apps Script: Implantar → Nova implantação → Tipo: App da Web → Executar como: Eu → Quem pode acessar: Somente eu → Implantar.");
+    ? "Endereço da planilha para o app:\n\n" + url + "\n\nNo app (celular), abra ⚙️ Sincronizar, cole este endereço e toque em Salvar."
+    : "A ponte com o app ainda não foi publicada. No editor do Apps Script: Implantar → Nova implantação → App da Web → Executar como: Eu → Quem pode acessar: Qualquer pessoa → Implantar.");
 }
 
 function escreverTabela_(nome, cabecalho, linhas) {
@@ -920,4 +928,574 @@ function aviso_(texto) {
   } catch (e) {
     console.log(texto); // rodando por gatilho, sem tela
   }
+}
+
+/* ===================================================================================
+ * APP NO CELULAR (GitHub Pages) ↔ PLANILHA
+ *
+ * Mesmo modelo do Planejamento: a planilha é a fonte da verdade, o app puxa (doGet) e
+ * envia (doPost). Publicar: Implantar → Nova implantação → App da Web →
+ *   Executar como: Eu · Quem pode acessar: Qualquer pessoa.
+ * O endereço /exec vai na tela ⚙️ Sincronizar do app (nunca no GitHub).
+ *
+ * doGet  ?acao=dados | hash | historico&pivo=&dias= | usuarios     (&s=<sessão>)
+ * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__pivo} {__usuario} {__trocarPin}
+ *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
+ * =================================================================================== */
+
+var VERSAO_SERVIDOR = "2026.10.08-1";
+var LOGIN_TENTATIVAS = 5;
+var LOGIN_BLOQUEIO_MIN = 10;
+var SESSAO_DIAS = 30;
+var COLS_USUARIOS = ["NOME", "LOGIN", "PERFIL", "PIN NOVO", "PIN", "ATIVO", "VERSÃO", "ÚLTIMO ACESSO"];
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  try {
+    return json_(doGet_((e && e.parameter) || {}));
+  } catch (err) {
+    return json_({ ok: false, erro: err.message });
+  }
+}
+
+function doGet_(p) {
+  var acao = p.acao || "dados";
+  var u = usuarioDaSessao_(p.s);
+  if (u && u.erro) return { login: true, erro: u.erro };
+  if (!u && loginExigido_()) return { login: true, erro: "Entre com seu login e PIN." };
+  if (acao === "dados") return dadosApp_(u);
+  if (acao === "hash") return { ok: true, hash: hashDados_() };
+  if (acao === "historico") return { ok: true, historico: historico_(p.pivo, Number(p.dias) || 30) };
+  if (acao === "usuarios") {
+    exigirAdmin_(u);
+    return { ok: true, usuarios: listarUsuarios_() };
+  }
+  throw new Error("Ação desconhecida: " + acao);
+}
+
+function doPost(e) {
+  var corpo;
+  try {
+    corpo = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+  } catch (err) {
+    return json_({ ok: false, erro: "Pedido inválido (JSON)." });
+  }
+  var tipos = Object.keys(corpo).filter(function (k) { return k.indexOf("__") === 0; });
+  if (tipos.length !== 1) return json_({ ok: false, erro: "Mande um tipo de gravação por pedido." });
+  var tipo = tipos[0];
+  if (tipo === "__login") {
+    try {
+      return json_(loginFaz_(corpo.__login || {}));
+    } catch (err) {
+      return json_({ ok: false, erro: err.message });
+    }
+  }
+  var u = usuarioDaSessao_(corpo.s);
+  if (u && u.erro) return json_({ ok: false, login: true, erro: u.erro });
+  if (!u && loginExigido_()) return json_({ ok: false, login: true, erro: "Entre com seu login e PIN." });
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(45000)) return json_({ ok: false, ocupado: true, erro: "Planilha ocupada. Tente de novo em instantes." });
+  try {
+    var d = corpo[tipo] || {};
+    if (tipo === "__lancamento") return json_(gravarLancamento_(d, u));
+    if (tipo === "__apagar") return json_(apagarLancamento_(d.id, u));
+    if (tipo === "__recalcular") return json_(recalcularApp_());
+    if (tipo === "__pivo") {
+      exigirAdmin_(u);
+      return json_({ ok: true, cadastro: salvarPivo_(d.dados || {}, d.original || null), recalculo: recalcularApp_() });
+    }
+    if (tipo === "__usuario") {
+      exigirAdmin_(u);
+      return json_(gravarUsuario_(d));
+    }
+    if (tipo === "__trocarPin") return json_(trocarPin_(u, d.atual, d.novo));
+    return json_({ ok: false, erro: "Tipo de gravação desconhecido: " + tipo });
+  } catch (err) {
+    return json_({ ok: false, erro: err.message });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------------------- dados para o app ------------------------------- */
+
+function hojeLocal_() {
+  return Motor.paraLocal(Date.now(), lerEstacao_().fuso).slice(0, 10);
+}
+
+function ultimaLeitura_() {
+  var aba = abaLeituras_();
+  if (!aba || aba.getLastRow() < 2) return null;
+  var l = linhaParaLeitura_(aba.getRange(aba.getLastRow(), 1, 1, 8).getValues()[0]);
+  return { quando: l.quando, tempC: l.tempC, urPct: l.urPct };
+}
+
+function dadosApp_(u) {
+  var resumo = lerResumo_();
+  var erroCalculo = "";
+  if (!resumo) {
+    try {
+      calcular_(null);
+      resumo = lerResumo_();
+    } catch (e) {
+      erroCalculo = e.message;
+    }
+  }
+  return {
+    ok: true,
+    versao: VERSAO_SERVIDOR,
+    hoje: hojeLocal_(),
+    usuario: u ? usuarioPublico_(u) : null,
+    exigido: loginExigido_(),
+    resumo: resumo,
+    erroCalculo: erroCalculo,
+    ultimaLeitura: ultimaLeitura_(),
+    cadastro: cadastroPivos_(),
+    lancamentos: lancamentosApp_(30),
+    hash: hashDados_(),
+  };
+}
+
+/** Muda quando há cálculo novo, leitura nova ou lançamento novo: o app só baixa tudo se mudou. */
+function hashDados_() {
+  var r = lerResumo_();
+  var ss = SpreadsheetApp.getActive();
+  var n = function (nome) { var a = ss.getSheetByName(nome); return a ? a.getLastRow() : 0; };
+  var ult = ultimaLeitura_();
+  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), ult ? ult.quando : ""].join("|");
+}
+
+function recalcularApp_() {
+  try {
+    calcular_(null);
+    return { ok: true, resumo: lerResumo_(), hash: hashDados_() };
+  } catch (e) {
+    return { ok: true, resumo: lerResumo_(), aviso: "Gravado, mas o recálculo falhou: " + e.message, hash: hashDados_() };
+  }
+}
+
+function historico_(nome, dias) {
+  var alvo = String(nome || "").toLowerCase();
+  var bal = SpreadsheetApp.getActive().getSheetByName(ABA.BALANCO);
+  if (!bal || bal.getLastRow() < 2) return { pivo: nome, linhas: [] };
+  var cab = bal.getRange(1, 1, 1, bal.getLastColumn()).getValues()[0];
+  var col = function (h) { return cab.indexOf(h); };
+  var fuso = lerEstacao_().fuso;
+  var linhas = bal.getRange(2, 1, bal.getLastRow() - 1, cab.length).getValues()
+    .filter(function (l) { return String(l[col("Pivô")]).toLowerCase() === alvo; })
+    .map(function (l) {
+      var n = function (h) { var x = Motor.numero(l[col(h)]); return x === null ? null : Math.round(x * 100) / 100; };
+      return {
+        data: dataIso_(l[col("Data")], fuso), deficit: n("Déficit (mm)"), afd: n("AFD (mm)"), chuva: n("Chuva"),
+        irrigacao: n("Irrigação"), et0: n("ET0"), etc: n("ETc"), estadio: String(l[col("Estádio")]),
+        decisao: String(l[col("Decisão")]), medicao: l[col("Medição")] === "SIM",
+      };
+    });
+  var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
+  return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, linhas: linhas.slice(-dias) };
+}
+
+function cadastroPivos_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
+  var fuso = lerEstacao_().fuso;
+  var pivos = [];
+  if (aba && aba.getLastRow() >= 2) {
+    var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
+    pivos = vals.slice(1).filter(function (l) { return String(l[0]).trim() !== ""; }).map(function (l) {
+      var o = {};
+      COLUNAS_PIVOS.forEach(function (c) {
+        var x = l[vals[0].indexOf(c[1])];
+        o[c[0]] = x instanceof Date ? dataIso_(x, fuso) : x === undefined ? "" : x;
+      });
+      return o;
+    });
+  }
+  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: Object.keys(Motor.CULTURAS) };
+}
+
+/* --------------------------------- lançamentos --------------------------------- */
+
+/** Garante as colunas "Por" e "ID" (achadas pelo cabeçalho) e devolve os índices (1-based). */
+function garantirColunaId_(nome) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(nome);
+  var ultCol = Math.max(1, aba.getLastColumn());
+  var cab = aba.getRange(1, 1, 1, ultCol).getValues()[0].map(String);
+  ["Por", "ID"].forEach(function (h) {
+    if (cab.indexOf(h) < 0) {
+      cab.push(h);
+      aba.getRange(1, cab.length).setValue(h);
+    }
+  });
+  return { aba: aba, cab: cab, por: cab.indexOf("Por") + 1, id: cab.indexOf("ID") + 1 };
+}
+
+function novoId_() {
+  return "P" + Utilities.getUuid().replace(/-/g, "").slice(0, 10);
+}
+
+/** Linhas de um tipo com id; linhas lançadas à mão na planilha ganham id aqui. */
+function linhasLancamento_(nome) {
+  var g = garantirColunaId_(nome);
+  var n = g.aba.getLastRow();
+  if (n < 2) return { g: g, linhas: [] };
+  var vals = g.aba.getRange(2, 1, n - 1, g.cab.length).getValues();
+  var semId = false;
+  vals.forEach(function (l) {
+    if (String(l[0]) !== "" && String(l[1]).trim() !== "" && !String(l[g.id - 1]).trim()) {
+      l[g.id - 1] = novoId_();
+      semId = true;
+    }
+  });
+  if (semId) g.aba.getRange(2, g.id, vals.length, 1).setValues(vals.map(function (l) { return [l[g.id - 1]]; }));
+  return { g: g, linhas: vals };
+}
+
+function lancamentosApp_(limite) {
+  var fuso = lerEstacao_().fuso;
+  var ler = function (nome, tipo, nValores) {
+    var r = linhasLancamento_(nome);
+    return r.linhas.filter(function (l) { return String(l[0]) !== "" && String(l[1]).trim() !== ""; }).map(function (l) {
+      var v = function (x) { return x === "" || x === null ? "" : x instanceof Date ? dataIso_(x, fuso) : x; };
+      return {
+        id: String(l[r.g.id - 1]), tipo: tipo, data: dataIso_(l[0], fuso), pivo: String(l[1]),
+        valores: l.slice(2, 2 + nValores).map(v), por: String(l[r.g.por - 1] || ""),
+      };
+    });
+  };
+  var todos = ler(ABA.IRRIGACOES, "irrigacao", 2).concat(ler(ABA.UMIDADE, "umidade", 4));
+  todos.sort(function (a, b) { return a.data < b.data ? 1 : a.data > b.data ? -1 : a.id < b.id ? 1 : -1; });
+  return todos.slice(0, limite || 30);
+}
+
+function numeroEntre_(v, nome, min, max) {
+  var n = Motor.numero(v);
+  if (n === null || n < min || n > max) throw new Error(nome + " deve ser um número entre " + min + " e " + max + ".");
+  return n;
+}
+
+/**
+ * Grava (ou regrava, pelo id) uma irrigação ou medição de umidade e recalcula.
+ * Reenviar o mesmo id não duplica — é o que permite a fila sem internet no celular.
+ */
+function gravarLancamento_(d, u) {
+  var id = String(d.id || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+  if (!id) throw new Error("Lançamento sem id.");
+  var tipo = d.tipo === "umidade" ? "umidade" : d.tipo === "irrigacao" ? "irrigacao" : null;
+  if (!tipo) throw new Error("Tipo de lançamento desconhecido.");
+  var alvo = String(d.pivo || "").trim().toLowerCase();
+  var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
+  if (!p) throw new Error("Pivô \"" + d.pivo + "\" não está na aba PIVOS.");
+  var data = dataIso_(d.data, lerEstacao_().fuso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error("Data inválida: " + d.data);
+  if (data > hojeLocal_()) throw new Error("A data não pode ser no futuro.");
+  var por = u ? u.nome : String(d.por || "");
+
+  var valores;
+  if (tipo === "irrigacao") {
+    valores = [numeroEntre_(d.mm, "A lâmina", 0.1, 100), T_(d.obs)];
+  } else {
+    var opc = function (v, nome, min, max) { return v === "" || v == null ? "" : numeroEntre_(v, nome, min, max); };
+    valores = [numeroEntre_(d.umidadeRaiz, "A umidade na raiz", 0, 100), opc(d.umidadeProfunda, "A umidade profunda", 0, 100),
+      opc(d.tensao, "A tensão", -1500, 0), T_(d.fonte)];
+  }
+
+  // um id só pode existir em um dos dois tipos: se mudou de tipo, sai do outro
+  apagarPorId_(tipo === "irrigacao" ? ABA.UMIDADE : ABA.IRRIGACOES, id);
+  var r = linhasLancamento_(tipo === "irrigacao" ? ABA.IRRIGACOES : ABA.UMIDADE);
+  var linha = [data, p.nome].concat(valores);
+  while (linha.length < r.g.cab.length) linha.push("");
+  linha[r.g.por - 1] = T_(por);
+  linha[r.g.id - 1] = id;
+  var idx = -1;
+  r.linhas.forEach(function (l, i) { if (String(l[r.g.id - 1]) === id) idx = i; });
+  var nLinha = idx >= 0 ? idx + 2 : r.g.aba.getLastRow() + 1;
+  r.g.aba.getRange(nLinha, 1, 1, linha.length).setValues([linha]);
+  log_("app", idx >= 0 ? "regravado" : "lançado", tipo + " " + p.nome + " " + data + " por " + (por || "?"));
+  var res = recalcularApp_();
+  res.id = id;
+  return res;
+}
+
+function apagarPorId_(nome, id) {
+  var r = linhasLancamento_(nome);
+  for (var i = r.linhas.length - 1; i >= 0; i--) {
+    if (String(r.linhas[i][r.g.id - 1]) === id) {
+      r.g.aba.deleteRows(i + 2, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function apagarLancamento_(id, u) {
+  id = String(id || "");
+  var achou = apagarPorId_(ABA.IRRIGACOES, id) || apagarPorId_(ABA.UMIDADE, id);
+  if (!achou) return { ok: true, jaApagado: true, hash: hashDados_() };   // apagar de novo não é erro
+  log_("app", "apagado", id + " por " + (u ? u.nome : "?"));
+  return recalcularApp_();
+}
+
+/** Texto do usuário nunca vira fórmula na planilha. */
+function T_(v) {
+  var s = String(v == null ? "" : v).slice(0, 500);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+/* ------------------------------------ pivôs ------------------------------------ */
+
+/** Cria ou atualiza um pivô (pelo nome original). Valida o cadastro inteiro antes de gravar. */
+function salvarPivo_(dados, nomeOriginal) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
+  var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
+  var nome = String(dados.nome || "").trim();
+  if (!nome) throw new Error("Dê um nome ao pivô.");
+  var nomes = aba.getLastRow() >= 2 ? aba.getRange(2, 1, aba.getLastRow() - 1, 1).getValues().map(function (l) { return String(l[0]).trim().toLowerCase(); }) : [];
+  var idxOriginal = nomeOriginal ? nomes.indexOf(String(nomeOriginal).trim().toLowerCase()) : -1;
+  var idxNome = nomes.indexOf(nome.toLowerCase());
+  if (idxNome >= 0 && idxNome !== idxOriginal) throw new Error("Já existe um pivô chamado " + nome + ".");
+  var linha = idxOriginal >= 0 ? idxOriginal + 2 : aba.getLastRow() + 1;
+  var antiga = linha <= aba.getLastRow() ? aba.getRange(linha, 1, 1, cab.length).getValues()[0] : cab.map(function () { return ""; });
+  var nova = cab.map(function (h, i) {
+    var c = COLUNAS_PIVOS.filter(function (x) { return x[1] === h; })[0];
+    if (!c || !(c[0] in dados)) return antiga[i];
+    var v = dados[c[0]];
+    if (c[0] === "ativo" || c[0] === "palhada") return v === true || String(v).toUpperCase() === "SIM" ? "SIM" : "NÃO";
+    if (c[0] === "nome" || c[0] === "cultura" || c[0] === "plantio" || c[0] === "inicioBalanco") return T_(String(v == null ? "" : v).trim());
+    var n = Motor.numero(v);
+    return n === null ? "" : n;
+  });
+  // datas como texto AAAA-MM-DD (formatar antes de escrever, senão o Sheets converte)
+  [cab.indexOf("Plantio") + 1, cab.indexOf("Início do balanço") + 1].forEach(function (c) {
+    if (c > 0) aba.getRange(linha, c).setNumberFormat("@");
+  });
+  aba.getRange(linha, 1, 1, cab.length).setValues([nova]);
+  try {
+    cadastroValidado_();
+  } catch (e) {
+    aba.getRange(linha, 1, 1, cab.length).setValues([antiga]);
+    if (idxOriginal < 0) aba.deleteRows(linha, 1);
+    throw e;
+  }
+  log_("app", "pivô salvo", nome);
+  return cadastroPivos_();
+}
+
+/* ------------------------------ login (PIN) e usuários ------------------------------ */
+
+function abaUsuarios_() {
+  var ss = SpreadsheetApp.getActive();
+  var aba = ss.getSheetByName(ABA.USUARIOS) || ss.insertSheet(ABA.USUARIOS);
+  if (aba.getLastRow() === 0) {
+    aba.getRange(1, 1, 1, COLS_USUARIOS.length).setValues([COLS_USUARIOS]).setFontWeight("bold");
+    aba.setFrozenRows(1);
+  }
+  return aba;
+}
+
+function abaConfigApp_() {
+  var ss = SpreadsheetApp.getActive();
+  var aba = ss.getSheetByName(ABA.CONFIG_APP) || ss.insertSheet(ABA.CONFIG_APP);
+  if (aba.getLastRow() === 0) {
+    aba.getRange(1, 1, 2, 3).setValues([
+      ["CONFIG", "VALOR", "OBSERVAÇÃO"],
+      ["EXIGIR LOGIN", "SIM", "SIM = o app só mostra e grava com login e PIN (aba USUÁRIOS APP)."],
+    ]);
+    aba.getRange(1, 1, 1, 3).setFontWeight("bold");
+  }
+  return aba;
+}
+
+function loginExigido_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CONFIG_APP);
+  if (!aba || aba.getLastRow() < 2) return true;
+  var vals = aba.getRange(2, 1, aba.getLastRow() - 1, 2).getValues();
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim().toUpperCase() === "EXIGIR LOGIN") return String(vals[i][1]).trim().toUpperCase() !== "NÃO";
+  return true;
+}
+
+function segredo_(nome) {
+  var p = PropertiesService.getScriptProperties();
+  var s = p.getProperty(nome);
+  if (!s) {
+    s = Utilities.getUuid() + Utilities.getUuid();
+    p.setProperty(nome, s);
+  }
+  return s;
+}
+
+function hashPin_(login, pin) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, segredo_("SAL_PIN") + ":" + login + ":" + pin, Utilities.Charset.UTF_8);
+  return Utilities.base64Encode(bytes);
+}
+
+function assinar_(texto) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(texto, segredo_("SEGREDO_SESSAO")));
+}
+
+function cab_(aba) {
+  return aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim().toUpperCase(); });
+}
+
+/** Usuários como objetos, com a linha (para regravar). */
+function usuarios_() {
+  var aba = abaUsuarios_();
+  var cab = cab_(aba);
+  var c = function (h) { return cab.indexOf(h); };
+  if (aba.getLastRow() < 2) return [];
+  return aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues().map(function (l, i) {
+    return {
+      linha: i + 2, nome: String(l[c("NOME")]).trim(), login: String(l[c("LOGIN")]).trim().toLowerCase(),
+      perfil: String(l[c("PERFIL")]).trim().toUpperCase() === "ADMIN" ? "ADMIN" : "OPERADOR",
+      pinNovo: String(l[c("PIN NOVO")]).trim(), pin: String(l[c("PIN")]).trim(),
+      ativo: String(l[c("ATIVO")]).trim().toUpperCase() !== "NÃO", versao: Number(l[c("VERSÃO")]) || 1,
+    };
+  }).filter(function (x) { return x.login; });
+}
+
+function gravarCampoUsuario_(linha, campos) {
+  var aba = abaUsuarios_();
+  var cab = cab_(aba);
+  Object.keys(campos).forEach(function (h) {
+    var col = cab.indexOf(h);
+    if (col >= 0) aba.getRange(linha, col + 1).setValue(campos[h]);
+  });
+}
+
+function usuarioPublico_(u) {
+  return { nome: u.nome, login: u.login, perfil: u.perfil };
+}
+
+function pinValido_(pin) {
+  return /^\d{4,6}$/.test(String(pin || ""));
+}
+
+function loginFaz_(d) {
+  var login = String(d.login || "").trim().toLowerCase();
+  var pin = String(d.pin || "").trim();
+  var props = PropertiesService.getScriptProperties();
+  var chave = "TENTATIVAS_" + login;
+  var t = JSON.parse(props.getProperty(chave) || '{"n":0,"ate":0}');
+  if (t.ate > Date.now()) return { ok: false, erro: "Muitas tentativas. Espere " + Math.ceil((t.ate - Date.now()) / 60000) + " min." };
+  var u = usuarios_().filter(function (x) { return x.login === login; })[0];
+  var certo = false;
+  if (u && u.ativo) {
+    if (u.pinNovo && pin === u.pinNovo && pinValido_(pin)) {
+      gravarCampoUsuario_(u.linha, { "PIN": hashPin_(login, pin), "PIN NOVO": "" });   // o PIN some da planilha
+      certo = true;
+    } else if (u.pin && hashPin_(login, pin) === u.pin) {
+      certo = true;
+    }
+  }
+  if (!certo) {
+    t.n += 1;
+    if (t.n >= LOGIN_TENTATIVAS) t = { n: 0, ate: Date.now() + LOGIN_BLOQUEIO_MIN * 60000 };
+    props.setProperty(chave, JSON.stringify(t));
+    return { ok: false, erro: "Login ou PIN errado." };
+  }
+  props.deleteProperty(chave);
+  gravarCampoUsuario_(u.linha, { "ÚLTIMO ACESSO": Motor.paraLocal(Date.now(), lerEstacao_().fuso).replace("T", " ") });
+  return { ok: true, token: criarSessao_(u), usuario: usuarioPublico_(u), exigido: loginExigido_() };
+}
+
+function criarSessao_(u) {
+  var corpo = [u.login, u.versao, Date.now() + SESSAO_DIAS * 86400000].join("|");
+  return Utilities.base64EncodeWebSafe(corpo) + "." + assinar_(corpo);
+}
+
+/** null = sem sessão; {erro} = sessão inválida/vencida; senão o usuário. */
+function usuarioDaSessao_(token) {
+  if (!token) return null;
+  var partes = String(token).split(".");
+  if (partes.length !== 2) return { erro: "Sessão inválida. Entre de novo." };
+  var corpo;
+  try {
+    corpo = Utilities.newBlob(Utilities.base64DecodeWebSafe(partes[0])).getDataAsString();
+  } catch (e) {
+    return { erro: "Sessão inválida. Entre de novo." };
+  }
+  if (assinar_(corpo) !== partes[1]) return { erro: "Sessão inválida. Entre de novo." };
+  var c = corpo.split("|");
+  if (Number(c[2]) < Date.now()) return { erro: "Sessão vencida. Entre de novo." };
+  var u = usuarios_().filter(function (x) { return x.login === c[0]; })[0];
+  if (!u || !u.ativo || String(u.versao) !== c[1]) return { erro: "Seu acesso mudou. Entre de novo." };
+  return u;
+}
+
+function exigirAdmin_(u) {
+  if (!u || u.perfil !== "ADMIN") {
+    if (!u && !loginExigido_()) return;   // sem login exigido, quem não entrou age como antes
+    throw new Error("Só o administrador pode fazer isso.");
+  }
+}
+
+function listarUsuarios_() {
+  return usuarios_().map(function (x) {
+    return { nome: x.nome, login: x.login, perfil: x.perfil, ativo: x.ativo, temPin: !!(x.pin || x.pinNovo) };
+  });
+}
+
+/** {salvar:{nome, login, perfil, ativo, pin?}} ou {excluir: login}. Sempre sobra 1 admin ativo. */
+function gravarUsuario_(d) {
+  var lista = usuarios_();
+  if (d.excluir) {
+    var alvo = String(d.excluir).toLowerCase();
+    var x = lista.filter(function (y) { return y.login === alvo; })[0];
+    if (!x) return { ok: true, usuarios: listarUsuarios_() };
+    var admins = lista.filter(function (y) { return y.perfil === "ADMIN" && y.ativo && y.login !== alvo; });
+    if (x.perfil === "ADMIN" && !admins.length) throw new Error("Precisa sobrar pelo menos um administrador ativo.");
+    abaUsuarios_().deleteRows(x.linha, 1);
+    return { ok: true, usuarios: listarUsuarios_() };
+  }
+  var s = d.salvar || {};
+  var login = String(s.login || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!/^[a-z0-9._-]{2,30}$/.test(login)) throw new Error("Login: de 2 a 30 letras, números, ponto ou traço.");
+  if (!String(s.nome || "").trim()) throw new Error("Informe o nome.");
+  if (s.pin && !pinValido_(s.pin)) throw new Error("O PIN tem de ter de 4 a 6 números.");
+  var perfil = String(s.perfil).toUpperCase() === "ADMIN" ? "ADMIN" : "OPERADOR";
+  var ativo = s.ativo === false || String(s.ativo).toUpperCase() === "NÃO" ? "NÃO" : "SIM";
+  var atual = lista.filter(function (y) { return y.login === login; })[0];
+  if (atual && (perfil !== "ADMIN" || ativo === "NÃO") && atual.perfil === "ADMIN") {
+    var outros = lista.filter(function (y) { return y.perfil === "ADMIN" && y.ativo && y.login !== login; });
+    if (!outros.length) throw new Error("Precisa sobrar pelo menos um administrador ativo.");
+  }
+  var aba = abaUsuarios_();
+  var linha = atual ? atual.linha : aba.getLastRow() + 1;
+  var versao = atual ? atual.versao + (s.pin || ativo === "NÃO" || perfil !== atual.perfil ? 1 : 0) : 1;
+  var campos = { "NOME": T_(String(s.nome).trim()), "LOGIN": login, "PERFIL": perfil, "ATIVO": ativo, "VERSÃO": versao };
+  if (s.pin) {
+    campos["PIN"] = hashPin_(login, String(s.pin));
+    campos["PIN NOVO"] = "";
+  }
+  if (!atual) aba.getRange(linha, 1).setValue(login);   // reserva a linha
+  gravarCampoUsuario_(linha, campos);
+  return { ok: true, usuarios: listarUsuarios_() };
+}
+
+function trocarPin_(u, atual, novo) {
+  if (!u) throw new Error("Entre primeiro.");
+  if (hashPin_(u.login, String(atual || "")) !== u.pin) throw new Error("PIN atual errado.");
+  if (!pinValido_(novo)) throw new Error("O PIN novo tem de ter de 4 a 6 números.");
+  var versao = u.versao + 1;
+  gravarCampoUsuario_(u.linha, { "PIN": hashPin_(u.login, String(novo)), "VERSÃO": versao });
+  u.versao = versao;
+  return { ok: true, token: criarSessao_(u) };
+}
+
+/** Menu: cria (ou redefine) o administrador sem precisar mexer na aba USUÁRIOS APP. */
+function menuCriarAdmin() {
+  var ui = SpreadsheetApp.getUi();
+  var pergunta = function (t) {
+    var r = ui.prompt("Administrador do app", t, ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) throw new Error("Cancelado.");
+    return r.getResponseText().trim();
+  };
+  var nome = pergunta("Nome (ex.: Fabiana)");
+  var login = pergunta("Login (sem espaços, ex.: fabiana)");
+  var pin = pergunta("PIN de 4 a 6 números");
+  gravarUsuario_({ salvar: { nome: nome, login: login, perfil: "ADMIN", ativo: "SIM", pin: pin } });
+  aviso_("Administrador " + login + " criado. Entre no app com esse login e PIN.");
 }

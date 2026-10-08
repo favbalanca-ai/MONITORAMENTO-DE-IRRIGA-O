@@ -1,0 +1,17 @@
+{
+  "name": "Manejo de Irrigação",
+  "short_name": "Irrigação",
+  "description": "Decisão diária de irrigação por pivô: déficit, percentímetro, tempo da volta e custo de energia.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#16404d",
+  "theme_color": "#16404d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any" }
+  ]
+}

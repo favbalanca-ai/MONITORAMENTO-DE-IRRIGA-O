@@ -1,4 +1,4 @@
-# Manejo de irrigação no Google Sheets
+# Planilha e ponte com o app (Apps Script)
 
 Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o Apps Script coleta a estação, calcula e manda o relatório.
 
@@ -7,7 +7,7 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 1. No Google Drive da conta que vai ser dona do sistema, crie uma pasta (ex.: `05_MANEJO_IRRIGACAO_APP`) e, dentro dela, uma planilha em branco (ex.: `MANEJO_IRRIGACAO`).
 2. Na planilha: **Extensões → Apps Script**.
 3. No editor:
-   - Apague o conteúdo do `Código.gs` que vem pronto e cole o conteúdo de [`Codigo.gs`](Codigo.gs).
+   - Apague o conteúdo do `Código.gs` que vem pronto e cole o conteúdo de [`Code.gs`](Code.gs).
    - Clique em **+ → Script**, chame de `Motor` e cole o conteúdo de [`Motor.gs`](Motor.gs).
    - Em **Configurações do projeto** (engrenagem), marque "Mostrar o arquivo de manifesto appsscript.json" e cole o conteúdo de [`appsscript.json`](appsscript.json) no arquivo que aparecer.
    - Salve (ícone de disquete).
@@ -20,21 +20,37 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 
-## App no celular
+## Ligar o app do celular (GitHub Pages)
 
-As telas ficam no mesmo projeto do Apps Script:
+O app fica em `https://favbalanca-ai.github.io/MONITORAMENTO-DE-IRRIGA-O/` (ver `app/README.md`) e conversa com
+esta planilha pelo Apps Script, igual ao Planejamento.
 
-1. No editor do Apps Script, clique em **+ → Script**, nomeie `App` e cole [`App.gs`](App.gs).
-2. Clique em **+ → HTML**, nomeie `App` (fica `App.html`) e cole [`App.html`](App.html).
-3. Salve, depois **Implantar → Nova implantação** → engrenagem → **App da Web**:
+1. No editor do Apps Script: **Implantar → Nova implantação** → engrenagem → **App da Web**:
    - Executar como: **Eu**
-   - Quem pode acessar: **Somente eu**
-   - **Implantar** (autorize se pedir).
-4. Copie o link (também aparece em **💧 Manejo → 📱 Link do app**) e abra no celular, logado na mesma conta Google. No Chrome: menu ⋮ → **Adicionar à tela inicial**. No iPhone (Safari): compartilhar → **Adicionar à Tela de Início**.
+   - Quem pode acessar: **Qualquer pessoa** (quem protege é o login com PIN)
+   - **Implantar** e autorize. Copie o endereço que termina em **/exec** (também aparece em **💧 Manejo → 📱 Endereço para o app**).
+   - **Nunca** coloque esse endereço no GitHub.
+2. **💧 Manejo → 👤 Criar administrador do app**: nome, login e PIN (4 a 6 números).
+3. No celular, abra o app, toque em **⚙️ Ajustes**, cole o endereço /exec, **Salvar** e entre com o login e PIN.
+4. Para virar ícone: Chrome → menu ⋮ → **Adicionar à tela inicial** · iPhone (Safari) → Compartilhar → **Adicionar à Tela de Início**.
+5. Outras pessoas: o administrador cria em **Ajustes → 👥 Usuários** (Operador vê e lança; Administrador também edita pivôs e usuários).
 
-Telas: **Hoje** (decisão de cada pivô, percentímetro, volta, custo e alertas), **Lançar** (irrigação ou umidade, com apagar), **Histórico** (gráfico de déficit, AFD, chuva e irrigação) e **Pivôs** (cadastro, validado antes de salvar).
+Toda vez que o `Code.gs` ou o `Motor.gs` mudar: cole os arquivos e vá em **Implantar → Gerenciar implantações → lápis →
+Versão: Nova versão → Implantar**. O endereço /exec continua o mesmo.
 
-Quando mudar o `App.gs` ou o `App.html`, é preciso publicar de novo: **Implantar → Gerenciar implantações → lápis → Versão: Nova versão → Implantar**. O link continua o mesmo.
+### Como a ponte funciona (técnico)
+
+- `doGet ?acao=dados` devolve resumo do dia, cadastro, últimos lançamentos e um `hash`; `?acao=hash` só o hash (o app
+  baixa tudo apenas quando ele muda); `?acao=historico&pivo=&dias=`; `?acao=usuarios` (admin). Sessão em `&s=`.
+- `doPost` (corpo JSON em `text/plain`, um tipo por pedido, sessão em `s`): `__login {login, pin}`,
+  `__lancamento {id, tipo: irrigacao|umidade, pivo, data, …}` (mesmo id = regrava, não duplica), `__apagar {id}`,
+  `__recalcular`, `__pivo {dados, original}` (admin), `__usuario {salvar|excluir}` (admin), `__trocarPin {atual, novo}`.
+  Toda gravação usa trava (`LockService`); planilha ocupada responde `{ocupado:true}` e o app tenta de novo.
+- Abas criadas sozinhas: **USUÁRIOS APP** (NOME · LOGIN · PERFIL · PIN NOVO · PIN · ATIVO · VERSÃO · ÚLTIMO ACESSO) e
+  **CONFIG APP** (`EXIGIR LOGIN` = SIM). Um PIN digitado em PIN NOVO vira hash no primeiro login e some da planilha.
+  Trocar PIN, desativar ou mudar perfil derruba as sessões antigas daquela pessoa. 5 PINs errados bloqueiam por 10 min.
+- IRRIGACOES e UMIDADE ganham as colunas **Por** (quem lançou) e **ID**. Lançamentos digitados à mão na planilha ganham ID
+  na próxima leitura do app.
 
 ## O que roda sozinho
 

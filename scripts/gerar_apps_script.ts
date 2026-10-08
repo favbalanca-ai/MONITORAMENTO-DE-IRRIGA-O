@@ -1,5 +1,5 @@
 /**
- * Gera apps-script/Motor.gs a partir do código TypeScript testado (motor, parsing da Ecowitt,
+ * Gera sync/Motor.gs a partir do código TypeScript testado (motor, parsing da Ecowitt,
  * lacunas e mensagem). Assim a planilha calcula exatamente o que os testes validam.
  *
  *   npm run gerar:apps-script
@@ -25,7 +25,7 @@ export const ARQUIVOS = [
   "src/job/mensagem.ts",
 ];
 
-export const DESTINO = "apps-script/Motor.gs";
+export const DESTINO = "sync/Motor.gs";
 
 export function gerarMotorGs(raiz = "."): string {
   const exportados: string[] = [];
