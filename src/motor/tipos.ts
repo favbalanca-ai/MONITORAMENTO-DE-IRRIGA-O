@@ -14,6 +14,10 @@ export interface Leitura {
   /** Radiação solar instantânea (W/m²). */
   radWm2: number | null;
   ventoMs: number | null;
+  /** Intervalo que a leitura representa (min). Ao vivo = 10; histórico pode ser 5 ou 30. */
+  intervaloMin?: number;
+  /** Origem: "ecowitt", "ecowitt-historico-30min", "planilha"... */
+  fonte?: string;
 }
 
 /** Clima agregado de um dia (janela 18h de D−1 até 18h de D). */
@@ -29,7 +33,7 @@ export interface DiaClima {
   rad: number;
   /** Chuva na janela (mm). */
   chuva: number;
-  /** Número de leituras na janela. */
+  /** Leituras na janela, em equivalentes de 10 min (144 = dia completo). */
   n: number;
 }
 

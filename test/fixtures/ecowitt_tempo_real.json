@@ -1,0 +1,24 @@
+{
+  "code": 0,
+  "msg": "success",
+  "time": "1769018460",
+  "data": {
+    "outdoor": {
+      "temperature": { "time": "1769018400", "unit": "ºF", "value": "75.9" },
+      "feels_like": { "time": "1769018400", "unit": "ºF", "value": "76.4" },
+      "humidity": { "time": "1769018400", "unit": "%", "value": "76" }
+    },
+    "solar_and_uvi": {
+      "solar": { "time": "1769018400", "unit": "W/m²", "value": "812.5" },
+      "uvi": { "time": "1769018400", "unit": "", "value": "7" }
+    },
+    "rainfall": {
+      "rain_rate": { "time": "1769018400", "unit": "in/hr", "value": "0.00" },
+      "daily": { "time": "1769018400", "unit": "in", "value": "0.20" }
+    },
+    "wind": {
+      "wind_speed": { "time": "1769018400", "unit": "mph", "value": "4.5" },
+      "wind_direction": { "time": "1769018400", "unit": "º", "value": "120" }
+    }
+  }
+}

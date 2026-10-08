@@ -4,12 +4,15 @@
   "private": true,
   "description": "Manejo de irrigação por pivô — Fazenda Água Viva",
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
-    "relatorio:exemplo": "node --disable-warning=ExperimentalWarning scripts/relatorio_exemplo.ts"
+    "relatorio:exemplo": "node --disable-warning=ExperimentalWarning scripts/relatorio_exemplo.ts",
+    "coletar": "node --disable-warning=ExperimentalWarning scripts/coletar.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

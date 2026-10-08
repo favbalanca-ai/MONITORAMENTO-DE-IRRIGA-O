@@ -10,7 +10,8 @@ export function diaAnterior(data: DataISO): DataISO {
 }
 
 const media = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
-const valores = (ls: Leitura[], k: keyof Omit<Leitura, "quando">): number[] =>
+type CampoNumerico = "chuvaAcumDia" | "tempC" | "urPct" | "radWm2" | "ventoMs";
+const valores = (ls: Leitura[], k: CampoNumerico): number[] =>
   ls.map((l) => l[k]).filter((v): v is number => v !== null && Number.isFinite(v));
 
 /**
@@ -21,6 +22,9 @@ const valores = (ls: Leitura[], k: keyof Omit<Leitura, "quando">): number[] =>
  *
  * Radiação: média das leituras (W/m²) convertida para o dia todo — nunca a soma, porque o
  * número de leituras varia (repetidas ou faltando).
+ *
+ * `n` conta leituras em equivalentes de 10 min, para que um dia recuperado do histórico de 30 min
+ * (48 leituras) valha o mesmo que um dia ao vivo (144).
  *
  * Devolve `null` se não houver nenhuma leitura com temperatura na janela.
  */
@@ -51,6 +55,6 @@ export function agregarDia(leituras: Leitura[], data: DataISO): DiaClima | null 
     vento: ventos.length ? media(ventos) : NaN,
     rad: rads.length ? wm2ParaMJDia(media(rads)) : NaN,
     chuva: chuvaNoite + chuvaDia,
-    n: janela.length,
+    n: Math.round(janela.reduce((soma, l) => soma + (l.intervaloMin ?? 10) / 10, 0)),
   };
 }

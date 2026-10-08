@@ -5,3 +5,4 @@ node_modules/
 # Planilhas originais contêm chaves da Ecowitt em texto — não versionar.
 *.xlsx
 *.xls
+dados/
