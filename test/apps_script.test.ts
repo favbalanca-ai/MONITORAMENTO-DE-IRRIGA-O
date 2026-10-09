@@ -144,6 +144,16 @@ test("coleta ao vivo grava a leitura convertida e não duplica", async () => {
   assert.ok(Math.abs(Number(ls[0]!["Temp (°C)"]) - 24.389) < 1e-3);
   assert.match(amb.urls[0]!, /real_time\?application_key=app&api_key=api&mac=AA%3ABB/);
   assert.ok(amb.aba("LOG").objetos().some((l) => l["Status"] === "repetida"));
+  // tudo o mais que a estação mandou fica na coluna Extras, em SI, e chega ao app na última leitura
+  const extras = JSON.parse(String(ls[0]!["Extras (JSON)"]));
+  assert.equal(extras["outdoor.feels_like"], 24.67);
+  assert.equal(extras["wind.wind_direction"], 120);
+  assert.equal(extras["solar_and_uvi.uvi"], 7);
+  amb.chamar("gravarUsuario_", { salvar: { nome: "Fabiana", login: "fabiana", perfil: "ADMIN", pin: "1234" } });
+  const tok = amb.post({ __login: { login: "fabiana", pin: "1234" } }).token;
+  const ult = amb.get({ acao: "dados", s: tok }).ultimaLeitura;
+  assert.equal(ult.extras["outdoor.feels_like"], 24.67);
+  assert.equal(ult.ventoMs !== undefined, true);
 });
 
 test("recuperação preenche o buraco pelo histórico e mantém a aba em ordem", async () => {
@@ -271,4 +281,27 @@ test("chaves: limpa invisíveis, desfaz troca e o teste aponta formato errado", 
   assert.match(t, /Application Key: 0000…66 \(36 caracteres, tinha 1 caractere\(s\) invisível\(is\)\) — PARECE A OUTRA CHAVE/);
   assert.match(t, /API Key: 0000…66 \(36 caracteres\) — formato OK/);
   assert.match(t, /code 40010 — Invalid application Key/);
+});
+
+test("sensor de solo da estação aparece no pivô; histórico traz o clima diário", async () => {
+  const amb = comLeiturasPivo2();
+  amb.props.set("ECOWITT_APPLICATION_KEY", "app"); amb.props.set("ECOWITT_API_KEY", "api"); amb.props.set("ECOWITT_MAC", "AA:BB");
+  const corpo = await fixture("ecowitt_tempo_real.json") as { data: Record<string, unknown> };
+  corpo.data["soil_ch2"] = { soilmoisture: { time: "1770584400", unit: "%", value: "31" } };
+  corpo.data["temp_ch2"] = { temperature: { time: "1770584400", unit: "ºF", value: "77" } };
+  corpo.data["pressure"] = { relative: { time: "1770584400", unit: "inHg", value: "29.80" } };
+  // a leitura ao vivo passa a ser de 08/02 19h (depois do histórico), como na vida real
+  const t = String(Math.floor(Date.UTC(2026, 1, 8, 22) / 1000));
+  for (const g of Object.values(corpo.data)) for (const v of Object.values(g as Record<string, { time?: string }>)) v.time = t;
+  amb.respostaHttp = () => ({ code: 200, corpo });
+  amb.chamar("coletar");
+  const cab = amb.aba("PIVOS").getRange(1, 1, 1, amb.aba("PIVOS").getLastColumn()).getValues()[0]!;
+  amb.aba("PIVOS").set(2, cab.indexOf("Sensor de solo da estação (canal 1-8)") + 1, 2);
+  amb.chamar("calcular_", "2026-02-08");
+  const r = amb.chamar<{ pivos: { sensorSolo: { canal: number; umidadePct: number; tempC: number } }[] }>("lerResumo_");
+  assert.deepEqual({ ...r.pivos[0]!.sensorSolo, quando: undefined }, { canal: 2, umidadePct: 31, tempC: 25, quando: undefined });
+  const h = amb.chamar<{ clima: { data: string; tmax: number; et0: number }[] }>("historico_", "Pivô 2", 10);
+  assert.equal(h.clima.length, 10);
+  assert.equal(h.clima[h.clima.length - 1]!.data, "2026-02-08");
+  assert.ok(h.clima[0]!.tmax > 20 && h.clima[0]!.et0 > 0);
 });

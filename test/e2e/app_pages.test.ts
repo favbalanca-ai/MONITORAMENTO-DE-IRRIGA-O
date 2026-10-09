@@ -109,8 +109,8 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   await page.getByText("Login ou PIN errado.").waitFor();
   await page.fill("#lg-pin", "1234");
   await page.locator("#f-login button[type=submit]").click();
-  await page.getByText("🚿 IRRIGAR").waitFor();
-  const card = await page.locator(".card").nth(1).innerText();
+  await page.locator(".badge.irrigar").first().waitFor();
+  const card = await page.locator(".card.pivo").first().innerText();
   assert.match(card, /Pivô 2/);
   assert.match(card, /Soja\s+R3\s+75 DAS/);
   assert.match(card, /Déficit 2\d,\d mm/);
@@ -202,6 +202,7 @@ test("histórico desenha gráfico e tabela", async () => {
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "jose", "4321");
   await page.getByRole("link", { name: /Histórico/ }).click();
+  await page.locator("svg[aria-label='Clima da estação']").waitFor();
   await page.locator("#grafico svg").waitFor();
   assert.equal(await page.locator("#grafico svg circle").count(), 20);
   assert.equal(await page.locator("#tab-hist tbody tr").count(), 20);
@@ -251,7 +252,7 @@ test("administrador cria usuário pelo app; computador mostra o menu lateral", a
   assert.ok(amb.aba("USUÁRIOS APP").objetos().some((u) => u["LOGIN"] === "ana"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(base + "#/hoje");
-  await page.getByText("🚿 IRRIGAR").waitFor();
+  await page.locator(".badge.irrigar").first().waitFor();
   assert.equal(await page.locator(".brand-title").isVisible(), true);
   assert.deepEqual((await page.locator("#nav a.active").allInnerTexts()).map((t) => t.replace(/\W*\n/, "")), ["Hoje"]);
   await page.mouse.move(1000, 700);
@@ -275,7 +276,7 @@ test("link do menu (?exec=) já liga o app à planilha", async () => {
   await page.fill("#lg-login", "jose");
   await page.fill("#lg-pin", "4321");
   await page.locator("#f-login button[type=submit]").click();
-  await page.getByText("🚿 IRRIGAR").waitFor();
+  await page.locator(".badge.irrigar").first().waitFor();
   await ctx.close();
 });
 
@@ -332,10 +333,35 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   const inmet = JSON.parse(readFileSync(new URL("../fixtures/previsao_inmet.json", import.meta.url), "utf8"));
   amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
   amb.chamar("atualizarPrevisao");
+  // leitura ao vivo com todos os sensores (vento forte, chovendo, UV, pressão, sensor de solo 2)
+  const t = String(Math.floor(Date.UTC(2026, 1, 8, 21, 50) / 1000));
+  const v = (unit: string, value: string) => ({ time: t, unit, value });
+  const corpo = { code: 0, msg: "success", data: {
+    outdoor: { temperature: v("ºC", "27.4"), feels_like: v("ºC", "29"), humidity: v("%", "61"), dew_point: v("ºC", "19") },
+    solar_and_uvi: { solar: v("W/m²", "640"), uvi: v("", "8") }, rainfall: { daily: v("mm", "4.3"), rain_rate: v("mm/hr", "3.2") },
+    wind: { wind_speed: v("m/s", "3.1"), wind_gust: v("m/s", "6.5"), wind_direction: v("º", "135") }, pressure: { relative: v("hPa", "1012.4") },
+    soil_ch2: { soilmoisture: v("%", "33") }, temp_ch2: { temperature: v("ºC", "24.1") } } };
+  amb.props.set("ECOWITT_APPLICATION_KEY", "app"); amb.props.set("ECOWITT_API_KEY", "api"); amb.props.set("ECOWITT_MAC", "AA:BB");
+  const respPrev = amb.respostaHttp;
+  amb.respostaHttp = (url) => (url.includes("ecowitt") ? { code: 200, corpo } : respPrev(url));
+  amb.chamar("coletar");
+  const cabP = amb.aba("PIVOS").getRange(1, 1, 1, amb.aba("PIVOS").getLastColumn()).getValues()[0]!;
+  amb.aba("PIVOS").set(2, cabP.indexOf("Sensor de solo da estação (canal 1-8)") + 1, 2);
   amb.chamar("calcular_", "2026-02-08");
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "jose", "4321");
-  await page.getByText("🌧 Próximos dias").waitFor();
+  await page.getByText("Próximos dias").waitFor();
+  const est = await page.locator(".card.estacao").innerText();
+  assert.match(est, /27,4\s*°C/);
+  assert.match(est, /sensação 29° · UR 61% · orvalho 19°/);
+  assert.match(est, /rajada 6,5/);
+  assert.match(est, /UV 8 · Muito alto/);
+  assert.match(est, /1012 hPa/);
+  assert.match(est, /Solo 2 · Pivô 2\s+33%/);
+  assert.match(est, /Chovendo agora \(3,2 mm\/h\)/);
+  assert.match(est, /Vento forte \(6,5 m\/s\)/);
+  assert.match(est, /SE/);
+  await page.getByText(/Sensor de solo 2: 33%/).waitFor();
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
   // com a chuva mínima de 2 mm o déficit sobe a ~27,6 mm e os 20,5 mm previstos não cobrem: sem aviso de adiar
@@ -347,7 +373,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   amb.post({ __login: { login: "jose", pin: "4321" } });
   const s = amb.post({ __login: { login: "jose", pin: "4321" } }).token;
   amb.post({ s, __lancamento: { id: "E2e1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "27" } });
-  await page.getByRole("button", { name: "↻ Recalcular" }).click();
+  await page.getByRole("button", { name: /Recalcular/ }).click();
   await page.getByText(/Próxima irrigação prevista: \d\d\/\d\d \(em \d+ dias?, sem chuva\)/).waitFor();
   await page.getByText("Detalhes").first().click();
   await page.getByText(/Déficit previsto \(sem chuva\):/).waitFor();

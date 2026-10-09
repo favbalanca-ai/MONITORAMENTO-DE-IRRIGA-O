@@ -6,7 +6,7 @@
  *
  * As unidades são pedidas em SI na URL, mas a conversão sempre olha o `.unit` da resposta.
  */
-import { numero, paraCelsius, paraMm, paraMs, paraWm2 } from "../motor/unidades.ts";
+import { numero, paraCelsius, paraMm, paraMs, paraSI, paraWm2 } from "../motor/unidades.ts";
 import type { DataHoraLocal, Leitura } from "../motor/tipos.ts";
 import { paraLocal } from "./tempo.ts";
 
@@ -91,7 +91,22 @@ export function leituraDoTempoReal(data: unknown, cfg: ConfigEcowitt): Leitura {
     ventoMs: converter(campos.vento, paraMs),
     intervaloMin: 10,
     fonte: "ecowitt",
+    extras: extrasDoTempoReal(d),
   };
+}
+
+/** Todas as grandezas da resposta, "grupo.campo" → número em SI (°C, mm, m/s, hPa…). Texto é ignorado. */
+export function extrasDoTempoReal(d: DadosTempoReal): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [grupo, campos] of Object.entries(d)) {
+    if (!campos || typeof campos !== "object") continue;
+    for (const [campo, v] of Object.entries(campos)) {
+      const x = numero(v?.value);
+      if (x === null) continue;
+      out[`${grupo}.${campo}`] = Math.round(paraSI(x, v?.unit).valor * 100) / 100;
+    }
+  }
+  return out;
 }
 
 type Serie = { unit?: string; list?: Record<string, unknown> };

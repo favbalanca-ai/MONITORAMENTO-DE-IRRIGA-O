@@ -63,6 +63,40 @@ var Motor = (function () {
           return v / 126.7; // aproximação usual para luz solar
       throw new UnidadeDesconhecida("radiação", u);
   }
+  /**
+   * Converte para SI pelo texto da unidade, sem saber a grandeza (para os extras da estação).
+   * Unidade desconhecida ou vazia: devolve o valor como veio.
+   */
+  function paraSI(v, u) {
+      const x = unidade(u);
+      if (x === "℉" || x === "°f" || x === "f")
+          return { valor: ((v - 32) * 5) / 9, unidade: "°C" };
+      if (x === "℃" || x === "°c" || x === "c")
+          return { valor: v, unidade: "°C" };
+      if (x === "in/hr" || x === "in/h")
+          return { valor: v * 25.4, unidade: "mm/h" };
+      if (x === "in" || x === "inch" || x === "inches")
+          return { valor: v * 25.4, unidade: "mm" };
+      if (x === "mph")
+          return { valor: v * 0.44704, unidade: "m/s" };
+      if (x === "km/h" || x === "kmh")
+          return { valor: v / 3.6, unidade: "m/s" };
+      if (x === "knots" || x === "kn" || x === "knot")
+          return { valor: v * 0.514444, unidade: "m/s" };
+      if (x === "ft/s")
+          return { valor: v * 0.3048, unidade: "m/s" };
+      if (x === "inhg")
+          return { valor: v * 33.8639, unidade: "hPa" };
+      if (x === "mmhg")
+          return { valor: v * 1.33322, unidade: "hPa" };
+      if (x === "lux")
+          return { valor: v / 126.7, unidade: "W/m²" };
+      if (x === "mi" || x === "mile" || x === "miles")
+          return { valor: v * 1.609344, unidade: "km" };
+      if (x === "ft" || x === "feet")
+          return { valor: v * 0.3048, unidade: "m" };
+      return { valor: v, unidade: u !== null && u !== void 0 ? u : "" };
+  }
   /** Leitura média em W/m² → MJ/m²/dia. */
   const wm2ParaMJDia = (wm2) => (wm2 * 86400) / 1e6;
   // ---- src/motor/agregacao.ts ----
@@ -1013,7 +1047,23 @@ var Motor = (function () {
           ventoMs: converter(campos.vento, paraMs),
           intervaloMin: 10,
           fonte: "ecowitt",
+          extras: extrasDoTempoReal(d),
       };
+  }
+  /** Todas as grandezas da resposta, "grupo.campo" → número em SI (°C, mm, m/s, hPa…). Texto é ignorado. */
+  function extrasDoTempoReal(d) {
+      const out = {};
+      for (const [grupo, campos] of Object.entries(d)) {
+          if (!campos || typeof campos !== "object")
+              continue;
+          for (const [campo, v] of Object.entries(campos)) {
+              const x = numero(v === null || v === void 0 ? void 0 : v.value);
+              if (x === null)
+                  continue;
+              out[`${grupo}.${campo}`] = Math.round(paraSI(x, v === null || v === void 0 ? void 0 : v.unit).valor * 100) / 100;
+          }
+      }
+      return out;
   }
   /** Resposta do histórico → leituras, uma por instante, juntando as séries pelo timestamp. */
   function leiturasDoHistorico(data, cfg, ciclo) {
@@ -1186,5 +1236,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

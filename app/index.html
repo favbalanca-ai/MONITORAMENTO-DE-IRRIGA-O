@@ -21,19 +21,19 @@
 <div id="app">
   <aside class="sidebar">
     <div class="brand" data-go="#/hoje" title="Hoje" style="cursor:pointer">
-      <span class="brand-logo">💧</span>
+      <span class="brand-logo" data-ico="gota"></span>
       <div>
         <div class="brand-title">Irrigação</div>
         <div class="brand-sub">Fazenda Água Viva</div>
       </div>
     </div>
     <nav id="nav">
-      <a href="#/hoje" data-view="hoje"><span class="ico">📋</span><span class="lbl">Hoje</span></a>
-      <a href="#/lancar" data-view="lancar"><span class="ico">✏️</span><span class="lbl">Lançar</span></a>
-      <a href="#/historico" data-view="historico"><span class="ico">📈</span><span class="lbl">Histórico</span></a>
-      <a href="#/mapa" data-view="mapa"><span class="ico">🗺️</span><span class="lbl">Mapa</span></a>
-      <a href="#/pivos" data-view="pivos"><span class="ico">🎯</span><span class="lbl">Pivôs</span></a>
-      <a href="#/sync" data-view="sync"><span class="ico">⚙️</span><span class="lbl">Ajustes</span></a>
+      <a href="#/hoje" data-view="hoje"><span class="ico" data-ico="hoje"></span><span class="lbl">Hoje</span></a>
+      <a href="#/lancar" data-view="lancar"><span class="ico" data-ico="lancar"></span><span class="lbl">Lançar</span></a>
+      <a href="#/historico" data-view="historico"><span class="ico" data-ico="historico"></span><span class="lbl">Histórico</span></a>
+      <a href="#/mapa" data-view="mapa"><span class="ico" data-ico="mapa"></span><span class="lbl">Mapa</span></a>
+      <a href="#/pivos" data-view="pivos"><span class="ico" data-ico="pivos"></span><span class="lbl">Pivôs</span></a>
+      <a href="#/sync" data-view="sync"><span class="ico" data-ico="sync"></span><span class="lbl">Ajustes</span></a>
     </nav>
     <div class="sidebar-foot">
       <button id="btn-update" class="btn btn-ghost btn-sm" type="button" title="Baixar a versão nova do app">🔄 Atualizar app</button>
@@ -49,7 +49,7 @@
       </div>
     </header>
     <div id="fila-bar" class="fila-bar" hidden></div>
-    <section id="content" class="content"><div class="loading">Carregando…</div></section>
+    <section id="content" class="content"><div class="card esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div><div class="card esqueleto"><div class="sk sk-t"></div><div class="sk"></div></div></section>
   </main>
 </div>
 <div id="toast" class="toast" hidden></div>

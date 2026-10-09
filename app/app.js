@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -191,6 +191,94 @@ function semDados() {
   return '<div class="card vazio">Carregando os dados da planilha…</div>';
 }
 
+
+/* ================= ícones (SVG inline, traço 2px) ================= */
+const ICO = {
+  hoje: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13h6M9 17h4"/>',
+  lancar: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  historico: '<path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/>',
+  mapa: '<path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
+  pivos: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>',
+  sync: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+  gota: '<path d="M12 2.7 6.3 9.6a7 7 0 1 0 11.4 0Z"/>',
+  chuveiro: '<path d="M4 4 2 6l5 5"/><path d="M8 8c3-3 7-3 10 0l1 1-7 7-1-1c-3-3-3-7 0-10Z"/><path d="M9 16v3M12 18v3M15 16v3M6 18v3"/>',
+  alerta: '<path d="m10.3 3.9-8.5 14.6A2 2 0 0 0 3.5 21.5h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  ok: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 5-5"/>',
+  bloq: '<circle cx="12" cy="12" r="9"/><path d="m5.5 5.5 13 13"/>',
+  vento: '<path d="M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/>',
+  sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  chuva: '<path d="M17 17a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1A3.5 3.5 0 0 0 6 17h11Z"/><path d="M8 19v2M12 19v3M16 19v2"/>',
+  termo: '<path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0Z"/>',
+  gauge: '<path d="M12 15a2 2 0 1 0 0 .1Z"/><path d="m14 13 3-5"/><path d="M4 18a9 9 0 1 1 16 0"/>',
+  raio: '<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/>',
+  solo: '<path d="M12 3c-3 4-6 7-6 10.5a6 6 0 0 0 12 0C18 10 15 7 12 3Z"/><path d="M4 21h16"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>',
+  seta: '<path d="M12 3v18M6 9l6-6 6 6"/>',
+  calendario: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  mapa2: '<path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
+};
+function ico(nome, cls) { return '<svg class="svg' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICO[nome] || '') + '</svg>'; }
+$$('[data-ico]').forEach((el) => { el.innerHTML = ico(el.dataset.ico); });
+
+/* ================= estação agora (última leitura + extras) ================= */
+const DIRECOES = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+const pontoCardeal = (g) => DIRECOES[Math.round(((g % 360) + 360) % 360 / 45) % 8];
+function faixaUv(u) { return u < 3 ? ['Baixo', '#2e7d32'] : u < 6 ? ['Moderado', '#f0b429'] : u < 8 ? ['Alto', '#ef6c00'] : u < 11 ? ['Muito alto', '#c62828'] : ['Extremo', '#6a1b9a']; }
+/** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
+function cardEstacao() {
+  const u = DADOS.ultimaLeitura; if (!u || !u.quando) return '';
+  const x = u.extras || {}, g = (k) => (x[k] === undefined ? null : x[k]);
+  const idadeMin = Math.round((Date.now() - Date.parse(u.quando)) / 60000);
+  const velha = idadeMin > 45;
+  const rajada = g('wind.wind_gust'), dir = g('wind.wind_direction'), taxa = g((DADOS.grupoChuva || 'rainfall') + '.rain_rate') ?? g('rainfall.rain_rate') ?? g('rainfall_piezo.rain_rate');
+  const uv = g('solar_and_uvi.uvi'), pres = g('pressure.relative'), orv = g('outdoor.dew_point'), sens = g('outdoor.feels_like');
+  const raios = g('lightning.count'), raioKm = g('lightning.distance');
+  const avisos = [];
+  if (velha) avisos.push(['alerta', 'Sem leitura nova há ' + (idadeMin >= 120 ? Math.round(idadeMin / 60) + ' h' : idadeMin + ' min') + ' — estação ou internet fora?']);
+  if (taxa > 0) avisos.push(['chuva', 'Chovendo agora (' + br(taxa, 1) + ' mm/h): não ligue o pivô.']);
+  if ((rajada != null ? rajada : u.ventoMs) >= 4) avisos.push(['vento', 'Vento forte (' + br(rajada != null ? rajada : u.ventoMs, 1) + ' m/s): a água do pivô deriva — se puder, espere acalmar.']);
+  if (raios > 0) avisos.push(['raio', 'Raios detectados' + (raioKm != null ? ' a ' + br(raioKm, 0) + ' km' : '') + ' — cuidado com o pivô (estrutura metálica).']);
+  const stat = (nome, rot, val, sub) => '<div class="est-stat">' + ico(nome) + '<div><small>' + rot + '</small><b>' + val + '</b>' + (sub ? '<em>' + sub + '</em>' : '') + '</div></div>';
+  return '<div class="card estacao' + (velha ? ' velha' : '') + '"><div class="est-top"><div><div class="est-rotulo">' + ico('termo') + ' Estação agora · ' + esc(dataBr(u.quando)) + ' ' + esc(u.quando.slice(11, 16)) + '</div>' +
+    '<div class="est-temp">' + (u.tempC != null ? br(u.tempC, 1) + '<span>°C</span>' : '—') + '</div>' +
+    '<div class="est-sub">' + (sens != null ? 'sensação ' + br(sens, 0) + '° · ' : '') + (u.urPct != null ? 'UR ' + br(u.urPct, 0) + '%' : '') + (orv != null ? ' · orvalho ' + br(orv, 0) + '°' : '') + '</div></div>' +
+    (dir != null ? '<div class="bussola" title="Vento de ' + esc(pontoCardeal(dir)) + '"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-opacity=".35"/><text x="24" y="9" text-anchor="middle">N</text><g transform="rotate(' + (dir + 180) + ' 24 24)"><path d="M24 8 L29 26 L24 22 L19 26 Z" fill="currentColor"/></g></svg><small>' + esc(pontoCardeal(dir)) + '</small></div>' : '') + '</div>' +
+    '<div class="est-grid">' +
+    stat('vento', 'Vento', u.ventoMs != null ? br(u.ventoMs, 1) + ' m/s' : '—', rajada != null ? 'rajada ' + br(rajada, 1) : '') +
+    stat('sol', 'Radiação', u.radWm2 != null ? br(u.radWm2, 0) + ' W/m²' : '—', uv != null ? '<i style="color:' + faixaUv(uv)[1] + '">UV ' + br(uv, 0) + ' · ' + faixaUv(uv)[0] + '</i>' : '') +
+    stat('chuva', 'Chuva hoje', u.chuvaAcumDia != null ? br(u.chuvaAcumDia, 1) + ' mm' : '—', taxa != null ? (taxa > 0 ? br(taxa, 1) + ' mm/h agora' : 'sem chuva agora') : '') +
+    (pres != null ? stat('gauge', 'Pressão', String(Math.round(pres)) + ' hPa', u.pressaoTendencia3h != null ? (u.pressaoTendencia3h > 0.5 ? '↑ subindo' : u.pressaoTendencia3h < -0.5 ? '↓ caindo (chuva?)' : '→ estável') + ' ' + br(u.pressaoTendencia3h, 1) : '') : '') +
+    (raios != null ? stat('raio', 'Raios (hora)', br(raios, 0), raioKm != null ? br(raioKm, 0) + ' km' : '') : '') +
+    sensoresSolo(x) + '</div>' +
+    (avisos.length ? '<ul class="alertas">' + avisos.map((a) => '<li>' + ico(a[0] === 'chuva' ? 'chuva' : a[0] === 'vento' ? 'vento' : a[0] === 'raio' ? 'raio' : 'alerta') + ' ' + esc(a[1]) + '</li>').join('') + '</ul>' : '') + '</div>';
+}
+function sensoresSolo(x) {
+  return Object.keys(x).filter((k) => /^soil_ch\d+\.soilmoisture$/.test(k)).sort().map((k) => {
+    const c = k.match(/\d+/)[0], t = x['temp_ch' + c + '.temperature'];
+    const nome = (DADOS.cadastro && DADOS.cadastro.pivos.find((p) => String(p.sensorSolo) === c) || {}).nome;
+    return '<div class="est-stat">' + ico('solo') + '<div><small>Solo ' + c + (nome ? ' · ' + esc(nome) : '') + '</small><b>' + br(x[k], 0) + '%</b>' + (t != null ? '<em>' + br(t, 1) + ' °C</em>' : '') + '</div></div>';
+  }).join('');
+}
+/** Gráfico do clima diário da estação (Tmáx/Tmín, UR e chuva) para o Histórico. */
+function graficoClima(cl) {
+  if (!cl || cl.length < 2) return '';
+  const W = 640, H = 220, mE = 34, mD = 34, mT = 12, mB = 26, w = W - mE - mD, alt = H - mT - mB;
+  const tmax = Math.max(40, ...cl.map((d) => d.tmax || 0)), chMax = Math.max(20, ...cl.map((d) => d.chuva || 0));
+  const x = (i) => mE + (i * w) / (cl.length - 1), yT = (v) => mT + alt - (v / tmax) * alt, yC = (v) => mT + alt - (v / chMax) * alt;
+  const bw = Math.max(2, Math.min(12, (w / cl.length) * 0.5));
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Clima da estação">';
+  [0, 10, 20, 30, 40].forEach((v) => { s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + yT(v) + '" y2="' + yT(v) + '" stroke="var(--line)"/><text x="' + (mE - 6) + '" y="' + (yT(v) + 4) + '" text-anchor="end">' + v + '°</text>'; });
+  [0, chMax / 2, chMax].forEach((v) => { s += '<text x="' + (W - mD + 6) + '" y="' + (yC(v) + 4) + '">' + br(v, 0) + '</text>'; });
+  cl.forEach((d, i) => { if (d.chuva > 0) s += '<rect x="' + (x(i) - bw / 2) + '" y="' + yC(d.chuva) + '" width="' + bw + '" height="' + (mT + alt - yC(d.chuva)) + '" fill="var(--chuva)" rx="1"><title>' + dataBr(d.data) + ': ' + br(d.chuva, 1) + ' mm</title></rect>'; });
+  const linha = (campo, yy) => cl.map((d, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yy(d[campo] || 0).toFixed(1)).join(' ');
+  s += '<path d="' + linha('tmax', yT) + '" fill="none" stroke="var(--deficit)" stroke-width="2.2" stroke-linejoin="round"/>';
+  s += '<path d="' + linha('tmin', yT) + '" fill="none" stroke="var(--blue)" stroke-width="2.2" stroke-linejoin="round"/>';
+  s += '<path d="' + cl.map((d, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + (mT + alt - ((d.ur || 0) / 100) * alt).toFixed(1)).join(' ') + '" fill="none" stroke="var(--afd)" stroke-width="1.5" stroke-dasharray="4 3"/>';
+  const passo = Math.max(1, Math.ceil(cl.length / 7));
+  cl.forEach((d, i) => { const ult = i === cl.length - 1; if ((i % passo === 0 && cl.length - 1 - i >= passo / 2) || ult) s += '<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="' + (i === 0 ? 'start' : ult ? 'end' : 'middle') + '">' + dataBr(d.data) + '</text>'; });
+  return s + '</svg>';
+}
+
 /* ================= HOJE ================= */
 const classeDec = (d) => (d === 'IRRIGAR' ? 'irrigar' : d === 'SEM DADOS' ? 'sem' : 'nao');
 
@@ -207,7 +295,7 @@ V.hoje = function () {
   const proximas = pivos.filter((p) => p.projecao && p.projecao.proximaIrrigacao && p.decisao !== 'IRRIGAR').map((p) => p.projecao.emDias);
   const frase = cont.ruim ? cont.ruim + (cont.ruim === 1 ? ' pivô pra irrigar' : ' pivôs pra irrigar') : proximas.length ? (function (n) { return n === 0 ? 'Irrigação prevista para hoje' : 'Próxima irrigação em ' + n + (n === 1 ? ' dia' : ' dias'); })(Math.min.apply(null, proximas)) : pivos.length ? 'Nenhum pivô pra irrigar' : 'Nenhum pivô ativo';
   let h = '<div class="resumo card"><div class="resumo-top"><div><div class="resumo-dia">' + esc(dataBr(r.dia)) + ' · até 18h</div><h2>' + esc(frase) + '</h2></div>' +
-    '<button class="btn btn-outline btn-sm" data-act="recalcular">↻ Recalcular</button></div>' +
+    '<button class="btn btn-outline btn-sm" data-act="recalcular">' + ico('refresh') + ' Recalcular</button></div>' +
     '<div class="semaforos">' + ['ruim', 'atencao', 'bom', 'sem'].map((k) => '<div class="sem-chip sem-' + k + (cont[k] ? '' : ' vazio') + '"><span class="ico">' + SEM_ICONE[k] + '</span><b>' + cont[k] + '</b><small>' + SEM_ROTULO[k] + '</small></div>').join('') + '</div>' +
     '<div class="chips"><span class="chip">ET₀ <b>' + br(c.et0, 1) + '</b> mm</span><span class="chip">Chuva <b>' + br(c.chuva, 1) + '</b> mm</span>' +
     '<span class="chip">🌡 <b>' + br(c.tmin, 0) + '–' + br(c.tmax, 0) + '</b> °C</span><span class="chip">UR <b>' + br(c.ur, 0) + '</b>%</span>' +
@@ -215,6 +303,7 @@ V.hoje = function () {
     '<p class="muted" style="margin-top:8px">Calculado em ' + esc(dataBr(r.calculadoEm)) + ' às ' + esc((r.calculadoEm || '').slice(11, 16)) +
     (ult ? ' · última leitura ' + esc(dataBr(ult.quando)) + ' ' + esc(ult.quando.slice(11, 16)) + (ult.tempC != null ? ' (' + br(ult.tempC, 1) + ' °C)' : '') : '') + '</p>' +
     (c.estimados && c.estimados.length ? '<ul class="alertas"><li>Estação sem dado de ' + esc(c.estimados.join(', ')) + ' — usado o dia vizinho.</li></ul>' : '') + '</div>';
+  h += cardEstacao();
   h += miniMapa();
   h += cardPrevisao(r.dia);
   h += '<div class="cards">' + pivos.map(cardPivo).join('') + '</div>';
@@ -237,7 +326,7 @@ function cardPivo(p) {
         (pj && pj.deficitFimVoltaMm != null ? '<p class="muted" style="margin-top:6px">Ao fim da volta o déficit chega a ≈ <b>' + br(pj.deficitFimVoltaMm, 1) + ' mm</b>' + (p.rec.limitado ? ' · uma volta não repõe tudo' : '') + '.</p>' : '')
       : '<p class="muted" style="margin-top:8px">Cadastre o equipamento do pivô para ver percentímetro, tempo e custo.</p>';
   } else if (pj && pj.dias && pj.dias.length) {
-    principal = '<p class="prox">' + (pj.proximaIrrigacao ? '📅 Próxima irrigação prevista: <b>' + esc(dataBr(pj.proximaIrrigacao)) + '</b> (em ' + pj.emDias + ' dia' + (pj.emDias === 1 ? '' : 's') + ', sem chuva)' : '📅 Sem irrigação prevista nos próximos ' + pj.dias.length + ' dias (sem chuva)') + '</p>';
+    principal = '<p class="prox">' + ico('calendario') + ' ' + (pj.proximaIrrigacao ? 'Próxima irrigação prevista: <b>' + esc(dataBr(pj.proximaIrrigacao)) + '</b> (em ' + pj.emDias + ' dia' + (pj.emDias === 1 ? '' : 's') + ', sem chuva)' : 'Sem irrigação prevista nos próximos ' + pj.dias.length + ' dias (sem chuva)') + '</p>';
   }
   const alertas = (p.alertas || []).filter((a) => a.indexOf('Só ') !== 0 && a.indexOf('Clima estimado') !== 0);
   const avisos = (p.avisoChuva ? '<ul class="alertas"><li>🌧 ' + esc(p.avisoChuva) + '</li></ul>' : '') +
@@ -248,6 +337,7 @@ function cardPivo(p) {
     '<div class="bar" title="Déficit em relação à AFD"><span style="width:' + pct.toFixed(1) + '%"></span>' + (marca != null ? '<i style="left:' + marca.toFixed(1) + '%"></i>' : '') + '</div>' +
     '<div class="bar-rotulos"><span>Déficit <b>' + br(p.deficit, 1) + ' mm</b></span>' + (marca != null && marca > 22 && marca < 78 ? '<span class="marca" style="left:' + marca.toFixed(1) + '%">lâmina mín. ' + br(p.laminaMinimaMm, 0) + '</span>' : '') + '<span>AFD ' + br(p.afd, 1) + ' mm</span></div>' +
     principal + avisos +
+    (p.sensorSolo ? '<p class="muted" style="margin-top:8px">' + ico('solo') + ' Sensor de solo ' + p.sensorSolo.canal + ': <b>' + br(p.sensorSolo.umidadePct, 0) + '%</b>' + (p.sensorSolo.tempC != null ? ' · ' + br(p.sensorSolo.tempC, 1) + ' °C' : '') + ' <span class="muted">(' + esc(dataBr(p.sensorSolo.quando)) + ' ' + esc(String(p.sensorSolo.quando).slice(11, 16)) + ', só informativo)</span></p>' : '') +
     '<details class="det"><summary>Detalhes</summary><div class="chips"><span class="chip">ETc <b>' + br(p.etc, 1) + '</b> mm</span><span class="chip">Kc <b>' + br(p.kc, 2) + '</b></span><span class="chip">CAD <b>' + br(p.cad, 1) + '</b> mm</span>' +
     (p.irrigacao ? '<span class="chip">Irrigado <b>' + br(p.irrigacao, 1) + '</b> mm</span>' : '') + (p.rec && p.decisao === 'IRRIGAR' ? '<span class="chip">Energia <b>' + br(p.rec.energiaKwh, 0) + '</b> kWh</span>' : '') + '</div>' +
     (pj && pj.dias && pj.dias.length ? '<p class="muted" style="margin-top:8px">Déficit previsto (sem chuva): ' + pj.dias.slice(0, 5).map((d) => esc(dataBr(d.data)) + ' <b>' + br(d.deficit, 0) + '</b>').join(' · ') + ' mm</p>' : '') +
@@ -260,7 +350,7 @@ function miniMapa() {
   if (!com.length) return '';
   return '<a class="card mini-mapa" href="#/mapa" title="Abrir o mapa"><div id="mini-mapa"></div><span class="mini-rotulo">🗺️ Mapa dos pivôs</span></a>';
 }
-const SEM_ICONE = { bom: '✅', atencao: '⚠️', ruim: '🚿', sem: '⛔' };
+const SEM_ICONE = { bom: ico('ok'), atencao: ico('alerta'), ruim: ico('chuveiro'), sem: ico('bloq') };
 
 V.hoje_depois = function () {
   const el = $('#mini-mapa'); if (!el) return;
@@ -291,7 +381,7 @@ function cardPrevisao(dia) {
   const prox = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 5);
   if (!prox.length) return '';
   const soma = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
-  return '<div class="card"><div class="row"><h2>🌧 Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span></div>' +
+  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span></div>' +
     '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + '"><small>' + esc(dataBr(d.data)) + '</small><b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
       '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' + (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') + '</div>').join('') + '</div>' +
     (prox[0].resumo ? '<p class="muted" style="margin-top:8px">INMET amanhã — ' + esc(prox[0].resumo) + '</p>' : '') +
@@ -393,6 +483,8 @@ V.historico = function () {
     '<div><label for="h-dias">Período</label><select id="h-dias" data-act="hist">' + [15, 30, 60, 120].map((d) => '<option value="' + d + '"' + (d === dias ? ' selected' : '') + '>' + d + ' dias</option>').join('') + '</select></div></div></div>' +
     '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="vazio">Carregando…</div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span></div></div>' +
+    '<div class="card"><h2>Estação no período</h2><div id="grafico-clima">' + (HIST && HIST.pivo === piv ? graficoClima(HIST.clima) : '') + '</div>' +
+    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>' +
     '<div class="card" id="tab-hist">' + (HIST && HIST.pivo === piv ? tabelaHist(HIST) : '') + '</div>';
 };
 V.historico_depois = function () { carregarHist(); };
@@ -403,7 +495,7 @@ async function carregarHist() {
     const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'sem resposta');
     HIST = r.historico;
-    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); }
+    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); if ($('#grafico-clima')) $('#grafico-clima').innerHTML = graficoClima(HIST.clima); }
   } catch (e) { if ($('#grafico')) $('#grafico').innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 }
 function grafico(h) {
@@ -584,7 +676,7 @@ function pivoDoDesenho(nome, pivos) {
 /* ================= PIVÔS ================= */
 const GRUPOS = [
   ['Identificação', ['nome', 'ativo', 'cultura', 'cicloDias', 'grausDiaCiclo', 'plantio', 'inicioBalanco', 'palhada']],
-  ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo']],
+  ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
   ['Equipamento', ['raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
@@ -824,7 +916,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'recalcular') {
     a.disabled = true; a.textContent = 'Recalculando…';
     try { const r = await chamar('POST', null, { __recalcular: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); if (r.aviso) toast(r.aviso, true); else toast('Recalculado.'); await puxar(true); }
-    catch (e) { toast(e.message, true); a.disabled = false; a.textContent = '↻ Recalcular'; }
+    catch (e) { toast(e.message, true); a.disabled = false; a.innerHTML = ico('refresh') + ' Recalcular'; }
   }
   else if (act === 'apagar') {
     const id = a.dataset.id;

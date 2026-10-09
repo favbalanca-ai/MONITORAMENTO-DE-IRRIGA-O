@@ -18,6 +18,8 @@ export interface Leitura {
   intervaloMin?: number;
   /** Origem: "ecowitt", "ecowitt-historico-30min", "planilha"... */
   fonte?: string;
+  /** Tudo o mais que a estação mandou, "grupo.campo" → valor já em unidade SI (só na coleta ao vivo). */
+  extras?: Record<string, number>;
 }
 
 /** Clima agregado de um dia (janela 18h de D−1 até 18h de D). */

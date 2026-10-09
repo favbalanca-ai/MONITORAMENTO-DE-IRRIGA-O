@@ -6,7 +6,7 @@
   --red:#b00020; --red-soft:#fce4e4; --blue:#1565c0; --blue-soft:#e3effc;
   --chuva:#64b5f6; --irrig:#26a69a; --deficit:#e65100; --afd:#8e24aa;
   --shadow:0 1px 3px rgba(20,50,60,.08),0 1px 2px rgba(20,50,60,.06);
-  --radius:12px;
+  --radius:16px;
   --sem-bom:#2e7d32; --sem-atencao:#f0b429; --sem-ruim:#c62828; --sem-sem:#9e9e9e;
   --tag:#eef3f5; --tag-text:#3f5862;
   color-scheme:light;
@@ -40,30 +40,34 @@
 [hidden]{display:none!important}
 html,body{height:100%}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.svg{width:1.15em;height:1.15em;vertical-align:-.2em;flex-shrink:0}
+h1,h2,h3{letter-spacing:-.01em}
 #app{display:flex;min-height:100vh}
 
 /* Menu lateral */
 .sidebar{width:220px;background:linear-gradient(180deg,#16404d,#1b4f5e);color:#dbe9ec;
   display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex-shrink:0}
 .brand{display:flex;align-items:center;gap:10px;padding:20px 18px 16px}
-.brand-logo{font-size:26px}
+.brand-logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#3e9aaa,#2e7d8c);display:grid;place-items:center;color:#fff}
+.brand-logo .svg{width:22px;height:22px}
 .brand-title{font-weight:700;font-size:16px;color:#fff;letter-spacing:.2px}
 .brand-sub{font-size:12px;color:#8fb5bd}
 #nav{display:flex;flex-direction:column;gap:2px;padding:8px 10px;flex:1}
 #nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:#c7dde2;
   text-decoration:none;font-weight:500;font-size:13.5px;transition:background .15s,color .15s}
-#nav a .ico{font-size:15px;width:20px;text-align:center}
+#nav a .ico{width:20px;display:grid;place-items:center}
+#nav a .ico .svg{width:19px;height:19px}
 #nav a:hover{background:rgba(255,255,255,.07);color:#fff}
-#nav a.active{background:var(--teal);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+#nav a.active{background:var(--teal);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .sidebar-foot{padding:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.08)}
 .app-ver{width:100%;font-size:10px;letter-spacing:.3px;color:rgba(255,255,255,.35);text-align:center}
 
 /* Conteúdo */
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
-.topbar{display:flex;align-items:center;gap:14px;padding:14px 26px;background:var(--card);
-  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.topbar{display:flex;align-items:center;gap:14px;padding:14px 26px;background:color-mix(in srgb,var(--card) 85%,transparent);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
 #page-title{font-size:19px;font-weight:700;color:var(--ink);margin-right:auto;text-wrap:balance}
 .topbar-right{display:flex;align-items:center;gap:8px}
 .sync-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);
@@ -80,7 +84,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .fila-bar{background:var(--amber-soft);color:#7a5200;font-size:13px;padding:8px 26px;border-bottom:1px solid #f0dca0}
 
 /* Peças */
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px;animation:entra .25s ease both}
+@keyframes entra{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+/* esqueleto de carregamento */
+.esqueleto .sk{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg,var(--line) 25%,var(--bg) 50%,var(--line) 75%);background-size:200% 100%;animation:brilho 1.2s infinite}
+.esqueleto .sk-t{width:45%;height:16px}.esqueleto .sk-c{width:70%}
+@keyframes brilho{to{background-position:-200% 0}}
 .card h2{font-size:15px;font-weight:700;color:var(--ink);text-wrap:balance}
 .card h3{font-size:13px;font-weight:700;color:var(--ink);margin:14px 0 6px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -88,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:13px}
 .chip b{font-variant-numeric:tabular-nums;color:var(--ink)}
-.badge{font-weight:700;font-size:12px;letter-spacing:.3px;border-radius:7px;padding:4px 9px;white-space:nowrap}
+.badge{font-weight:700;font-size:12px;letter-spacing:.3px;border-radius:999px;padding:5px 11px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .badge.irrigar{background:var(--blue-soft);color:var(--blue)}
 .badge.nao{background:var(--green-soft);color:var(--green)}
 .badge.sem{background:#ececec;color:#6d6d6d}
@@ -97,6 +106,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .bar{position:relative;height:10px;background:#eef2f4;border-radius:6px;margin:12px 0 4px;overflow:hidden}
 .bar>span{position:absolute;left:0;top:0;bottom:0;background:var(--deficit);border-radius:6px}
 .bar>i{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
+/* Estação agora */
+.estacao{background:linear-gradient(135deg,#16404d 0%,#2e7d8c 100%);color:#e8f3f5;border:0}
+.estacao.velha{background:linear-gradient(135deg,#4d4d4d,#777)}
+.est-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.est-rotulo{font-size:12px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:6px}
+.est-temp{font-size:46px;font-weight:800;line-height:1.05;margin-top:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.est-temp span{font-size:20px;font-weight:600;margin-left:3px;opacity:.85}
+.est-sub{font-size:13px;opacity:.9;margin-top:2px}
+.bussola{text-align:center;color:#fff;width:64px}.bussola svg{width:56px;height:56px}.bussola text{fill:currentColor;font-size:9px;font-weight:700}.bussola small{display:block;font-weight:700;font-size:12px}
+.est-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:14px}
+.est-stat{display:flex;gap:8px;align-items:flex-start;background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;min-width:0}
+.est-stat .svg{width:18px;height:18px;margin-top:3px;opacity:.9}
+.est-stat small{display:block;font-size:11px;opacity:.8;font-weight:600}
+.est-stat b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+.est-stat em{display:block;font-style:normal;font-size:11px;opacity:.85}
+.est-stat i{font-style:normal;background:#fff;border-radius:6px;padding:0 5px;font-weight:700;font-size:10.5px}
+.estacao .alertas li{background:rgba(255,255,255,.92);color:#5a3d00}
+
 /* Resumo do dia (tela Hoje) */
 .resumo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .resumo-dia{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
@@ -105,7 +132,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .sem-chip{display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 4px;border-top:4px solid var(--c)}
 .sem-chip b{font-size:20px;line-height:1.1;color:var(--ink)}
 .sem-chip small{font-size:11px;color:var(--muted);font-weight:600}
-.sem-chip .ico{font-size:15px}
+.sem-chip .ico{display:grid;place-items:center;color:var(--c)}.sem-chip .ico .svg{width:18px;height:18px}
 .sem-chip.vazio{opacity:.45}
 .sem-chip.sem-bom{--c:var(--sem-bom)} .sem-chip.sem-atencao{--c:var(--sem-atencao)} .sem-chip.sem-ruim{--c:var(--sem-ruim)} .sem-chip.sem-sem{--c:var(--sem-sem)}
 .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
@@ -126,7 +153,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .kpis b{display:block;font-size:20px;color:var(--blue);font-variant-numeric:tabular-nums;line-height:1.2}
 .kpis em{display:block;font-style:normal;font-size:11px;color:var(--muted)}
 .alertas{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:6px}
-.alertas li{background:var(--amber-soft);color:#7a5200;border-radius:8px;padding:6px 10px;font-size:13px}
+.alertas li{background:var(--amber-soft);color:#7a5200;border-radius:10px;padding:7px 10px;font-size:13px;display:flex;gap:7px;align-items:flex-start}
+.alertas li .svg{margin-top:2px}
 .vazio{text-align:center;color:var(--muted);padding:26px 10px}
 
 /* Formulários */
@@ -203,7 +231,12 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   .brand,.sidebar-foot{display:none}
   #nav{flex-direction:row;padding:4px 2px;gap:0}
   #nav a{flex:1;flex-direction:column;gap:2px;padding:7px 1px 6px;font-size:10.5px;border-radius:8px;justify-content:center;min-height:52px}
-  #nav a .ico{font-size:19px;width:auto}
+  #nav a .ico{width:auto}
+  #nav a .ico .svg{width:22px;height:22px}
+  #nav a.active{background:transparent;box-shadow:none;color:#fff;position:relative}
+  #nav a.active::before{content:"";position:absolute;top:2px;left:50%;transform:translateX(-50%);width:42px;height:30px;border-radius:12px;background:var(--teal);z-index:-1}
+  #nav a.active .ico{position:relative;z-index:1}
+  .est-temp{font-size:40px}
   .topbar{padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px))}
   #page-title{font-size:17px}
   .content{padding:14px 16px calc(90px + env(safe-area-inset-bottom,0px))}
@@ -213,6 +246,7 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   .resumo h2{font-size:18px}
   input,select{font-size:16px}   /* iPhone: menos de 16px dá zoom sozinho ao tocar */
   .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  .est-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .user-chip{max-width:110px;overflow:hidden;text-overflow:ellipsis}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}

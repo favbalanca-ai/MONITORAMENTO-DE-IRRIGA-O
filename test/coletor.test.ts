@@ -196,3 +196,27 @@ test("recuperação segue em frente quando um bloco falha e reporta o erro", asy
     await limpar();
   }
 });
+
+test("tempo real: todos os sensores viram extras em SI (°F→°C, in→mm, mph→m/s, inHg→hPa)", async () => {
+  const { extrasDoTempoReal } = await import("../src/coletor/ecowitt.ts");
+  const e = extrasDoTempoReal({
+    outdoor: { temperature: { unit: "ºF", value: "75.9" }, feels_like: { unit: "ºF", value: "76.4" }, dew_point: { unit: "ºF", value: "60" } },
+    wind: { wind_gust: { unit: "mph", value: "10" }, wind_direction: { unit: "º", value: "120" } },
+    pressure: { relative: { unit: "inHg", value: "29.92" } },
+    rainfall: { rain_rate: { unit: "in/hr", value: "0.10" }, event: { unit: "in", value: "0.5" } },
+    solar_and_uvi: { uvi: { unit: "", value: "7" } },
+    soil_ch1: { soilmoisture: { unit: "%", value: "34" } },
+    lightning: { distance: { unit: "mi", value: "12" }, count: { unit: "", value: "3" }, time: { unit: "", value: "texto" } },
+  });
+  assert.equal(e["outdoor.temperature"], 24.39);
+  assert.equal(e["outdoor.dew_point"], 15.56);
+  assert.equal(e["wind.wind_gust"], 4.47);
+  assert.equal(e["wind.wind_direction"], 120);
+  assert.equal(e["pressure.relative"], 1013.21);
+  assert.equal(e["rainfall.rain_rate"], 2.54);
+  assert.equal(e["rainfall.event"], 12.7);
+  assert.equal(e["solar_and_uvi.uvi"], 7);
+  assert.equal(e["soil_ch1.soilmoisture"], 34);
+  assert.equal(e["lightning.distance"], 19.31);
+  assert.equal("lightning.time" in e, false);
+});

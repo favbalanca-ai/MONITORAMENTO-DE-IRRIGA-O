@@ -76,6 +76,7 @@ var COLUNAS_PIVOS = [
   ["contorno", "Contorno (do KMZ)", true],
   ["tarifaPontaRsKwh", "Tarifa na ponta (R$/kWh, vazio = única)", true],
   ["grausDiaCiclo", "Graus-dia do ciclo (vazio = dias corridos)", true],
+  ["sensorSolo", "Sensor de solo da estação (canal 1-8)", true],
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
@@ -85,7 +86,7 @@ var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "", "2025-11-25", "2026-01-20", "S
 var CABECALHOS = {
   IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs.", "Por", "ID"],
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
-  LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte"],
+  LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas"],
   LOG: ["Quando", "Ação", "Status", "Detalhe", "Dia do relatório"],
@@ -336,6 +337,7 @@ function lerPivos_(cfg) {
         tarifaPontaRsKwh: n(l, "tarifaPontaRsKwh"),
       } : undefined,
       grausDiaCiclo: n(l, "grausDiaCiclo"),
+      sensorSolo: n(l, "sensorSolo"),
     };
   });
 }
@@ -375,10 +377,15 @@ function cadastroValidado_() {
 /* ================================ LEITURAS ================================ */
 
 function abaLeituras_() {
-  return SpreadsheetApp.getActive().getSheetByName(ABA.LEITURAS);
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.LEITURAS);
+  // planilha de versão anterior: a 9ª coluna (extras da estação) entra pelo cabeçalho
+  if (aba && aba.getLastColumn() < 9 && aba.getLastRow() >= 1) aba.getRange(1, 9).setValue(CABECALHOS.LEITURAS[8]).setFontWeight("bold");
+  return aba;
 }
 
 function linhaParaLeitura_(l) {
+  var extras;
+  try { extras = l[8] ? JSON.parse(String(l[8])) : undefined; } catch (e) { extras = undefined; }
   return {
     quando: String(l[0]),
     chuvaAcumDia: Motor.numero(l[1]),
@@ -388,19 +395,21 @@ function linhaParaLeitura_(l) {
     ventoMs: Motor.numero(l[5]),
     intervaloMin: Motor.numero(l[6]) === null ? undefined : Motor.numero(l[6]),
     fonte: l[7] === "" ? undefined : String(l[7]),
+    extras: extras,
   };
 }
 
 function leituraParaLinha_(x) {
   var v = function (n) { return n === null || n === undefined ? "" : n; };
-  return [x.quando, v(x.chuvaAcumDia), v(x.tempC), v(x.urPct), v(x.radWm2), v(x.ventoMs), v(x.intervaloMin), v(x.fonte)];
+  return [x.quando, v(x.chuvaAcumDia), v(x.tempC), v(x.urPct), v(x.radWm2), v(x.ventoMs), v(x.intervaloMin), v(x.fonte),
+    x.extras && Object.keys(x.extras).length ? JSON.stringify(x.extras) : ""];
 }
 
 /** Leituras com ini <= quando <= fim. */
 function lerLeituras_(ini, fim) {
   var aba = abaLeituras_();
   if (aba.getLastRow() < 2) return [];
-  return aba.getRange(2, 1, aba.getLastRow() - 1, 8).getValues()
+  return aba.getRange(2, 1, aba.getLastRow() - 1, 9).getValues()
     .filter(function (l) { var q = String(l[0]); return q >= ini && q <= fim; })
     .map(linhaParaLeitura_);
 }
@@ -426,8 +435,8 @@ function gravarLeituras_(leituras) {
   });
   if (!novas.length) return 0;
   novas.sort(function (a, b) { return a.quando < b.quando ? -1 : 1; });
-  aba.getRange(ultima + 1, 1, novas.length, 8).setValues(novas.map(leituraParaLinha_));
-  if (novas[0].quando < maiorExistente) aba.getRange(2, 1, ultima - 1 + novas.length, 8).sort({ column: 1, ascending: true });
+  aba.getRange(ultima + 1, 1, novas.length, 9).setValues(novas.map(leituraParaLinha_));
+  if (novas[0].quando < maiorExistente) aba.getRange(2, 1, ultima - 1 + novas.length, 9).sort({ column: 1, ascending: true });
   return novas.length;
 }
 
@@ -723,6 +732,7 @@ function calcular_(dia) {
 /** Resumo do último cálculo para o app abrir rápido (aba oculta CACHE, célula A1). */
 function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
   var r2 = function (x) { return Math.round(x * 100) / 100; };
+  var ult = ultimaLeitura_();
   var resumo = {
     dia: dia,
     calculadoEm: Motor.paraLocal(Date.now(), cfg.fuso),
@@ -737,6 +747,7 @@ function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
         raioM: eq ? eq.raioM : null, anguloGraus: eq ? eq.anguloGraus : null,
       };
       if (!l) return p;
+      p.sensorSolo = sensorSolo_(ult, it.pivo.sensorSolo);
       if (l.decisao === "IRRIGAR" && previsao) p.avisoChuva = Motor.avisoChuva(l.deficit, previsao.dias, dia);
       p.estadio = l.estadio;
       p.das = l.das;
@@ -1120,7 +1131,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-2";
+var VERSAO_SERVIDOR = "2026.10.09-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1204,11 +1215,34 @@ function hojeLocal_() {
   return Motor.paraLocal(Date.now(), lerEstacao_().fuso).slice(0, 10);
 }
 
+/** Última leitura ao vivo com tudo que a estação mandou + tendência da pressão (3 h). */
 function ultimaLeitura_() {
   var aba = abaLeituras_();
   if (!aba || aba.getLastRow() < 2) return null;
-  var l = linhaParaLeitura_(aba.getRange(aba.getLastRow(), 1, 1, 8).getValues()[0]);
-  return { quando: l.quando, tempC: l.tempC, urPct: l.urPct };
+  var n = Math.min(40, aba.getLastRow() - 1);
+  var ls = aba.getRange(aba.getLastRow() - n + 1, 1, n, 9).getValues().map(linhaParaLeitura_);
+  var l = ls[ls.length - 1];
+  // extras só existem na coleta ao vivo; se a última linha veio do histórico, usa os extras mais recentes
+  var comExtras = ls.filter(function (x) { return x.extras && Object.keys(x.extras).length; }).pop();
+  var r = { quando: l.quando, tempC: l.tempC, urPct: l.urPct, radWm2: l.radWm2, ventoMs: l.ventoMs, chuvaAcumDia: l.chuvaAcumDia,
+    extras: comExtras ? comExtras.extras : {}, extrasQuando: comExtras ? comExtras.quando : null };
+  var pAgora = r.extras["pressure.relative"];
+  if (pAgora !== undefined) {
+    var limite = Motor.somarMinutos(l.quando, -180);
+    var antiga = ls.filter(function (x) { return x.extras && x.extras["pressure.relative"] !== undefined && x.quando <= limite; }).pop();
+    if (antiga) r.pressaoTendencia3h = Math.round((pAgora - antiga.extras["pressure.relative"]) * 10) / 10;
+  }
+  return r;
+}
+
+/** Umidade/temperatura do sensor de solo de um canal, da última leitura. */
+function sensorSolo_(ult, canal) {
+  if (!ult || !canal || !ult.extras) return null;
+  var c = Math.round(canal);
+  var um = ult.extras["soil_ch" + c + ".soilmoisture"];
+  if (um === undefined) return null;
+  var t = ult.extras["temp_ch" + c + ".temperature"];
+  return { canal: c, umidadePct: um, tempC: t === undefined ? null : t, quando: ult.extrasQuando || ult.quando };
 }
 
 function dadosApp_(u) {
@@ -1275,7 +1309,19 @@ function historico_(nome, dias) {
       };
     });
   var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
-  return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, linhas: linhas.slice(-dias) };
+  return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, linhas: linhas.slice(-dias), clima: climaHistorico_(dias, fuso) };
+}
+
+/** Série diária da estação (aba CLIMA) para o gráfico do Histórico. */
+function climaHistorico_(dias, fuso) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CLIMA);
+  if (!aba || aba.getLastRow() < 2) return [];
+  var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
+  var col = function (h) { return cab.indexOf(h); };
+  return aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues().slice(-dias).map(function (l) {
+    var n = function (h) { var x = Motor.numero(l[col(h)]); return x === null ? null : Math.round(x * 10) / 10; };
+    return { data: dataIso_(l[col("Data")], fuso), tmax: n("Tmax"), tmin: n("Tmin"), ur: n("UR"), chuva: n("Chuva (mm)"), et0: n("ET0 PM (mm)"), vento: n("Vento"), rad: n("Radiação (MJ/m²)") };
+  });
 }
 
 function cadastroPivos_() {
