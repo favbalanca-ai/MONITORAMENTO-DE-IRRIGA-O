@@ -1149,7 +1149,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-9";
+var VERSAO_SERVIDOR = "2026.10.09-10";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1368,10 +1368,16 @@ function historico_(nome, dias) {
         data: dataIso_(l[col("Data")], fuso), deficit: n("Déficit (mm)"), afd: n("AFD (mm)"), chuva: n("Chuva"),
         irrigacao: n("Irrigação"), et0: n("ET0"), etc: n("ETc"), estadio: String(l[col("Estádio")]),
         decisao: String(l[col("Decisão")]), medicao: l[col("Medição")] === "SIM",
+        das: n("DAS"), kc: n("Kc"), cad: n("CAD (mm)"), raiz: n("Raiz (cm)"), f: n("f"),
+        alertas: String(l[col("Alertas")] || "").split(" | ").filter(function (a) { return a; }),
       };
     });
   var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
-  return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, linhas: linhas.slice(-dias), clima: climaHistorico_(dias, fuso) };
+  var eq = p && p.equipamento;
+  var areaHa = eq ? (Math.PI * eq.raioM * eq.raioM * (eq.anguloGraus / 360)) / 10000 : null;
+  return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, areaHa: areaHa, eficienciaPct: eq ? eq.eficienciaPct : null,
+    cultura: p ? Motor.CULTURAS[p.cultura] && Motor.CULTURAS[p.cultura].nome : null, plantio: p ? p.plantio : null,
+    linhas: linhas.slice(-dias), clima: climaHistorico_(dias, fuso) };
 }
 
 /** Série diária da estação (aba CLIMA) para o gráfico do Histórico. */

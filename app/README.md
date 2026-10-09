@@ -17,8 +17,10 @@ feitos sem internet.
   ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
   últimos lançamentos com quem lançou e botão **Apagar**.
-- **Histórico** — gráfico de déficit, AFD, lâmina mínima, chuva e irrigação (15 a 120 dias), gráfico do clima da
-  estação no período (Tmáx/Tmín, UR, chuva) e tabela.
+- **Histórico** — resumo do período (consumo ETc, chuva útil, irrigação em mm e m³, déficit e tendência, dias
+  pedindo irrigação, dias em estresse, cobertura do consumo), gráfico de déficit/AFD/lâmina mínima/chuva/irrigação
+  com os dias de estresse em vermelho (15 a 120 dias), tabela com % da AFD e "Mais colunas" (DAS, estádio, Kc,
+  ET₀, raiz, CAD) e **Baixar CSV**.
 - **Clima** — cartão **Estação agora**: última leitura com sensação, orvalho, vento e rajada (bússola), UV, radiação,
   chuva de hoje e taxa, pressão com tendência de 3 h, raios e sensores de solo (o que a estação mandar). Avisos
   pra quem vai ligar o pivô: chovendo agora, vento forte (≥ 4 m/s, deriva), raios, estação sem leitura nova.

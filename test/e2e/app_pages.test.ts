@@ -205,6 +205,17 @@ test("histórico desenha gráfico e tabela", async () => {
   await page.locator("#grafico svg").waitFor();
   assert.equal(await page.locator("#grafico svg circle").count(), 20);
   assert.equal(await page.locator("#tab-hist tbody tr").count(), 20);
+  const resumo = await page.locator("#resumo-hist").innerText();
+  assert.match(resumo, /Pivô 2 · 20 dias/);
+  assert.match(resumo, /CONSUMO \(ETC\)\s+\d+/i);
+  assert.match(resumo, /Pediu irrigação em \d+ dias?/);
+  assert.match(resumo, /Cobertura: chuva \+ irrigação = \d+% do consumo/);
+  assert.equal(await page.locator("#tab-hist thead th").count(), 8);
+  await page.getByRole("button", { name: "Mais colunas" }).click();
+  assert.equal(await page.locator("#tab-hist thead th").count(), 14);
+  assert.match(await page.locator("#tab-hist tbody tr").first().innerText(), /R3/);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /Baixar CSV/ }).click()]);
+  assert.equal(download.suggestedFilename(), "balanco_Piv_2_2026-01-20_2026-02-08.csv");
   await page.selectOption("#h-dias", "15");
   await page.waitForFunction(() => document.querySelectorAll("#grafico svg circle").length === 15);
   await page.screenshot({ path: PRINTS + "5_historico.png", fullPage: true });

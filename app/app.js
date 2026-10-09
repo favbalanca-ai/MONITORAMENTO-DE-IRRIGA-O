@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-12';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-13';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -657,10 +657,42 @@ V.historico = function () {
   const dias = pref.dias || 30;
   return '<div class="card"><div class="grid2"><div><label for="h-pivo">Pivô</label><select id="h-pivo" data-act="hist">' + ps.map((n) => '<option' + (n === piv ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></div>' +
     '<div><label for="h-dias">Período</label><select id="h-dias" data-act="hist">' + [15, 30, 60, 120].map((d) => '<option value="' + d + '"' + (d === dias ? ' selected' : '') + '>' + d + ' dias</option>').join('') + '</select></div></div></div>' +
-    '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="vazio">Carregando…</div>') + '</div>' +
-    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span></div></div>' +
+    '<div id="resumo-hist">' + (HIST && HIST.pivo === piv ? resumoHist(HIST) : '') + '</div>' +
+    '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
+    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span><span style="--c:var(--red)">Dia em estresse</span></div></div>' +
     '<div class="card" id="tab-hist">' + (HIST && HIST.pivo === piv ? tabelaHist(HIST) : '') + '</div>';
 };
+/** Totais do período: água que entrou e saiu, dias irrigados, dias em estresse, custo de irrigar. */
+function resumoHist(h) {
+  const ls = h.linhas; if (!ls || !ls.length) return '';
+  const soma = (k) => ls.reduce((t, l) => t + (l[k] || 0), 0);
+  const etc = soma('etc'), chuva = soma('chuva'), irrig = soma('irrigacao'), et0 = soma('et0');
+  const diasIrrig = ls.filter((l) => l.irrigacao > 0).length, diasEstresse = ls.filter((l) => l.afd > 0 && l.deficit >= l.afd).length;
+  const diasPedindo = ls.filter((l) => l.decisao === 'IRRIGAR').length, semDados = ls.filter((l) => l.decisao === 'SEM DADOS').length;
+  const m3 = h.areaHa && h.eficienciaPct ? (irrig / (h.eficienciaPct / 100)) * h.areaHa * 10 : null;
+  const ult = ls[ls.length - 1], ini = ls[0];
+  const tend = ult.deficit - ini.deficit;
+  return '<div class="card"><div class="row"><h2>' + esc(h.pivo) + ' · ' + ls.length + ' dias</h2><span class="muted">' + esc(dataBr(ini.data)) + ' – ' + esc(dataBr(ult.data)) + (h.cultura ? ' · ' + esc(h.cultura) : '') + '</span></div>' +
+    '<div class="kpis kpis-hist"><div><small>Consumo (ETc)</small><b>' + br(etc, 0) + '</b><em>mm · ET₀ ' + br(et0, 0) + ' mm</em></div>' +
+    '<div><small>Chuva útil</small><b>' + br(chuva, 0) + '</b><em>mm</em></div>' +
+    '<div><small>Irrigação</small><b>' + br(irrig, 0) + '</b><em>mm líquidos em ' + diasIrrig + ' dia' + (diasIrrig === 1 ? '' : 's') + (m3 != null ? ' · ≈ ' + br(m3, 0) + ' m³ brutos' : '') + '</em></div>' +
+    '<div><small>Déficit agora</small><b>' + br(ult.deficit, 1) + '</b><em>mm · ' + (tend > 0.05 ? '↑ subiu ' : tend < -0.05 ? '↓ caiu ' : '→ estável ') + br(Math.abs(tend), 1) + ' no período</em></div></div>' +
+    '<div class="chips"><span class="chip">Pediu irrigação em <b>' + diasPedindo + '</b> dia' + (diasPedindo === 1 ? '' : 's') + '</span>' +
+    '<span class="chip' + (diasEstresse ? ' chip-ruim' : '') + '">Estresse (déficit ≥ AFD) em <b>' + diasEstresse + '</b> dia' + (diasEstresse === 1 ? '' : 's') + '</span>' +
+    (semDados ? '<span class="chip">Sem dados em <b>' + semDados + '</b> dia' + (semDados === 1 ? '' : 's') + '</span>' : '') +
+    '<span class="chip">Cobertura: chuva + irrigação = <b>' + br(etc > 0 ? ((chuva + irrig) / etc) * 100 : 0, 0) + '%</b> do consumo</span></div>' +
+    '<div class="toolbar" style="margin:10px 0 0"><button type="button" class="btn btn-outline btn-sm" data-act="hist-csv">⬇ Baixar CSV</button><button type="button" class="btn btn-outline btn-sm" data-act="hist-cols">' + (colsHist ? 'Menos colunas' : 'Mais colunas') + '</button></div></div>';
+}
+let colsHist = false;
+function csvHist(h) {
+  const cab = ['Data', 'DAS', 'Estádio', 'Kc', 'ET0 (mm)', 'ETc (mm)', 'Chuva (mm)', 'Irrigação (mm)', 'Raiz (cm)', 'CAD (mm)', 'f', 'AFD (mm)', 'Déficit (mm)', 'Medição', 'Decisão', 'Alertas'];
+  const v = (x) => (x == null ? '' : String(x).replace('.', ','));
+  const linhas = h.linhas.map((l) => [l.data, l.das, l.estadio, v(l.kc), v(l.et0), v(l.etc), v(l.chuva), v(l.irrigacao), v(l.raiz), v(l.cad), v(l.f), v(l.afd), v(l.deficit), l.medicao ? 'SIM' : '', l.decisao, (l.alertas || []).join(' | ')]
+    .map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';'));
+  const blob = new Blob(['\ufeff' + [cab.join(';')].concat(linhas).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'balanco_' + h.pivo.replace(/[^\w]+/g, '_') + '_' + h.linhas[0].data + '_' + h.linhas[h.linhas.length - 1].data + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
 V.historico_depois = function () { carregarHist(); };
 async function carregarHist() {
   const sel = $('#h-pivo'); if (!sel || !sel.value) return;
@@ -669,7 +701,7 @@ async function carregarHist() {
     const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'sem resposta');
     HIST = r.historico;
-    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); }
+    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); }
   } catch (e) { if ($('#grafico')) $('#grafico').innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 }
 function grafico(h) {
@@ -689,7 +721,7 @@ function grafico(h) {
   s += '<path d="' + linha('afd') + '" fill="none" stroke="var(--afd)" stroke-width="2" stroke-dasharray="6 4"/>';
   if (h.laminaMinimaMm != null) s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y(h.laminaMinimaMm) + '" y2="' + y(h.laminaMinimaMm) + '" stroke="var(--muted)" stroke-dasharray="2 4"/>';
   s += '<path d="' + linha('deficit') + '" fill="none" stroke="var(--deficit)" stroke-width="2.5" stroke-linejoin="round"/>';
-  ls.forEach((l, i) => { s += '<circle cx="' + x(i) + '" cy="' + y(l.deficit || 0) + '" r="' + (l.medicao ? 4.5 : 2.5) + '" fill="' + (l.medicao ? '#fff' : 'var(--deficit)') + '" stroke="var(--deficit)" stroke-width="2"><title>' + dataBr(l.data) + ': déficit ' + br(l.deficit, 1) + ' mm · ' + esc(l.decisao) + '</title></circle>'; });
+  ls.forEach((l, i) => { const estresse = l.afd > 0 && l.deficit >= l.afd; s += '<circle cx="' + x(i) + '" cy="' + y(l.deficit || 0) + '" r="' + (l.medicao ? 4.5 : estresse ? 4 : 2.5) + '" fill="' + (l.medicao ? '#fff' : estresse ? 'var(--red)' : 'var(--deficit)') + '" stroke="' + (estresse ? 'var(--red)' : 'var(--deficit)') + '" stroke-width="2"><title>' + dataBr(l.data) + ': déficit ' + br(l.deficit, 1) + ' mm · ' + esc(l.decisao) + (estresse ? ' · ESTRESSE' : '') + '</title></circle>'; });
   const passo = Math.max(1, Math.ceil(ls.length / 7));
   ls.forEach((l, i) => {
     const ult = i === ls.length - 1;
@@ -699,9 +731,16 @@ function grafico(h) {
 }
 function tabelaHist(h) {
   const ls = h.linhas.slice().reverse(); if (!ls.length) return '';
-  return '<div class="tbl-wrap"><table><thead><tr><th>Dia</th><th>Déficit</th><th>ETc</th><th>Chuva</th><th>Irrig.</th><th>Decisão</th></tr></thead><tbody>' +
-    ls.map((l) => '<tr><td>' + dataBr(l.data) + (l.medicao ? ' 🌱' : '') + '</td><td>' + br(l.deficit, 1) + '</td><td>' + br(l.etc, 1) + '</td><td>' + br(l.chuva, 1) + '</td><td>' + br(l.irrigacao, 1) +
-      '</td><td><span class="badge ' + classeDec(l.decisao) + '">' + esc(l.decisao === 'NÃO IRRIGAR' ? 'NÃO' : l.decisao === 'SEM DADOS' ? 'S/ DADOS' : l.decisao) + '</span></td></tr>').join('') + '</tbody></table></div>';
+  const mais = colsHist;
+  return '<div class="tbl-wrap"><table><thead><tr><th>Dia</th>' + (mais ? '<th>DAS</th><th>Estádio</th><th>Kc</th><th>ET₀</th>' : '') + '<th>ETc</th><th>Chuva</th><th>Irrig.</th>' + (mais ? '<th>Raiz</th><th>CAD</th>' : '') + '<th>AFD</th><th>Déficit</th><th>% AFD</th><th>Decisão</th></tr></thead><tbody>' +
+    ls.map((l) => { const pct = l.afd > 0 ? (l.deficit / l.afd) * 100 : 0, estresse = l.afd > 0 && l.deficit >= l.afd, alertas = (l.alertas || []).filter((a) => !/^(Só |Clima estimado)/.test(a));
+      return '<tr' + (estresse ? ' class="estresse"' : '') + ' title="' + esc(alertas.join('\n')) + '"><td>' + dataBr(l.data) + (l.medicao ? ' 🌱' : '') + (alertas.length ? ' <span class="muted">⚠︎</span>' : '') + '</td>' +
+      (mais ? '<td>' + esc(l.das == null ? '' : l.das) + '</td><td style="text-align:left">' + esc(l.estadio || '') + '</td><td>' + br(l.kc, 2) + '</td><td>' + br(l.et0, 1) + '</td>' : '') +
+      '<td>' + br(l.etc, 1) + '</td><td>' + (l.chuva ? br(l.chuva, 1) : '·') + '</td><td>' + (l.irrigacao ? '<b>' + br(l.irrigacao, 1) + '</b>' : '·') + '</td>' +
+      (mais ? '<td>' + br(l.raiz, 0) + '</td><td>' + br(l.cad, 0) + '</td>' : '') +
+      '<td>' + br(l.afd, 0) + '</td><td><b>' + br(l.deficit, 1) + '</b></td><td><span class="pct-afd"><i style="width:' + Math.min(100, pct).toFixed(0) + '%"></i></span>' + br(pct, 0) + '%</td>' +
+      '<td><span class="badge ' + classeDec(l.decisao) + '">' + esc(l.decisao === 'NÃO IRRIGAR' ? 'NÃO' : l.decisao === 'SEM DADOS' ? 'S/ DADOS' : l.decisao) + '</span></td></tr>'; }).join('') + '</tbody></table></div>' +
+    '<p class="muted" style="margin-top:6px">🌱 dia com medição de umidade · ⚠︎ dia com alerta (passe o dedo/mouse pra ler) · linha vermelha = déficit passou da AFD (estresse).</p>';
 }
 
 /** Curva de Kc do plantio ao fim do ciclo, com marcador no dia de hoje (DAS). */
@@ -1094,6 +1133,8 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
   else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);
   else if (act === 'rosa-24h') { ROSA = null; route({ manterRolagem: true }); }
+  else if (act === 'hist-csv') { if (HIST) csvHist(HIST); }
+  else if (act === 'hist-cols') { colsHist = !colsHist; if (HIST) { $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); } }
   else if (act === 'recalcular') {
     a.disabled = true; a.textContent = 'Recalculando…';
     try { const r = await chamar('POST', null, { __recalcular: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); if (r.aviso) toast(r.aviso, true); else toast('Recalculado.'); await puxar(true); }
