@@ -245,8 +245,14 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   const amb = pronto();
   const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
   const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
-  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
-  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[] };
+  const time = [], temperature_2m = [], relative_humidity_2m = [], wind_speed_10m = [], wind_gusts_10m = [], precipitation = [], precipitation_probability = [];
+  for (let h = 0; h < 48; h++) { time.push("2026-02-0" + (h < 24 ? 8 : 9) + "T" + String(h % 24).padStart(2, "0") + ":00"); temperature_2m.push(h % 24 < 8 ? 22 : 31); relative_humidity_2m.push(h % 24 < 8 ? 75 : 45); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5); }
+  const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[]; horas: { quando: string; terrestre: string }[] };
+  assert.equal(p.horas.length, 48);
+  assert.equal(p.horas[3]!.terrestre, "bom");
+  assert.equal(p.horas[12]!.terrestre, "ruim");
   assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
   assert.ok(amb.urls.some((u) => /open-meteo.*latitude=-14\.74&longitude=-46\.24/.test(u)));
   assert.ok(amb.urls.some((u) => u.endsWith("/previsao/3126208")));
@@ -270,7 +276,7 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   assert.match(amb.chamar<{ texto: string }>("calcular_", "2026-02-08").texto, /🌧 Previsão: 09\/02 12,4 mm/);
 
   // INMET fora do ar: continua com o Open-Meteo e registra no LOG
-  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 503, corpo: {} });
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 503, corpo: {} });
   const p2 = amb.chamar("atualizarPrevisao") as { fontes: string[] };
   assert.deepEqual([...p2.fontes], ["Open-Meteo"]);
   assert.ok(amb.aba("LOG").objetos().some((l) => l["Ação"] === "previsão" && l["Status"] === "parcial" && /INMET: HTTP 503/.test(String(l["Detalhe"]))));

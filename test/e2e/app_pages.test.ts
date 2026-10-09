@@ -330,7 +330,17 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   const amb = planilha();
   const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
   const inmet = JSON.parse(readFileSync(new URL("../fixtures/previsao_inmet.json", import.meta.url), "utf8"));
-  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  // horas previstas a partir de agora (o app só mostra o futuro): madrugada boa, dia quente e seco
+  const time: string[] = [], temperature_2m: number[] = [], relative_humidity_2m: number[] = [], wind_speed_10m: number[] = [], wind_gusts_10m: number[] = [], precipitation: number[] = [], precipitation_probability: number[] = [];
+  const h0 = new Date(); h0.setMinutes(0, 0, 0);
+  for (let i = 0; i < 48; i++) {
+    const d = new Date(h0.getTime() + i * 3600_000);
+    const loc = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 13) + ":00";
+    const noite = d.getHours() < 7 || d.getHours() >= 19;
+    time.push(loc); temperature_2m.push(noite ? 22 : 33); relative_humidity_2m.push(noite ? 75 : 35); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5);
+  }
+  const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
   amb.chamar("atualizarPrevisao");
   // leitura ao vivo com todos os sensores (vento forte, chovendo, UV, pressão, sensor de solo 2)
   const t = String(Math.floor(Date.UTC(2026, 1, 8, 21, 50) / 1000));
@@ -370,6 +380,11 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(est, /Terrestre[\s\S]*Ruim[\s\S]*Vento 11 km\/h: no limite \(10 a 12\)[\s\S]*Chovendo agora/);
   assert.match(est, /Aérea[\s\S]*Ruim[\s\S]*Chovendo agora/);
   assert.doesNotMatch(est.split("Aérea")[1]!, /Vento 11 km\/h: no limite/);
+  await page.locator(".j48").waitFor();
+  const j48 = await page.locator(".j48").innerText();
+  assert.match(j48, /Próximas 48 h \(previsão\)/i);
+  assert.equal(await page.locator(".horas48 i").count(), 96); // 48 h × 2 modalidades
+  assert.match(j48, /Terrestre: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
   await page.screenshot({ path: PRINTS + "12_clima.png", fullPage: true });

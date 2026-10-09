@@ -129,3 +129,131 @@ export function avisoChuva(deficitMm: number, previsao: DiaPrevisao[], hoje: Dat
   const prob = p.probPct !== null ? ` (${Math.round(p.probPct)}% de chance)` : "";
   return `Previsão de ${p.mm.toFixed(1).replace(".", ",")} mm de chuva até ${dBr(p.ate)}${prob} cobre o déficit: avalie adiar a irrigação.`;
 }
+
+/* ------------------------------ pulverização: hora a hora ------------------------------ */
+
+export interface HoraPrevisao {
+  /** Hora local "YYYY-MM-DDTHH:00". */
+  quando: string;
+  tempC: number | null;
+  urPct: number | null;
+  ventoMs: number | null;
+  rajadaMs: number | null;
+  chuvaMm: number | null;
+  probPct: number | null;
+}
+
+export function urlOpenMeteoHoras(latitude: number, longitude: number, fuso: string, dias = 3): string {
+  return (
+    "https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
+    "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability" +
+    "&wind_speed_unit=ms&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias
+  );
+}
+
+export function lerOpenMeteoHoras(json: unknown): HoraPrevisao[] {
+  const h = (json as { hourly?: Record<string, unknown[]> } | null)?.hourly;
+  if (!h || !Array.isArray(h["time"])) throw new Error("Open-Meteo: resposta sem a série horária.");
+  return h["time"].map((t, i) => ({
+    quando: String(t).slice(0, 13) + ":00",
+    tempC: num(h["temperature_2m"]?.[i]),
+    urPct: num(h["relative_humidity_2m"]?.[i]),
+    ventoMs: num(h["wind_speed_10m"]?.[i]),
+    rajadaMs: num(h["wind_gusts_10m"]?.[i]),
+    chuvaMm: num(h["precipitation"]?.[i]),
+    probPct: num(h["precipitation_probability"]?.[i]),
+  }));
+}
+
+/** Temperatura de bulbo úmido (°C) por T e UR — Stull (2011). */
+export function bulboUmido(tempC: number, urPct: number): number {
+  return tempC * Math.atan(0.151977 * Math.sqrt(urPct + 8.313659)) + Math.atan(tempC + urPct) - Math.atan(urPct - 1.676331) +
+    0.00391838 * Math.pow(urPct, 1.5) * Math.atan(0.023101 * urPct) - 4.686035;
+}
+export const deltaT = (tempC: number, urPct: number): number => tempC - bulboUmido(tempC, urPct);
+
+export type NivelAplicacao = "bom" | "atencao" | "ruim";
+export interface Aplicacao { nivel: NivelAplicacao; motivos: [NivelAplicacao, string][] }
+export interface CondicoesAplicacao { deltaT: number; terrestre: Aplicacao; aerea: Aplicacao }
+
+/** Faixas usuais (Embrapa/ANDEF). Vento em km/h: [bom até, atenção até]. */
+export const FAIXAS_APLICACAO = {
+  deltaT: { minimo: 2, idealAte: 8, atencaoAte: 10 },
+  ventoKmh: { minimo: 3, terrestre: [10, 12] as [number, number], aerea: [12, 15] as [number, number] },
+  ur: { atencaoAbaixo: 55, ruimAbaixo: 50 },
+  temp: { atencaoAcima: 30, ruimAcima: 35 },
+};
+
+const dec1 = (x: number) => x.toFixed(1).replace(".", ",");
+const int0 = (x: number) => String(Math.round(x));
+
+/**
+ * Condições de pulverização terrestre e aérea para um instante (leitura da estação ou hora prevista).
+ * O nível de cada modalidade é o pior item; os motivos explicam.
+ */
+export function condicoesAplicacao(x: { tempC: number; urPct: number; ventoMs?: number | null; rajadaMs?: number | null; chovendo?: boolean }): CondicoesAplicacao {
+  const F = FAIXAS_APLICACAO;
+  const dt = deltaT(x.tempC, x.urPct);
+  const ventoKmh = x.ventoMs == null ? null : x.ventoMs * 3.6;
+  const rajadaKmh = x.rajadaMs == null ? null : x.rajadaMs * 3.6;
+  const ORDEM: Record<NivelAplicacao, number> = { bom: 0, atencao: 1, ruim: 2 };
+  const avaliar = (modal: "terrestre" | "aerea"): Aplicacao => {
+    const motivos: [NivelAplicacao, string][] = [];
+    let pior: NivelAplicacao = "bom";
+    const marca = (nivel: NivelAplicacao, texto: string) => { motivos.push([nivel, texto]); if (ORDEM[nivel] > ORDEM[pior]) pior = nivel; };
+    if (dt < F.deltaT.minimo) marca("ruim", `Delta T ${dec1(dt)} °C: abaixo de ${F.deltaT.minimo} — gota não seca, risco de inversão térmica`);
+    else if (dt <= F.deltaT.idealAte) marca("bom", `Delta T ${dec1(dt)} °C: ideal (${F.deltaT.minimo} a ${F.deltaT.idealAte})`);
+    else if (dt <= F.deltaT.atencaoAte) marca("atencao", `Delta T ${dec1(dt)} °C: alto — só com gota grossa`);
+    else marca("ruim", `Delta T ${dec1(dt)} °C: acima de ${F.deltaT.atencaoAte} — a gota evapora antes de chegar`);
+    if (ventoKmh !== null) {
+      const [bomAte, atencaoAte] = F.ventoKmh[modal];
+      if (ventoKmh < F.ventoKmh.minimo) marca("atencao", `Vento ${int0(ventoKmh)} km/h: calmaria — deriva imprevisível, inversão`);
+      else if (ventoKmh <= bomAte) marca("bom", `Vento ${int0(ventoKmh)} km/h: ideal (${F.ventoKmh.minimo} a ${bomAte})`);
+      else if (ventoKmh <= atencaoAte) marca("atencao", `Vento ${int0(ventoKmh)} km/h: no limite (${bomAte} a ${atencaoAte})`);
+      else marca("ruim", `Vento ${int0(ventoKmh)} km/h: acima de ${atencaoAte} — deriva`);
+      if (rajadaKmh !== null && rajadaKmh > atencaoAte && ventoKmh <= atencaoAte) marca("atencao", `Rajadas de ${int0(rajadaKmh)} km/h`);
+    }
+    if (x.urPct < F.ur.ruimAbaixo) marca("ruim", `UR ${int0(x.urPct)}%: abaixo de ${F.ur.ruimAbaixo}`);
+    else if (x.urPct < F.ur.atencaoAbaixo) marca("atencao", `UR ${int0(x.urPct)}%: entre ${F.ur.ruimAbaixo} e ${F.ur.atencaoAbaixo}`);
+    if (x.tempC > F.temp.ruimAcima) marca("ruim", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.ruimAcima}`);
+    else if (x.tempC > F.temp.atencaoAcima) marca("atencao", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.atencaoAcima}`);
+    if (x.chovendo) marca("ruim", "Chovendo — lava o produto");
+    return { nivel: pior, motivos };
+  };
+  return { deltaT: dt, terrestre: avaliar("terrestre"), aerea: avaliar("aerea") };
+}
+
+export interface HoraAplicacao {
+  quando: string;
+  deltaT: number;
+  terrestre: NivelAplicacao;
+  aerea: NivelAplicacao;
+  ventoKmh: number | null;
+  chuvaMm: number | null;
+}
+
+/** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
+export function aplicacaoPorHora(horas: HoraPrevisao[]): HoraAplicacao[] {
+  const out: HoraAplicacao[] = [];
+  for (const h of horas) {
+    if (h.tempC === null || h.urPct === null) continue;
+    const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: (h.chuvaMm ?? 0) >= 0.2 || (h.probPct ?? 0) >= 60 });
+    out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm });
+  }
+  return out;
+}
+
+export interface Janela { inicio: string; fim: string; horas: number }
+
+/** Janelas de horas seguidas "boas" (mínimo `minHoras`), depois de `apartirDe`. */
+export function janelasBoas(horas: HoraAplicacao[], modal: "terrestre" | "aerea", apartirDe: string, minHoras = 2, max = 4): Janela[] {
+  const janelas: Janela[] = [];
+  let ini: string | null = null, n = 0, ultima = "";
+  const fecha = () => { if (ini && n >= minHoras) janelas.push({ inicio: ini, fim: ultima, horas: n }); ini = null; n = 0; };
+  for (const h of horas) {
+    if (h.quando < apartirDe) continue;
+    if (h[modal] === "bom") { if (!ini) ini = h.quando; n++; ultima = h.quando; } else fecha();
+  }
+  fecha();
+  return janelas.slice(0, max);
+}

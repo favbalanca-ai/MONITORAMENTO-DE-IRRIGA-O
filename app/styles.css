@@ -140,6 +140,13 @@ h1,h2,h3{letter-spacing:-.01em}
 .aplic-modal li{padding:2px 0}.aplic-modal li.m-ruim{color:#b00020}.aplic-modal li.m-atencao{color:#9a6b00}.aplic-modal li.m-bom{color:#2e7d32}
 .badge.aplic-bom{background:var(--green-soft);color:var(--green)}.badge.aplic-atencao{background:var(--amber-soft);color:#7a5200}.badge.aplic-ruim{background:var(--red-soft);color:var(--red)}
 .estacao .aplic .muted{color:#d6e6ea;font-size:11.5px;margin-top:8px}
+.faixa48{display:flex;align-items:center;gap:8px;margin-top:6px}
+.faixa48 small{width:62px;font-size:11px;font-weight:700;opacity:.9}
+.horas48{flex:1;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:1px;height:16px;border-radius:6px;overflow:hidden}
+.horas48 i{display:block}
+.horas48 .h-bom{background:#7bd389}.horas48 .h-atencao{background:#f0c25a}.horas48 .h-ruim{background:#ff8a80}
+.horas48-rotulos{display:flex;justify-content:space-between;font-size:10px;opacity:.8;margin:2px 0 0 70px}
+.j48-txt{font-size:13px;margin-top:8px;background:rgba(255,255,255,.12);border-radius:10px;padding:8px 10px}
 @media(max-width:640px){.aplic-grid{grid-template-columns:minmax(0,1fr)}}
 
 /* Resumo do dia (tela Hoje) */

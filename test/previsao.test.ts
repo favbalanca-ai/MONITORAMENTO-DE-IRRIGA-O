@@ -55,3 +55,35 @@ test("relatório das 18h ganha a linha da previsão e o aviso no pivô que vai i
   const sem = montarMensagem("2026-02-08", clima, [{ pivo: { nome: "Pivô 2", cultura: { nome: "Soja" } }, linha }]);
   assert.doesNotMatch(sem.texto, /Previsão/);
 });
+
+test("pulverização: Delta T, semáforo por instante e janelas boas nas horas previstas", async () => {
+  const { condicoesAplicacao, deltaT, aplicacaoPorHora, janelasBoas, lerOpenMeteoHoras, urlOpenMeteoHoras } = await import("../src/motor/previsao.ts");
+  assert.ok(Math.abs(deltaT(27.4, 61) - 5.6) < 0.05);
+  assert.ok(Math.abs(deltaT(31.5, 27) - 12.7) < 0.05);
+  const c = condicoesAplicacao({ tempC: 27.4, urPct: 61, ventoMs: 3.1, rajadaMs: 6.5, chovendo: true });
+  assert.equal(c.terrestre.nivel, "ruim");
+  assert.ok(c.terrestre.motivos.some((m) => /Vento 11 km\/h: no limite \(10 a 12\)/.test(m[1])));
+  assert.ok(c.aerea.motivos.some((m) => /Vento 11 km\/h: ideal \(3 a 12\)/.test(m[1])));
+  const bom = condicoesAplicacao({ tempC: 24, urPct: 70, ventoMs: 1.5 });
+  assert.equal(bom.terrestre.nivel, "bom");
+  assert.equal(bom.aerea.nivel, "bom");
+  assert.equal(condicoesAplicacao({ tempC: 33, urPct: 40, ventoMs: 1.5 }).terrestre.nivel, "ruim");
+  assert.match(urlOpenMeteoHoras(-14.9, -46.25, "America/Sao_Paulo"), /hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability&wind_speed_unit=ms/);
+  // 24 h: madrugada boa (6 h), manhã quente/seca, tarde ventosa, noite chove
+  const time = [], temperature_2m = [], relative_humidity_2m = [], wind_speed_10m = [], wind_gusts_10m = [], precipitation = [], precipitation_probability = [];
+  for (let h = 0; h < 24; h++) {
+    time.push("2026-02-09T" + String(h).padStart(2, "0") + ":00");
+    const madrugada = h < 7, tarde = h >= 12 && h < 18, noite = h >= 20;
+    temperature_2m.push(madrugada ? 22 : tarde ? 33 : 27); relative_humidity_2m.push(madrugada ? 75 : tarde ? 35 : 60);
+    wind_speed_10m.push(tarde ? 4.5 : 1.5); wind_gusts_10m.push(tarde ? 7 : 2); precipitation.push(noite ? 1.2 : 0); precipitation_probability.push(noite ? 80 : 5);
+  }
+  const horas = lerOpenMeteoHoras({ hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } });
+  assert.equal(horas.length, 24);
+  const ap = aplicacaoPorHora(horas);
+  assert.equal(ap[3]!.terrestre, "bom");
+  assert.equal(ap[14]!.terrestre, "ruim"); // 33 °C e UR 35 → Delta T alto
+  assert.equal(ap[21]!.aerea, "ruim");     // chuva
+  const j = janelasBoas(ap, "terrestre", "2026-02-09T01:00");
+  // 27 °C / UR 60 / calmo de manhã também é bom: a janela vai de 1h a 11h direto; à noite 18h–19h antes da chuva
+  assert.deepEqual(j, [{ inicio: "2026-02-09T01:00", fim: "2026-02-09T11:00", horas: 11 }, { inicio: "2026-02-09T18:00", fim: "2026-02-09T19:00", horas: 2 }]);
+});

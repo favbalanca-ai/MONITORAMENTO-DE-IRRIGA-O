@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-5';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-6';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -271,9 +271,32 @@ function blocoAplicacao(u, x) {
   const nivelDT = c.deltaT < 2 || c.deltaT > 10 ? 'ruim' : c.deltaT > 8 ? 'atencao' : 'bom';
   const modal = (nome, r) => '<div class="aplic-modal sem-' + r.nivel + '"><div class="aplic-cab"><b>' + nome + '</b><span class="badge aplic-' + r.nivel + '">' + SEM_ICONE[r.nivel] + ' ' + APLIC_ROTULO[r.nivel] + '</span></div>' +
     '<ul>' + r.motivos.filter((m) => m[0] !== 'bom').map((m) => '<li class="m-' + m[0] + '">' + esc(m[1]) + '</li>').join('') + (r.motivos.every((m) => m[0] === 'bom') ? '<li class="m-bom">Delta T, vento, UR e temperatura dentro da faixa.</li>' : '') + '</ul></div>';
+  const pv = DADOS.previsao, horas = pv && pv.horas ? pv.horas : [];
   return '<div class="aplic"><div class="aplic-top"><div class="est-rotulo">' + ico('gota') + ' Pulverização agora</div><div class="deltat sem-' + nivelDT + '"><small>Delta T</small><b>' + br(c.deltaT, 1) + '<span> °C</span></b><em>' + (nivelDT === 'bom' ? 'ideal 2–8' : nivelDT === 'atencao' ? 'alto (8–10)' : c.deltaT < 2 ? 'abaixo de 2' : 'acima de 10') + '</em></div></div>' +
     '<div class="aplic-grid">' + modal('Terrestre', c.terrestre) + modal('Aérea', c.aerea) + '</div>' +
+    janelas48h(horas) +
     '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h terrestre e 3–12 aérea, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
+}
+/** Próximas 48 h hora a hora (previsão Open-Meteo) e as melhores janelas de cada modalidade. */
+function janelasBoas(horas, modal, apartirDe, minHoras, max) {
+  const out = []; let ini = null, n = 0, ult = '';
+  const fecha = () => { if (ini && n >= minHoras) out.push({ inicio: ini, fim: ult, horas: n }); ini = null; n = 0; };
+  for (const h of horas) { if (h.quando < apartirDe) continue; if (h[modal] === 'bom') { if (!ini) ini = h.quando; n++; ult = h.quando; } else fecha(); }
+  fecha(); return out.slice(0, max);
+}
+function janelas48h(horas) {
+  if (!horas || !horas.length) return '';
+  const agora = new Date(); agora.setMinutes(0, 0, 0);
+  const ini = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0') + 'T' + String(agora.getHours()).padStart(2, '0') + ':00';
+  const prox = horas.filter((h) => h.quando >= ini).slice(0, 48);
+  if (!prox.length) return '';
+  const hh = (q) => q.slice(11, 13) + 'h', dd = (q) => q.slice(8, 10) + '/' + q.slice(5, 7);
+  const texto = (modal) => { const js = janelasBoas(prox, modal, ini, 2, 3);
+    return js.length ? js.map((j) => (j.inicio.slice(0, 10) === ini.slice(0, 10) ? 'hoje' : j.inicio.slice(0, 10) === prox[prox.length - 1].quando.slice(0, 10) && prox[prox.length - 1].quando.slice(0, 10) !== ini.slice(0, 10) ? dd(j.inicio) : 'amanhã') + ' ' + hh(j.inicio) + '–' + String(Number(j.fim.slice(11, 13)) + 1).padStart(2, '0') + 'h (' + j.horas + ' h)').join(' · ') : 'nenhuma janela boa de 2 h ou mais'; };
+  const faixa = (modal) => '<div class="faixa48"><small>' + (modal === 'terrestre' ? 'Terrestre' : 'Aérea') + '</small><div class="horas48">' + prox.map((h) => '<i class="h-' + h[modal] + '" title="' + esc(dd(h.quando) + ' ' + hh(h.quando) + ' · Delta T ' + br(h.deltaT, 1) + (h.ventoKmh != null ? ' · vento ' + h.ventoKmh + ' km/h' : '') + (h.chuvaMm ? ' · chuva ' + br(h.chuvaMm, 1) + ' mm' : '')) + '"></i>').join('') + '</div></div>';
+  return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)</div>' + faixa('terrestre') + faixa('aerea') +
+    '<div class="horas48-rotulos">' + prox.filter((h, i) => i % 6 === 0).map((h) => '<span>' + hh(h.quando) + '</span>').join('') + '</div>' +
+    '<p class="j48-txt"><b>Terrestre:</b> ' + esc(texto('terrestre')) + '<br><b>Aérea:</b> ' + esc(texto('aerea')) + '</p></div>';
 }
 
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */

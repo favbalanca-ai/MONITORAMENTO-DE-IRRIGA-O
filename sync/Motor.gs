@@ -945,6 +945,126 @@ var Motor = (function () {
       const prob = p.probPct !== null ? ` (${Math.round(p.probPct)}% de chance)` : "";
       return `Previsão de ${p.mm.toFixed(1).replace(".", ",")} mm de chuva até ${dBr(p.ate)}${prob} cobre o déficit: avalie adiar a irrigação.`;
   }
+  function urlOpenMeteoHoras(latitude, longitude, fuso, dias = 3) {
+      return ("https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
+          "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability" +
+          "&wind_speed_unit=ms&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
+  }
+  function lerOpenMeteoHoras(json) {
+      const h = json === null || json === void 0 ? void 0 : json.hourly;
+      if (!h || !Array.isArray(h["time"]))
+          throw new Error("Open-Meteo: resposta sem a série horária.");
+      return h["time"].map((t, i) => {
+          var _a, _b, _c, _d, _e, _f;
+          return ({
+              quando: String(t).slice(0, 13) + ":00",
+              tempC: num((_a = h["temperature_2m"]) === null || _a === void 0 ? void 0 : _a[i]),
+              urPct: num((_b = h["relative_humidity_2m"]) === null || _b === void 0 ? void 0 : _b[i]),
+              ventoMs: num((_c = h["wind_speed_10m"]) === null || _c === void 0 ? void 0 : _c[i]),
+              rajadaMs: num((_d = h["wind_gusts_10m"]) === null || _d === void 0 ? void 0 : _d[i]),
+              chuvaMm: num((_e = h["precipitation"]) === null || _e === void 0 ? void 0 : _e[i]),
+              probPct: num((_f = h["precipitation_probability"]) === null || _f === void 0 ? void 0 : _f[i]),
+          });
+      });
+  }
+  /** Temperatura de bulbo úmido (°C) por T e UR — Stull (2011). */
+  function bulboUmido(tempC, urPct) {
+      return tempC * Math.atan(0.151977 * Math.sqrt(urPct + 8.313659)) + Math.atan(tempC + urPct) - Math.atan(urPct - 1.676331) +
+          0.00391838 * Math.pow(urPct, 1.5) * Math.atan(0.023101 * urPct) - 4.686035;
+  }
+  const deltaT = (tempC, urPct) => tempC - bulboUmido(tempC, urPct);
+  /** Faixas usuais (Embrapa/ANDEF). Vento em km/h: [bom até, atenção até]. */
+  const FAIXAS_APLICACAO = {
+      deltaT: { minimo: 2, idealAte: 8, atencaoAte: 10 },
+      ventoKmh: { minimo: 3, terrestre: [10, 12], aerea: [12, 15] },
+      ur: { atencaoAbaixo: 55, ruimAbaixo: 50 },
+      temp: { atencaoAcima: 30, ruimAcima: 35 },
+  };
+  const dec1 = (x) => x.toFixed(1).replace(".", ",");
+  const int0 = (x) => String(Math.round(x));
+  /**
+   * Condições de pulverização terrestre e aérea para um instante (leitura da estação ou hora prevista).
+   * O nível de cada modalidade é o pior item; os motivos explicam.
+   */
+  function condicoesAplicacao(x) {
+      const F = FAIXAS_APLICACAO;
+      const dt = deltaT(x.tempC, x.urPct);
+      const ventoKmh = x.ventoMs == null ? null : x.ventoMs * 3.6;
+      const rajadaKmh = x.rajadaMs == null ? null : x.rajadaMs * 3.6;
+      const ORDEM = { bom: 0, atencao: 1, ruim: 2 };
+      const avaliar = (modal) => {
+          const motivos = [];
+          let pior = "bom";
+          const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (ORDEM[nivel] > ORDEM[pior])
+              pior = nivel; };
+          if (dt < F.deltaT.minimo)
+              marca("ruim", `Delta T ${dec1(dt)} °C: abaixo de ${F.deltaT.minimo} — gota não seca, risco de inversão térmica`);
+          else if (dt <= F.deltaT.idealAte)
+              marca("bom", `Delta T ${dec1(dt)} °C: ideal (${F.deltaT.minimo} a ${F.deltaT.idealAte})`);
+          else if (dt <= F.deltaT.atencaoAte)
+              marca("atencao", `Delta T ${dec1(dt)} °C: alto — só com gota grossa`);
+          else
+              marca("ruim", `Delta T ${dec1(dt)} °C: acima de ${F.deltaT.atencaoAte} — a gota evapora antes de chegar`);
+          if (ventoKmh !== null) {
+              const [bomAte, atencaoAte] = F.ventoKmh[modal];
+              if (ventoKmh < F.ventoKmh.minimo)
+                  marca("atencao", `Vento ${int0(ventoKmh)} km/h: calmaria — deriva imprevisível, inversão`);
+              else if (ventoKmh <= bomAte)
+                  marca("bom", `Vento ${int0(ventoKmh)} km/h: ideal (${F.ventoKmh.minimo} a ${bomAte})`);
+              else if (ventoKmh <= atencaoAte)
+                  marca("atencao", `Vento ${int0(ventoKmh)} km/h: no limite (${bomAte} a ${atencaoAte})`);
+              else
+                  marca("ruim", `Vento ${int0(ventoKmh)} km/h: acima de ${atencaoAte} — deriva`);
+              if (rajadaKmh !== null && rajadaKmh > atencaoAte && ventoKmh <= atencaoAte)
+                  marca("atencao", `Rajadas de ${int0(rajadaKmh)} km/h`);
+          }
+          if (x.urPct < F.ur.ruimAbaixo)
+              marca("ruim", `UR ${int0(x.urPct)}%: abaixo de ${F.ur.ruimAbaixo}`);
+          else if (x.urPct < F.ur.atencaoAbaixo)
+              marca("atencao", `UR ${int0(x.urPct)}%: entre ${F.ur.ruimAbaixo} e ${F.ur.atencaoAbaixo}`);
+          if (x.tempC > F.temp.ruimAcima)
+              marca("ruim", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.ruimAcima}`);
+          else if (x.tempC > F.temp.atencaoAcima)
+              marca("atencao", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.atencaoAcima}`);
+          if (x.chovendo)
+              marca("ruim", "Chovendo — lava o produto");
+          return { nivel: pior, motivos };
+      };
+      return { deltaT: dt, terrestre: avaliar("terrestre"), aerea: avaliar("aerea") };
+  }
+  /** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
+  function aplicacaoPorHora(horas) {
+      var _a, _b;
+      const out = [];
+      for (const h of horas) {
+          if (h.tempC === null || h.urPct === null)
+              continue;
+          const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2 || ((_b = h.probPct) !== null && _b !== void 0 ? _b : 0) >= 60 });
+          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm });
+      }
+      return out;
+  }
+  /** Janelas de horas seguidas "boas" (mínimo `minHoras`), depois de `apartirDe`. */
+  function janelasBoas(horas, modal, apartirDe, minHoras = 2, max = 4) {
+      const janelas = [];
+      let ini = null, n = 0, ultima = "";
+      const fecha = () => { if (ini && n >= minHoras)
+          janelas.push({ inicio: ini, fim: ultima, horas: n }); ini = null; n = 0; };
+      for (const h of horas) {
+          if (h.quando < apartirDe)
+              continue;
+          if (h[modal] === "bom") {
+              if (!ini)
+                  ini = h.quando;
+              n++;
+              ultima = h.quando;
+          }
+          else
+              fecha();
+      }
+      fecha();
+      return janelas.slice(0, max);
+  }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
   function formatador(fuso) {
@@ -1236,5 +1356,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

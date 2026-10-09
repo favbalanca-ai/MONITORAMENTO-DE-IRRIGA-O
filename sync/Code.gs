@@ -806,7 +806,14 @@ function atualizarPrevisao() {
     log_("previsão", "erro", erros.join(" | "));
     return null;
   }
-  var previsao = { atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes };
+  // hora a hora (48 h) para as janelas de pulverização
+  var horas = [];
+  if (cfg.latitude !== null && cfg.longitude !== null) {
+    try {
+      horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))));
+    } catch (e) { erros.push("Open-Meteo horas: " + e.message); }
+  }
+  var previsao = { atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas };
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
   escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, dias.map(function (d) {
     return [d.data, d.chuvaMm === null ? "" : d.chuvaMm, d.probPct === null ? "" : d.probPct, d.tmin === null ? "" : d.tmin,
@@ -1131,7 +1138,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-3";
+var VERSAO_SERVIDOR = "2026.10.09-4";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

@@ -24,7 +24,8 @@ feitos sem internet.
   pra quem vai ligar o pivô: chovendo agora, vento forte (≥ 4 m/s, deriva), raios, estação sem leitura nova.
   Bloco **Pulverização agora**: Delta T (bulbo seco − bulbo úmido, fórmula de Stull) e semáforo de aplicação
   terrestre e aérea com os motivos — faixas usuais Embrapa/ANDEF: Delta T 2–8 °C, vento 3–10 km/h (terrestre)
-  e 3–12 km/h (aérea), UR > 55 %, temperatura < 30 °C, sem chuva.
+  e 3–12 km/h (aérea), UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora
+  (previsão horária do Open-Meteo) e as melhores janelas de cada modalidade.
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede).
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê.
