@@ -86,4 +86,11 @@ test("pulverização: Delta T, semáforo por instante e janelas boas nas horas p
   const j = janelasBoas(ap, "terrestre", "2026-02-09T01:00");
   // 27 °C / UR 60 / calmo de manhã também é bom: a janela vai de 1h a 11h direto; à noite 18h–19h antes da chuva
   assert.deepEqual(j, [{ inicio: "2026-02-09T01:00", fim: "2026-02-09T11:00", horas: 11 }, { inicio: "2026-02-09T18:00", fim: "2026-02-09T19:00", horas: 2 }]);
+  // seca: UR 40 o dia todo → nada bom; "atenção" também não (UR < 50 é ruim); menos ruim = menor Delta T sem chuva
+  const seca = aplicacaoPorHora(horas.map((h) => ({ ...h, urPct: 40, tempC: h.quando < "2026-02-09T06:00" ? 20 : 30 })));
+  const { horaMenosRuim } = await import("../src/motor/previsao.ts");
+  assert.equal(janelasBoas(seca, "terrestre", "2026-02-09T00:00", 2, 4, "atencao").length, 0);
+  const m = horaMenosRuim(seca, "2026-02-09T00:00")!;
+  assert.equal(m.quando.slice(11), "00:00"); // 20 °C e UR 40: o menor Delta T do dia
+  assert.equal(m.urPct, 40);
 });

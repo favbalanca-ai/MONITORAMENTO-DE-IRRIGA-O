@@ -1040,12 +1040,13 @@ var Motor = (function () {
           if (h.tempC === null || h.urPct === null)
               continue;
           const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2 || ((_b = h.probPct) !== null && _b !== void 0 ? _b : 0) >= 60 });
-          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm });
+          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
       }
       return out;
   }
-  /** Janelas de horas seguidas "boas" (mínimo `minHoras`), depois de `apartirDe`. */
-  function janelasBoas(horas, modal, apartirDe, minHoras = 2, max = 4) {
+  /** Janelas de horas seguidas no nível pedido ou melhor (mínimo `minHoras`), depois de `apartirDe`. */
+  function janelasBoas(horas, modal, apartirDe, minHoras = 2, max = 4, ateNivel = "bom") {
+      const ORDEM = { bom: 0, atencao: 1, ruim: 2 };
       const janelas = [];
       let ini = null, n = 0, ultima = "";
       const fecha = () => { if (ini && n >= minHoras)
@@ -1053,7 +1054,7 @@ var Motor = (function () {
       for (const h of horas) {
           if (h.quando < apartirDe)
               continue;
-          if (h[modal] === "bom") {
+          if (ORDEM[h[modal]] <= ORDEM[ateNivel]) {
               if (!ini)
                   ini = h.quando;
               n++;
@@ -1064,6 +1065,21 @@ var Motor = (function () {
       }
       fecha();
       return janelas.slice(0, max);
+  }
+  /**
+   * Quando não há janela boa nem de atenção: a hora "menos ruim" — sem chuva, com o menor Delta T
+   * (desempate pela maior UR). Devolve null se todas as horas têm chuva.
+   */
+  function horaMenosRuim(horas, apartirDe) {
+      var _a;
+      let melhor = null;
+      for (const h of horas) {
+          if (h.quando < apartirDe || ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2)
+              continue;
+          if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct))
+              melhor = h;
+      }
+      return melhor;
   }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
@@ -1356,5 +1372,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

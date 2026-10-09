@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-10';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-11';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -278,11 +278,17 @@ function blocoAplicacao(u, x) {
     '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h terrestre e 3–12 aérea, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
 }
 /** Próximas 48 h hora a hora (previsão Open-Meteo) e as melhores janelas de cada modalidade. */
-function janelasBoas(horas, modal, apartirDe, minHoras, max) {
+function janelasBoas(horas, modal, apartirDe, minHoras, max, ateNivel) {
+  const ORDEM = { bom: 0, atencao: 1, ruim: 2 }, lim = ORDEM[ateNivel || 'bom'];
   const out = []; let ini = null, n = 0, ult = '';
   const fecha = () => { if (ini && n >= minHoras) out.push({ inicio: ini, fim: ult, horas: n }); ini = null; n = 0; };
-  for (const h of horas) { if (h.quando < apartirDe) continue; if (h[modal] === 'bom') { if (!ini) ini = h.quando; n++; ult = h.quando; } else fecha(); }
+  for (const h of horas) { if (h.quando < apartirDe) continue; if (ORDEM[h[modal]] <= lim) { if (!ini) ini = h.quando; n++; ult = h.quando; } else fecha(); }
   fecha(); return out.slice(0, max);
+}
+function horaMenosRuim(horas, apartirDe) {
+  let m = null;
+  for (const h of horas) { if (h.quando < apartirDe || (h.chuvaMm || 0) >= 0.2) continue; if (!m || h.deltaT < m.deltaT || (h.deltaT === m.deltaT && (h.urPct || 0) > (m.urPct || 0))) m = h; }
+  return m;
 }
 function janelas48h(horas) {
   if (!horas || !horas.length) return '';
@@ -291,8 +297,16 @@ function janelas48h(horas) {
   const prox = horas.filter((h) => h.quando >= ini).slice(0, 48);
   if (!prox.length) return '';
   const hh = (q) => q.slice(11, 13) + 'h', dd = (q) => q.slice(8, 10) + '/' + q.slice(5, 7);
-  const texto = (modal) => { const js = janelasBoas(prox, modal, ini, 2, 3);
-    return js.length ? js.map((j) => (j.inicio.slice(0, 10) === ini.slice(0, 10) ? 'hoje' : j.inicio.slice(0, 10) === prox[prox.length - 1].quando.slice(0, 10) && prox[prox.length - 1].quando.slice(0, 10) !== ini.slice(0, 10) ? dd(j.inicio) : 'amanhã') + ' ' + hh(j.inicio) + '–' + String(Number(j.fim.slice(11, 13)) + 1).padStart(2, '0') + 'h (' + j.horas + ' h)').join(' · ') : 'nenhuma janela boa de 2 h ou mais'; };
+  const quando = (q) => (q.slice(0, 10) === ini.slice(0, 10) ? 'hoje' : q.slice(0, 10) === prox[prox.length - 1].quando.slice(0, 10) && prox[prox.length - 1].quando.slice(0, 10) !== ini.slice(0, 10) ? dd(q) : 'amanhã');
+  const lista = (js) => js.map((j) => quando(j.inicio) + ' ' + hh(j.inicio) + '–' + String(Number(j.fim.slice(11, 13)) + 1).padStart(2, '0') + 'h (' + j.horas + ' h)').join(' · ');
+  const texto = (modal) => {
+    const boas = janelasBoas(prox, modal, ini, 2, 3);
+    if (boas.length) return lista(boas);
+    const atencao = janelasBoas(prox, modal, ini, 2, 3, 'atencao');
+    if (atencao.length) return 'nenhuma janela boa; com atenção (gota grossa, adjuvante): ' + lista(atencao);
+    const m = horaMenosRuim(prox, ini);
+    return m ? 'nenhuma janela boa nas 48 h. Menos ruim: ' + quando(m.quando) + ' ' + hh(m.quando) + ' (Delta T ' + br(m.deltaT, 1) + ', UR ' + br(m.urPct, 0) + '%' + (m.ventoKmh != null ? ', vento ' + m.ventoKmh + ' km/h' : '') + ') — converse com o agrônomo' : 'nenhuma janela: chuva o tempo todo';
+  };
   const faixa = (modal) => '<div class="faixa48"><small>' + (modal === 'terrestre' ? 'Terrestre' : 'Aérea') + '</small><div class="horas48">' + prox.map((h) => '<i class="h-' + h[modal] + '" title="' + esc(dd(h.quando) + ' ' + hh(h.quando) + ' · Delta T ' + br(h.deltaT, 1) + (h.ventoKmh != null ? ' · vento ' + h.ventoKmh + ' km/h' : '') + (h.chuvaMm ? ' · chuva ' + br(h.chuvaMm, 1) + ' mm' : '')) + '"></i>').join('') + '</div></div>';
   return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)</div>' + faixa('terrestre') + faixa('aerea') +
     '<div class="horas48-rotulos">' + prox.filter((h, i) => i % 6 === 0).map((h) => '<span>' + hh(h.quando) + '</span>').join('') + '</div>' +

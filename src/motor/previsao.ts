@@ -230,6 +230,8 @@ export interface HoraAplicacao {
   aerea: NivelAplicacao;
   ventoKmh: number | null;
   chuvaMm: number | null;
+  tempC: number;
+  urPct: number;
 }
 
 /** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
@@ -238,22 +240,36 @@ export function aplicacaoPorHora(horas: HoraPrevisao[]): HoraAplicacao[] {
   for (const h of horas) {
     if (h.tempC === null || h.urPct === null) continue;
     const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: (h.chuvaMm ?? 0) >= 0.2 || (h.probPct ?? 0) >= 60 });
-    out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm });
+    out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
   }
   return out;
 }
 
 export interface Janela { inicio: string; fim: string; horas: number }
 
-/** Janelas de horas seguidas "boas" (mínimo `minHoras`), depois de `apartirDe`. */
-export function janelasBoas(horas: HoraAplicacao[], modal: "terrestre" | "aerea", apartirDe: string, minHoras = 2, max = 4): Janela[] {
+/** Janelas de horas seguidas no nível pedido ou melhor (mínimo `minHoras`), depois de `apartirDe`. */
+export function janelasBoas(horas: HoraAplicacao[], modal: "terrestre" | "aerea", apartirDe: string, minHoras = 2, max = 4, ateNivel: NivelAplicacao = "bom"): Janela[] {
+  const ORDEM: Record<NivelAplicacao, number> = { bom: 0, atencao: 1, ruim: 2 };
   const janelas: Janela[] = [];
   let ini: string | null = null, n = 0, ultima = "";
   const fecha = () => { if (ini && n >= minHoras) janelas.push({ inicio: ini, fim: ultima, horas: n }); ini = null; n = 0; };
   for (const h of horas) {
     if (h.quando < apartirDe) continue;
-    if (h[modal] === "bom") { if (!ini) ini = h.quando; n++; ultima = h.quando; } else fecha();
+    if (ORDEM[h[modal]] <= ORDEM[ateNivel]) { if (!ini) ini = h.quando; n++; ultima = h.quando; } else fecha();
   }
   fecha();
   return janelas.slice(0, max);
+}
+
+/**
+ * Quando não há janela boa nem de atenção: a hora "menos ruim" — sem chuva, com o menor Delta T
+ * (desempate pela maior UR). Devolve null se todas as horas têm chuva.
+ */
+export function horaMenosRuim(horas: HoraAplicacao[], apartirDe: string): HoraAplicacao | null {
+  let melhor: HoraAplicacao | null = null;
+  for (const h of horas) {
+    if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2) continue;
+    if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct)) melhor = h;
+  }
+  return melhor;
 }
