@@ -3,13 +3,14 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-14';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.10-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
 const FILA_KEY = 'irrigacao_fila';         // lançamentos/exclusões esperando internet
 const LOG_KEY = 'irrigacao_log';           // últimas conversas com a planilha
 const HIST_KEY = 'irrigacao_hist_pref';    // pivô e período escolhidos no Histórico
+const FAZ_KEY = 'irrigacao_fazenda';       // fazenda escolhida no app (quando o usuário vê mais de uma)
 
 /* ================= utilidades ================= */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -179,6 +180,7 @@ function route(opts) {
   const u = sessUsuario(); const chip = $('#user-chip');
   chip.hidden = !u; if (u) chip.textContent = '👤 ' + u.nome;
   const y = window.scrollY;
+  barraFazendas();
   $('#content').innerHTML = V[v](arg);
   if (V[v + '_depois']) V[v + '_depois'](arg);
   window.scrollTo(0, opts.manterRolagem ? y : 0);
@@ -191,6 +193,38 @@ function semDados() {
   return '<div class="card vazio">Carregando os dados da planilha…</div>';
 }
 
+
+/* ================= fazendas (o app mostra uma por vez) ================= */
+function fazendas() { return (DADOS && DADOS.fazendas) || []; }
+function fazendaAtual() {
+  const fs = fazendas(); if (!fs.length) return null;
+  const pref = ler(FAZ_KEY, '');
+  return fs.find((f) => f.chave === pref) || fs[0];
+}
+const chaveAtual = () => { const f = fazendaAtual(); return f ? f.chave : ''; };
+const daFazenda = (p) => !fazendas().length || !p.chaveFazenda || p.chaveFazenda === chaveAtual();
+/** Áreas do resumo (decisão do dia) da fazenda escolhida. */
+function pivosResumo() { const r = DADOS && DADOS.resumo; return r && r.pivos ? r.pivos.filter(daFazenda) : []; }
+/** Áreas do cadastro da fazenda escolhida (com a chave da fazenda resolvida). */
+function pivosCadastro() {
+  const c = DADOS && DADOS.cadastro; if (!c) return [];
+  const fs = fazendas();
+  return c.pivos.map((p, i) => Object.assign({ __i: i, chaveFazenda: (fs.find((f) => f.nome === p.fazenda) || fs[0] || {}).chave }, p)).filter(daFazenda);
+}
+function lancs() { return ((DADOS && DADOS.lancamentos) || []).filter((l) => !fazendas().length || !l.chaveFazenda || l.chaveFazenda === chaveAtual()); }
+/** Estação, previsão e rosa da fazenda escolhida (planilha nova) — ou os campos antigos (planilha anterior). */
+function estacao() {
+  const e = DADOS && DADOS.estacoes && DADOS.estacoes[chaveAtual()];
+  return e || { ultimaLeitura: DADOS && DADOS.ultimaLeitura, previsao: DADOS && DADOS.previsao, vento24h: DADOS && DADOS.vento24h, temEstacao: true };
+}
+const climaResumo = () => { const r = DADOS && DADOS.resumo; if (!r) return null; const f = (r.fazendas || []).find((x) => x.chave === chaveAtual()); return f ? f.clima : r.clima; };
+function barraFazendas() {
+  const fs = fazendas(); const el = $('#faz-bar'); if (!el) return;
+  if (fs.length < 2) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = '<label for="faz-sel" class="faz-rot">' + ico('mapa2') + ' Fazenda</label><select id="faz-sel">' + fs.map((f) => '<option value="' + esc(f.chave) + '"' + (f.chave === chaveAtual() ? ' selected' : '') + '>' + esc(f.nome) + (f.temEstacao ? '' : ' (sem estação)') + '</option>').join('') + '</select>';
+}
+document.addEventListener('change', (ev) => { if (ev.target.id === 'faz-sel') { grava(FAZ_KEY, ev.target.value); HIST = null; CLIMA = null; ROSA = null; route(); } });
 
 /* ================= ícones (SVG inline, traço 2px) ================= */
 const ICO = {
@@ -264,7 +298,7 @@ const APLIC_ROTULO = { bom: 'Boa', atencao: 'Atenção', ruim: 'Ruim' };
 function blocoAplicacao(u, x) {
   const c = condicoesAplicacao(u, x); if (!c) return '';
   const nivelDT = c.deltaT < 2 || c.deltaT > 10 ? 'ruim' : c.deltaT > 8 ? 'atencao' : 'bom';
-  const pv = DADOS.previsao, horas = pv && pv.horas ? pv.horas : [];
+  const pv = estacao().previsao, horas = pv && pv.horas ? pv.horas : [];
   const ruins = c.motivos.filter((m) => m[0] !== 'bom');
   return '<div class="aplic"><div class="aplic-top"><div class="est-rotulo">' + ico('gota') + ' Pulverização agora</div><div class="deltat sem-' + nivelDT + '"><small>Delta T</small><b>' + br(c.deltaT, 1) + '<span> °C</span></b><em>' + (nivelDT === 'bom' ? 'ideal 2–8' : nivelDT === 'atencao' ? 'alto (8–10)' : c.deltaT < 2 ? 'abaixo de 2' : 'acima de 10') + '</em></div></div>' +
     '<div class="aplic-modal sem-' + c.nivel + '"><div class="aplic-cab"><b>Condição pra aplicar</b><span class="badge aplic-' + c.nivel + '">' + SEM_ICONE[c.nivel] + ' ' + APLIC_ROTULO[c.nivel] + '</span></div>' +
@@ -336,7 +370,7 @@ const FAIXAS_VENTO = [['3–10 km/h', '#9ad6e0'], ['10–20 km/h', '#3e9aaa'], [
 /** Cartão "Vento nas últimas 24 h": rosa dos ventos com 16 setores empilhados por faixa de velocidade. */
 let ROSA = null; // período escolhido pelo usuário: { de, ate, dados } (null = últimas 24 h da planilha)
 function cardRosa24h() {
-  const r = ROSA ? ROSA.dados : DADOS.vento24h; if (!r) return '';
+  const r = ROSA ? ROSA.dados : estacao().vento24h; if (!r) return '';
   const filtro = '<div class="rosa-filtro"><div class="grid2"><div><label for="r-de">De</label><input type="date" id="r-de" value="' + esc(ROSA ? ROSA.de : '') + '" max="' + hojeIso() + '"></div><div><label for="r-ate">Até</label><input type="date" id="r-ate" value="' + esc(ROSA ? ROSA.ate : '') + '" max="' + hojeIso() + '"></div></div>' +
     '<div class="toolbar" style="margin:8px 0 0"><button type="button" class="btn btn-outline btn-sm" data-act="rosa-periodo">Ver período</button>' + (ROSA ? '<button type="button" class="btn btn-outline btn-sm" data-act="rosa-24h">Últimas 24 h</button>' : '') + '</div></div>';
   const titulo = ROSA ? 'Vento de ' + dataBr(ROSA.de) + ' a ' + dataBr(ROSA.ate) : 'Vento nas últimas 24 h';
@@ -370,7 +404,7 @@ async function rosaPeriodo(de, ate) {
   if (ate < de) return toast('A data final vem antes da inicial.', true);
   const btn = $('[data-act="rosa-periodo"]'); if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
   try {
-    const r = await chamar('GET', { acao: 'rosa', de, ate });
+    const r = await chamar('GET', { acao: 'rosa', de, ate, fazenda: chaveAtual() });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
     ROSA = { de, ate, dados: r.rosa }; route({ manterRolagem: true });
   } catch (e) { toast(e.message, true); if (btn) { btn.disabled = false; btn.textContent = 'Ver período'; } }
@@ -378,7 +412,7 @@ async function rosaPeriodo(de, ate) {
 
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
 function cardEstacao() {
-  const u = DADOS.ultimaLeitura; if (!u || !u.quando) return '';
+  const u = estacao().ultimaLeitura; if (!u || !u.quando) return '';
   const x = u.extras || {}, g = (k) => (x[k] === undefined ? null : x[k]);
   const idadeMin = Math.round((Date.now() - Date.parse(u.quando)) / 60000);
   const velha = idadeMin > 45;
@@ -408,7 +442,7 @@ function cardEstacao() {
 function sensoresSolo(x) {
   return Object.keys(x).filter((k) => /^soil_ch\d+\.soilmoisture$/.test(k)).sort().map((k) => {
     const c = k.match(/\d+/)[0], t = x['temp_ch' + c + '.temperature'];
-    const nome = (DADOS.cadastro && DADOS.cadastro.pivos.find((p) => String(p.sensorSolo) === c) || {}).nome;
+    const nome = (pivosCadastro().find((p) => String(p.sensorSolo) === c) || {}).nome;
     return '<div class="est-stat">' + ico('solo') + '<div><small>Solo ' + c + (nome ? ' · ' + esc(nome) : '') + '</small><b>' + br(x[k], 0) + '%</b>' + (t != null ? '<em>' + br(t, 1) + ' °C</em>' : '') + '</div></div>';
   }).join('');
 }
@@ -439,11 +473,11 @@ V.hoje = function () {
   if (!DADOS) return semDados();
   const r = DADOS.resumo;
   if (!r) return '<div class="card vazio">' + esc(DADOS.erroCalculo || 'A planilha ainda não calculou nenhum dia.') + '</div>';
-  const c = r.clima, ult = DADOS.ultimaLeitura;
-  const pivos = r.pivos || [];
+  const c = climaResumo() || r.clima, ult = estacao().ultimaLeitura;
+  const pivos = pivosResumo();
   // resumo do dia: quantos pivôs em cada estado + chuva prevista + próxima irrigação mais perto
   const cont = { ruim: 0, atencao: 0, bom: 0, sem: 0 }; pivos.forEach((p) => { cont[semaforo(p)]++; });
-  const pv = DADOS.previsao, prox2 = pv && pv.dias ? pv.dias.filter((d) => d.data > r.dia).slice(0, 2) : [];
+  const pv = estacao().previsao, prox2 = pv && pv.dias ? pv.dias.filter((d) => d.data > r.dia).slice(0, 2) : [];
   const chuva2 = prox2.reduce((t, d) => t + (d.chuvaMm || 0), 0);
   const proximas = pivos.filter((p) => p.projecao && p.projecao.proximaIrrigacao && p.decisao !== 'IRRIGAR').map((p) => p.projecao.emDias);
   const frase = cont.ruim ? cont.ruim + (cont.ruim === 1 ? ' pivô pra irrigar' : ' pivôs pra irrigar') : proximas.length ? (function (n) { return n === 0 ? 'Irrigação prevista para hoje' : 'Próxima irrigação em ' + n + (n === 1 ? ' dia' : ' dias'); })(Math.min.apply(null, proximas)) : pivos.length ? 'Nenhum pivô pra irrigar' : 'Nenhum pivô ativo';
@@ -473,16 +507,36 @@ V.clima = function () {
 };
 V.clima_depois = async function () {
   if (V.hoje_depois) V.hoje_depois();
-  const ps = DADOS && DADOS.cadastro ? DADOS.cadastro.pivos : [];
+  const ps = pivosCadastro();
   if (!ps.length || !syncUrl()) return;
   try {
-    const r = await chamar('GET', { acao: 'historico', pivo: ps[0].nome, dias: 30 });
+    const r = await chamar('GET', { acao: 'historico', pivo: ps[0].nome, dias: 30, fazenda: chaveAtual() });
     if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; const el = $('#grafico-clima'); if (el) el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; }
   } catch (e) { const el = $('#grafico-clima'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 };
 /** Cartão de um pivô na tela Hoje: o essencial em cima, o resto em "detalhes". */
+/** Relatório meteorológico do ciclo (graus-dia, luz, sol, chuva, ET₀, extremos) em chips. */
+function blocoCiclo(c, compacto) {
+  if (!c) return '';
+  const gd = '<div><small>Graus-dia</small><b>' + br(c.grausDia, 0) + '</b><em>' + (c.grausDiaCiclo ? br((c.fracaoGrausDia || 0) * 100, 0) + '% de ' + br(c.grausDiaCiclo, 0) : c.tBaseC != null ? 'base ' + c.tBaseC + ' °C' : '') + '</em></div>';
+  const luz = '<div><small>Luz (fotoperíodo)</small><b>' + br(c.fotoperiodoHojeH, 1) + '<em style="display:inline"> h/dia</em></b><em>' + br(c.fotoperiodoAcumH, 0) + ' h no ciclo</em></div>';
+  const sol = c.horasSolAcumH != null ? '<div><small>Horas de sol</small><b>' + br(c.horasSolAcumH, 0) + '</b><em>' + (c.horasSolHojeH != null ? br(c.horasSolHojeH, 1) + ' h hoje' : 'pela estação') + '</em></div>' : '';
+  const chuva = '<div><small>Chuva no ciclo</small><b>' + br(c.chuvaMm, 0) + '<em style="display:inline"> mm</em></b><em>' + c.diasComChuva + ' dia' + (c.diasComChuva === 1 ? '' : 's') + ' · ET₀ ' + br(c.et0Mm, 0) + ' mm</em></div>';
+  return '<div class="kpis kpis-ciclo">' + gd + luz + sol + chuva + '</div>' +
+    (compacto ? '' : '<div class="chips"><span class="chip">' + (c.dias - 1) + ' dias desde o plantio' + (c.faltamDias >= 0 ? ' · faltam <b>' + c.faltamDias + '</b>' : ' · <b>ciclo encerrado</b> há ' + (-c.faltamDias) + ' d') + '</span>' +
+      (c.tminAbs != null ? '<span class="chip">Extremos <b>' + br(c.tminAbs, 0) + '–' + br(c.tmaxAbs, 0) + ' °C</b> · média ' + br(c.tmedia, 1) + '</span>' : '') +
+      (c.diasQuentes ? '<span class="chip chip-ruim"><b>' + c.diasQuentes + '</b> dia' + (c.diasQuentes === 1 ? '' : 's') + ' acima de 32 °C</span>' : '') +
+      (c.diasFrios ? '<span class="chip"><b>' + c.diasFrios + '</b> dia' + (c.diasFrios === 1 ? '' : 's') + ' abaixo de 10 °C</span>' : '') +
+      (c.diasComClima < c.dias ? '<span class="chip">clima de <b>' + c.diasComClima + '</b> dos ' + c.dias + ' dias</span>' : '') + '</div>');
+}
 function cardPivo(p) {
-  if (!p.decisao) return '<div class="card sem-sem"><h2>' + esc(p.nome) + '</h2><p class="muted">' + esc(p.aviso || 'sem cálculo') + '</p></div>';
+  if (!p.decisao) {
+    const talhao = p.semBalanco || /^t/i.test(String(p.tipo || ''));
+    return '<div class="card ' + (talhao ? 'sem-ciclo' : 'sem-sem') + '"><div class="row"><div><h2>' + (talhao ? ico('solo') + ' ' : '') + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span>' +
+      (talhao ? '<span class="tag">talhão</span>' : '') + (p.das != null ? '<span class="tag">' + esc(p.das) + ' DAS</span>' : '') + '</div></div>' + (talhao ? '<span class="badge sem">ciclo</span>' : '') + '</div>' +
+      (p.ciclo ? blocoCiclo(p.ciclo) : '<p class="muted">' + esc(p.aviso || 'sem cálculo') + '</p>') +
+      (p.ciclo && !talhao ? '<p class="muted" style="margin-top:6px">' + esc(p.aviso || '') + '</p>' : '') + '</div>';
+  }
   const st = semaforo(p);
   const pct = p.afd > 0 ? Math.min(100, (p.deficit / p.afd) * 100) : 0;
   const marca = p.afd > 0 && p.laminaMinimaMm != null ? Math.min(100, (p.laminaMinimaMm / p.afd) * 100) : null;
@@ -516,6 +570,7 @@ function cardPivo(p) {
     '<div class="chips"><span class="chip">ETc <b>' + br(p.etc, 1) + '</b> mm</span><span class="chip">Kc <b>' + br(p.kc, 2) + '</b></span><span class="chip">CAD <b>' + br(p.cad, 1) + '</b> mm</span>' +
     (p.irrigacao ? '<span class="chip">Irrigado <b>' + br(p.irrigacao, 1) + '</b> mm</span>' : '') + (p.rec && p.decisao === 'IRRIGAR' ? '<span class="chip">Energia <b>' + br(p.rec.energiaKwh, 0) + '</b> kWh</span>' : '') + '</div>' +
     (pj && pj.dias && pj.dias.length ? '<p class="muted" style="margin-top:8px">Déficit previsto (sem chuva): ' + pj.dias.slice(0, 5).map((d) => esc(dataBr(d.data)) + ' <b>' + br(d.deficit, 0) + '</b>').join(' · ') + ' mm</p>' : '') +
+    (p.ciclo ? '<h3>Ciclo da cultura</h3>' + blocoCiclo(p.ciclo) : '') +
     (noDetalhe.length ? '<ul class="alertas" style="margin-top:8px">' + noDetalhe.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
     (p.curvaKc ? '<details class="kc-det"><summary class="muted">Curva de Kc do ciclo</summary>' + graficoKc(p.curvaKc, p.das, p.emergenciaDias) + '</details>' : '') +
     (p.diasIncertos ? '<p class="muted" style="margin-top:8px">ℹ️ ' + esc(p.diasIncertos) + ' dia(s) do balanço com clima estimado ou incompleto.</p>' : '') + '</details></div>';
@@ -553,7 +608,7 @@ const SEM_ROTULO = { bom: 'Bom', atencao: 'Atenção', ruim: 'Irrigar', sem: 'Se
 
 /** Cartão "Próximos dias" com a previsão (Open-Meteo = mm e %, INMET = texto). */
 function cardPrevisao(dia) {
-  const pv = DADOS.previsao; if (!pv || !pv.dias || !pv.dias.length) return '';
+  const pv = estacao().previsao; if (!pv || !pv.dias || !pv.dias.length) return '';
   const prox = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 5);
   if (!prox.length) return '';
   const soma = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
@@ -568,7 +623,7 @@ function cardPrevisao(dia) {
 let tipoLanc = 'irrigacao', modoLanc = 'pct';
 /** Lâmina líquida (mm) que uma volta no percentímetro `pct` aplica no pivô — mesma conta do Motor. */
 function laminaDoPct(nome, pct) {
-  const p = (DADOS.cadastro.pivos || []).find((x) => x.nome === nome); if (!p) return null;
+  const p = pivosCadastro().find((x) => x.nome === nome); if (!p) return null;
   const raio = numBR(p.raioM), vazao = numBR(p.vazaoM3h), vel = numBR(p.velocidadeUltimaTorreMMin), ang = numBR(p.anguloGraus) || 360, ef = numBR(p.eficienciaPct) || 85;
   if (!raio || !vazao || !vel || !pct) return null;
   const fr = ang / 360, area = (Math.PI * raio * raio * fr) / 10000, t100 = (fr * 2 * Math.PI * raio) / (vel * 60);
@@ -576,9 +631,10 @@ function laminaDoPct(nome, pct) {
   return { brutaMm: bruta, liquidaMm: bruta * (ef / 100), horas: t100 / (pct / 100) };
 }
 function nomesPivos() {
-  const c = DADOS && DADOS.cadastro;
-  return c ? c.pivos.filter((p) => /^(SIM|S|TRUE|1)$/i.test(String(p.ativo).trim()) || p.ativo === true).map((p) => p.nome) : [];
+  return pivosCadastro().filter((p) => (/^(SIM|S|TRUE|1)$/i.test(String(p.ativo).trim()) || p.ativo === true) && !(tipoLanc === 'irrigacao' && ehTalhaoSemBalanco(p))).map((p) => p.nome);
 }
+const ehTalhao = (p) => /^t/i.test(String(p.tipo || ''));
+const ehTalhaoSemBalanco = (p) => ehTalhao(p) && (p.cc === '' || p.cc == null) && (p.pmp === '' || p.pmp == null);
 V.lancar = function () {
   if (!DADOS) return semDados();
   const ps = nomesPivos();
@@ -586,7 +642,7 @@ V.lancar = function () {
   const pend = f.filter((x) => x.op === 'lancar');
   const apagando = f.filter((x) => x.op === 'apagar').map((x) => x.id);
   const lista = pend.map((x) => Object.assign({ pend: true, erro: x.erro }, itemDeFila(x)))
-    .concat((DADOS.lancamentos || []).filter((l) => !pend.some((p) => p.id === l.id) && apagando.indexOf(l.id) < 0));
+    .concat(lancs().filter((l) => !pend.some((p) => p.id === l.id) && apagando.indexOf(l.id) < 0));
   return '<div class="seg" role="tablist"><button type="button" data-act="tipo" data-tipo="irrigacao" class="' + (tipoLanc === 'irrigacao' ? 'on' : '') + '">🚿 Irrigação</button>' +
     '<button type="button" data-act="tipo" data-tipo="umidade" class="' + (tipoLanc === 'umidade' ? 'on' : '') + '">🌱 Umidade do solo</button></div>' +
     '<form class="card" id="f-lanc" autocomplete="off"><div class="grid2"><div><label for="l-pivo">Pivô</label><select id="l-pivo" required>' +
@@ -628,7 +684,7 @@ V.lancar_depois = function () {
   }
   f.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const d = { id: novoId(), tipo: tipoLanc, pivo: $('#l-pivo').value, data: $('#l-data').value };
+    const d = { id: novoId(), tipo: tipoLanc, pivo: $('#l-pivo').value, data: $('#l-data').value, fazenda: chaveAtual() };
     if (!d.pivo) return toast('Cadastre um pivô ativo primeiro.', true);
     if (d.data > hojeIso()) return toast('A data não pode ser no futuro.', true);
     if (tipoLanc === 'irrigacao' && modoLanc === 'pct') {
@@ -652,16 +708,22 @@ V.lancar_depois = function () {
 let HIST = null;
 V.historico = function () {
   if (!DADOS) return semDados();
-  const pref = ler(HIST_KEY, {}); const ps = (DADOS.cadastro ? DADOS.cadastro.pivos.map((p) => p.nome) : []);
+  const pref = ler(HIST_KEY, {}); const ps = pivosCadastro().map((p) => p.nome);
   const piv = ps.indexOf(pref.pivo) >= 0 ? pref.pivo : ps[0];
   const dias = pref.dias || 30;
   return '<div class="card"><div class="grid2"><div><label for="h-pivo">Pivô</label><select id="h-pivo" data-act="hist">' + ps.map((n) => '<option' + (n === piv ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></div>' +
     '<div><label for="h-dias">Período</label><select id="h-dias" data-act="hist">' + [15, 30, 60, 120].map((d) => '<option value="' + d + '"' + (d === dias ? ' selected' : '') + '>' + d + ' dias</option>').join('') + '</select></div></div></div>' +
+    cardCicloHist(piv) +
     '<div id="resumo-hist">' + (HIST && HIST.pivo === piv ? resumoHist(HIST) : '') + '</div>' +
     '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span><span style="--c:var(--red)">Dia em estresse</span></div></div>' +
     '<div class="card" id="tab-hist">' + (HIST && HIST.pivo === piv ? tabelaHist(HIST) : '') + '</div>';
 };
+/** Cartão do ciclo da cultura (do plantio até hoje) da área escolhida no Histórico. */
+function cardCicloHist(nome) {
+  const p = pivosResumo().find((x) => x.nome === nome); if (!p || !p.ciclo) return '';
+  return '<div class="card"><div class="row"><h2>' + ico('calendario') + ' Ciclo da cultura · ' + esc(p.cultura) + '</h2><span class="muted">plantio ' + esc(dataBr(p.plantio || '')) + '</span></div>' + blocoCiclo(p.ciclo) + '</div>';
+}
 /** Totais do período: água que entrou e saiu, dias irrigados, dias em estresse, custo de irrigar. */
 function resumoHist(h) {
   const ls = h.linhas; if (!ls || !ls.length) return '';
@@ -698,7 +760,7 @@ async function carregarHist() {
   const sel = $('#h-pivo'); if (!sel || !sel.value) return;
   const pref = { pivo: sel.value, dias: Number($('#h-dias').value) }; grava(HIST_KEY, pref);
   try {
-    const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias });
+    const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias, fazenda: chaveAtual() });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'sem resposta');
     HIST = r.historico;
     if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); }
@@ -782,8 +844,8 @@ function carregarLeaflet() {
 }
 /** Pivôs com posição: junta o cadastro (lat/lon/contorno/raio) com o resumo do dia (decisão, déficit). */
 function pivosNoMapa() {
-  const cad = DADOS && DADOS.cadastro ? DADOS.cadastro.pivos : [];
-  const res = DADOS && DADOS.resumo ? DADOS.resumo.pivos : [];
+  const cad = pivosCadastro();
+  const res = pivosResumo();
   return cad.map((c) => {
     const r = res.find((x) => x.nome === c.nome) || {};
     let contorno = null; try { contorno = typeof c.contorno === 'string' && c.contorno ? JSON.parse(c.contorno) : c.contorno; } catch (e) { contorno = null; }
@@ -888,7 +950,7 @@ function pivoDoDesenho(nome, pivos) {
 
 /* ================= PIVÔS ================= */
 const GRUPOS = [
-  ['Identificação', ['nome', 'ativo', 'cultura', 'cicloDias', 'grausDiaCiclo', 'plantio', 'inicioBalanco', 'palhada']],
+  ['Identificação', ['fazenda', 'tipo', 'nome', 'ativo', 'cultura', 'cicloDias', 'grausDiaCiclo', 'plantio', 'inicioBalanco', 'palhada']],
   ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
@@ -899,10 +961,10 @@ V.pivos = function (arg) {
   if (!DADOS || !DADOS.cadastro) return semDados();
   const c = DADOS.cadastro;
   if (arg !== undefined) return formPivo(arg === 'novo' ? null : c.pivos[Number(arg)]);
-  return c.pivos.map((p, i) => '<div class="card"><div class="row"><div><h2>' + esc(p.nome) + (simNao(p.ativo) ? '' : ' <span class="muted">(inativo)</span>') + '</h2>' +
-    '<div class="muted">' + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + '</div></div>' +
-    '<a class="btn btn-outline btn-sm" href="#/pivos/' + i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('') +
-    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Novo pivô</a>' +
+  return pivosCadastro().map((p) => '<div class="card"><div class="row"><div><h2>' + (ehTalhao(p) ? ico('solo') + ' ' : '') + esc(p.nome) + (simNao(p.ativo) ? '' : ' <span class="muted">(inativo)</span>') + '</h2>' +
+    '<div class="muted">' + (ehTalhao(p) ? 'Talhão' + (ehTalhaoSemBalanco(p) ? ' (só relatório do ciclo)' : '') + ' · ' : '') + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (ehTalhao(p) ? '' : p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + '</div></div>' +
+    '<a class="btn btn-outline btn-sm" href="#/pivos/' + p.__i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('') +
+    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Nova área (pivô ou talhão)</a>' +
       '<div class="card" style="margin-top:14px"><h2>📂 Importar KMZ com os pivôs</h2><p class="muted" style="margin:4px 0 10px">Arquivo do Google Earth com um desenho por pivô. Eu caso o nome do desenho com o pivô e guardo o centro, o contorno e o raio.</p>' +
       '<label class="btn btn-outline">Escolher arquivo .kmz / .kml<input type="file" id="kmz-todos" accept=".kmz,.kml" hidden></label><div id="kmz-lista"></div></div>' : '<p class="muted">Só o administrador edita os pivôs.</p>');
 };
@@ -912,7 +974,7 @@ V.pivos_depois_lista = function () {
     const f = inp.files[0]; if (!f) return;
     const box = $('#kmz-lista'); box.innerHTML = '<p class="muted">Lendo…</p>';
     try {
-      const des = await lerKml(f), pivos = DADOS.cadastro.pivos;
+      const des = await lerKml(f), pivos = pivosCadastro();
       box.innerHTML = '<ul class="lista">' + des.map((d, i) => { const p = pivoDoDesenho(d.nome, pivos);
         return '<li><div class="t">' + esc(d.nome) + '<div class="muted">' + (d.raioM ? 'raio ≈ ' + d.raioM + ' m · ' : '') + d.centro[0] + ', ' + d.centro[1] + '</div></div>' +
           '<select data-desenho="' + i + '"><option value="">— não importar —</option>' + pivos.map((x) => '<option' + (p && p.nome === x.nome ? ' selected' : '') + '>' + esc(x.nome) + '</option>').join('') + '</select></li>'; }).join('') + '</ul>' +
@@ -927,6 +989,7 @@ V.pivos_depois_lista = function () {
             btn.textContent = 'Salvando ' + p.nome + '…';
             const dados = { nome: p.nome, latitude: d.centro[0], longitude: d.centro[1], contorno: d.pontos ? JSON.stringify(d.pontos) : '' };
             if (d.raioM && !Number(p.raioM)) dados.raioM = d.raioM;
+            dados.fazenda = p.fazenda || ''; dados.fazendaOriginal = p.fazenda || '';
             const r = await chamar('POST', null, { __pivo: { dados, original: p.nome } });
             if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
             DADOS.cadastro = r.cadastro; if (r.recalculo && r.recalculo.resumo) DADOS.resumo = r.recalculo.resumo; n++;
@@ -945,15 +1008,20 @@ function campoPivo(k, rot, v, so) {
   if (k === 'cicloDias') { const c = cultura($('#p_cultura') ? $('#p_cultura').value : ''); return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="numeric" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : v) + '" placeholder="padrão' + (c && c.cicloDias ? ' ' + c.cicloDias : '') + '"' + dis + '></div>'; }
   if (k === 'plantio' || k === 'inicioBalanco') return '<div><label for="' + id + '">' + esc(rot) + '</label><input type="date" id="' + id + '" name="' + k + '" value="' + esc(v) + '"' + dis + '></div>';
   if (k === 'nome') return '<div><label for="' + id + '">' + esc(rot) + '</label><input id="' + id + '" name="' + k + '" value="' + esc(v) + '" required' + dis + '></div>';
+  if (k === 'fazenda') { const fs = fazendas(); if (fs.length < 2) return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(v || (fs[0] ? fs[0].nome : '')) + '">';
+    return '<div><label for="' + id + '">Fazenda</label><select id="' + id + '" name="' + k + '"' + dis + '>' + fs.map((f) => '<option' + (f.nome === v ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') + '</select></div>'; }
+  if (k === 'tipo') return '<div><label for="' + id + '">Tipo</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="pivô"' + (/^t/i.test(String(v)) ? '' : ' selected') + '>Pivô (balanço e irrigação)</option><option value="talhão"' + (/^t/i.test(String(v)) ? ' selected' : '') + '>Talhão (sem pivô — relatório do ciclo)</option></select></div>';
   if (k === 'contorno') return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(typeof v === 'string' ? v : v ? JSON.stringify(v) : '') + '">';
   return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="decimal" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : String(v).replace('.', ',')) + '"' + dis + '></div>';
 }
 function formPivo(p) {
   const so = !ehAdmin(); const rot = {}; DADOS.cadastro.colunas.forEach((c) => { rot[c[0]] = c[1]; });
   const cs = culturas();
-  const base = p || { ativo: 'SIM', cultura: cs.length ? cs[0].chave : '', palhada: 'SIM', tensaoIrrigarKpa: -70, laminaMinimaMm: 5, anguloGraus: 360, eficienciaPct: 85, percentimetroMinPct: 10 };
-  return '<form class="card" id="f-pivo" data-original="' + esc(p ? p.nome : '') + '" autocomplete="off"><div class="row"><h2>' + (p ? esc(p.nome) : 'Novo pivô') + '</h2><a class="btn btn-outline btn-sm" href="#/pivos">Voltar</a></div>' +
-    GRUPOS.map((g) => '<fieldset><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
+  const fa = fazendaAtual();
+  const base = p || { ativo: 'SIM', cultura: cs.length ? cs[0].chave : '', palhada: 'SIM', tensaoIrrigarKpa: -70, laminaMinimaMm: 5, anguloGraus: 360, eficienciaPct: 85, percentimetroMinPct: 10, tipo: 'pivô', fazenda: fa ? fa.nome : '' };
+  return '<form class="card" id="f-pivo" data-original="' + esc(p ? p.nome : '') + '" data-fazenda-original="' + esc(p ? p.fazenda || '' : '') + '" autocomplete="off"><div class="row"><h2>' + (p ? esc(p.nome) : 'Nova área') + '</h2><a class="btn btn-outline btn-sm" href="#/pivos">Voltar</a></div>' +
+    '<p class="muted" id="tipo-info" style="margin:0 0 4px"></p>' +
+    GRUPOS.map((g) => '<fieldset data-grupo="' + esc(g[0]) + '"><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
       (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') +
       (g[0] === 'Localização (mapa)' ? (so ? '' : '<div class="toolbar" style="margin-top:10px"><button type="button" class="btn btn-outline btn-sm" data-act="gps">📍 Usar minha posição</button>' +
         '<label class="btn btn-outline btn-sm">📂 KMZ / KML do pivô<input type="file" id="p_arquivo" accept=".kmz,.kml" hidden></label></div>') + '<div id="loc-info" class="muted"></div>' : '') + '</fieldset>').join('') +
@@ -990,6 +1058,15 @@ V.pivos_depois = function () {
   if (V.pivos_depois_lista) V.pivos_depois_lista();
   const f = $('#f-pivo'); if (!f) return;
   infoCultura(f); infoLocal(f);
+  // talhão: esconde equipamento e decisão; solo fica opcional (vazio = só o relatório do ciclo)
+  const tipoEl = $('#p_tipo', f);
+  const ajustarTipo = () => {
+    const talhao = tipoEl && /^t/i.test(tipoEl.value);
+    ['Decisão', 'Equipamento'].forEach((g) => { const fs = f.querySelector('fieldset[data-grupo="' + g + '"]'); if (fs) fs.hidden = !!talhao; });
+    const info = $('#tipo-info', f);
+    if (info) info.textContent = talhao ? 'Talhão sem pivô: cultura e plantio bastam pro relatório do ciclo (graus-dia, luz, chuva). Preencha o solo só se quiser o balanço hídrico.' : '';
+  };
+  if (tipoEl) { tipoEl.addEventListener('change', ajustarTipo); ajustarTipo(); }
   f.addEventListener('click', (ev) => {
     if (!ev.target.closest('[data-act="gps"]')) return;
     if (!navigator.geolocation) { toast('Este aparelho não informa a posição.', true); return; }
@@ -1024,6 +1101,7 @@ V.pivos_depois = function () {
   f.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const dados = {}; $$('[name]', f).forEach((el) => { dados[el.name] = el.value; });
+    dados.fazendaOriginal = f.dataset.fazendaOriginal || '';
     const btn = $('button[type=submit]', f); btn.disabled = true; btn.textContent = 'Salvando…';
     try {
       const r = await chamar('POST', null, { __pivo: { dados, original: f.dataset.original || null } });
@@ -1099,6 +1177,7 @@ V.usuarios = function () {
     '<div><label for="u-nome">Nome</label><input id="u-nome" required></div><div><label for="u-login">Login</label><input id="u-login" autocapitalize="none" required></div>' +
     '<div><label for="u-perfil">Perfil</label><select id="u-perfil"><option value="OPERADOR">Operador (vê e lança)</option><option value="ADMIN">Administrador (tudo)</option></select></div>' +
     '<div><label for="u-ativo">Ativo</label><select id="u-ativo"><option value="SIM">Sim</option><option value="NÃO">Não</option></select></div>' +
+    (fazendas().length > 1 ? '<div><label for="u-faz">Fazendas que vê (vazio = todas)</label><select id="u-faz" multiple size="' + Math.min(4, fazendas().length) + '">' + fazendas().map((fz) => '<option value="' + esc(fz.nome) + '">' + esc(fz.nome) + '</option>').join('') + '</select></div>' : '') +
     '<div><label for="u-pin">PIN (4 a 6 números)</label><input id="u-pin" type="password" inputmode="numeric"></div></div>' +
     '<button class="btn btn-primary btn-block" type="submit">Salvar usuário</button></form></div>' +
     '<div class="card"><h2>Usuários</h2><ul class="lista" id="l-users" style="margin-top:6px"><li class="vazio">Carregando…</li></ul></div>';
@@ -1106,12 +1185,13 @@ V.usuarios = function () {
 V.usuarios_depois = async function () {
   if (!ehAdmin()) return;
   const desenhar = () => {
-    $('#l-users').innerHTML = (USUARIOS || []).map((u) => '<li><div class="t"><b>' + esc(u.nome) + '</b> · ' + esc(u.login) + '<div class="muted">' + (u.perfil === 'ADMIN' ? 'Administrador' : 'Operador') + (u.ativo ? '' : ' · inativo') + (u.temPin ? '' : ' · sem PIN') + '</div></div>' +
+    $('#l-users').innerHTML = (USUARIOS || []).map((u) => '<li><div class="t"><b>' + esc(u.nome) + '</b> · ' + esc(u.login) + '<div class="muted">' + (u.perfil === 'ADMIN' ? 'Administrador' : 'Operador') + (u.ativo ? '' : ' · inativo') + (u.temPin ? '' : ' · sem PIN') + (u.fazendas && u.fazendas.length ? ' · ' + esc(u.fazendas.join(', ')) : fazendas().length > 1 ? ' · todas as fazendas' : '') + '</div></div>' +
       '<span class="toolbar" style="margin:0"><button class="btn btn-outline btn-sm" data-act="user-editar" data-login="' + esc(u.login) + '">Editar</button><button class="btn btn-danger btn-sm" data-act="user-excluir" data-login="' + esc(u.login) + '">Excluir</button></span></li>').join('') || '<li class="vazio">Nenhum.</li>';
   };
   $('#f-user').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const salvar = { nome: $('#u-nome').value, login: $('#u-login').value, perfil: $('#u-perfil').value, ativo: $('#u-ativo').value };
+    if ($('#u-faz')) salvar.fazendas = Array.from($('#u-faz').selectedOptions).map((o) => o.value);
     if ($('#u-pin').value) salvar.pin = $('#u-pin').value;
     try { const r = await chamar('POST', null, { __usuario: { salvar } }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); USUARIOS = r.usuarios; desenhar(); ev.target.reset(); toast('Usuário salvo.'); }
     catch (e) { toast(e.message, true); }
@@ -1137,7 +1217,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'pdf') {
     a.disabled = true; const antes = a.innerHTML; a.textContent = 'Gerando…';
     try {
-      const r = await chamar('GET', { acao: 'pdf' });
+      const r = await chamar('GET', { acao: 'pdf', fazenda: chaveAtual() });
       if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
       const bin = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0)), blob = new Blob([bin], { type: 'application/pdf' }), url = URL.createObjectURL(blob);
       const l = document.createElement('a'); l.href = url; l.download = r.nome; document.body.appendChild(l); l.click();
@@ -1171,6 +1251,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'user-editar') {
     const u = (USUARIOS || []).find((x) => x.login === a.dataset.login); if (!u) return;
     $('#u-nome').value = u.nome; $('#u-login').value = u.login; $('#u-perfil').value = u.perfil; $('#u-ativo').value = u.ativo ? 'SIM' : 'NÃO'; $('#u-pin').value = ''; window.scrollTo(0, 0);
+    if ($('#u-faz')) Array.from($('#u-faz').options).forEach((o) => { o.selected = (u.fazendas || []).some((c) => c === o.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()); });
   }
   else if (act === 'user-excluir') {
     if (!confirm('Excluir o usuário ' + a.dataset.login + '?')) return;

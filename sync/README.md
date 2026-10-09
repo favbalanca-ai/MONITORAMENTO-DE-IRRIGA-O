@@ -15,12 +15,17 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
 5. **💧 Manejo → 1. Instalar / atualizar**. O Google vai pedir autorização (planilha, Drive, e-mail, acesso à internet para a Ecowitt). Aceite. Isso cria as abas, as pastas `BACKUP` e `RELATORIOS` ao lado da planilha e os gatilhos.
 6. **💧 Manejo → 2. Configurar chaves Ecowitt**: cole as chaves **novas** (as antigas ficaram expostas na planilha MASTER). Elas ficam guardadas nas propriedades do script, não aparecem na planilha nem nos backups.
 7. Revise as abas:
-   - **ESTACAO**: latitude, **longitude**, altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`),
-     **e-mails do relatório** e o **código IBGE do município** (Formoso-MG = 3126208) para a previsão do INMET.
+   - **FAZENDAS**: uma linha por fazenda (criada no Instalar a partir da antiga ESTACAO). Em cada linha: nome, **MAC da
+     estação Ecowitt** (vazio = fazenda sem estação: o clima do ciclo vem do Open-Meteo), latitude, **longitude**,
+     altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`), **e-mails do relatório**, o **código IBGE
+     do município** (Formoso-MG = 3126208) para a previsão do INMET, chuva mínima e horário de ponta. Para uma segunda
+     fazenda (ex.: Novo Pago) basta acrescentar a linha; cada fazenda tem a sua coleta, previsão, PAINEL e relatório.
+   - **PIVOS** tem as colunas **Fazenda** e **Tipo (pivô/talhão)**. Um *talhão* é área sem pivô: não entra no balanço
+     hídrico, só ganha o **relatório do ciclo da cultura** (graus-dia, fotoperíodo, horas de sol, chuva, ET₀, extremos).
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
      Na coluna **Cultura** vale `soja`, `milho`, `sorgo`, `feijao`, `feijao pd`, `trigo` ou `algodao` (ver `docs/CULTURAS.md`).
      A coluna **Ciclo (dias, vazio = padrão)** é opcional: preenchida, estica/encurta a curva de Kc para a cultivar plantada.
-   - Ainda na ESTACAO: **Chuva mínima que conta** (padrão 2 mm — chuva menor fica na folha) e o **horário de ponta**
+   - Ainda na FAZENDAS: **Chuva mínima que conta** (padrão 2 mm — chuva menor fica na folha) e o **horário de ponta**
      da energia (padrão 18–21 h), usado no custo e na hora sugerida de ligar o pivô.
    - Colunas opcionais da PIVOS: **Tarifa na ponta** (R$/kWh; preenchida, o app mostra "ligar às 21:00" e o custo nas
      duas tarifas) e **Graus-dia do ciclo** da cultivar (preenchido, o estádio anda pela soma térmica, não por dias).
@@ -29,8 +34,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      estação (canal 1-8)** liga um sensor WH51 ao pivô: aparece no cartão (só informativo, não entra no balanço).
    - O **relatório das 18h** vai por e-mail em texto (cabe no WhatsApp) e em HTML (cores do semáforo, tabelinha por
      pivô): resumo do dia (pivôs em cada estado, água em m³, energia e custo), clima da janela, previsão, e por pivô
-     déficit × AFD × lâmina mínima, ajuste do pivô, hora de ligar, próxima irrigação, última irrigação/medição e
-     o déficit dos últimos 7 dias. O mesmo relatório vai em **PDF** anexo ao e-mail e fica em `RELATORIOS/AAAA-MM-DD.pdf`
+     déficit × AFD × lâmina mínima, ajuste do pivô, hora de ligar, próxima irrigação, última irrigação/medição,
+     o déficit dos últimos 7 dias e, por pivô ou talhão, o ciclo da cultura (graus-dia acumulados e % do ciclo,
+     fotoperíodo e horas de sol, chuva e ET₀ do ciclo, dias quentes/frios). Com mais de uma fazenda, sai um
+     relatório por fazenda para os e-mails dela. O mesmo relatório vai em **PDF** anexo ao e-mail e fica em `RELATORIOS/AAAA-MM-DD.pdf`
      (também pelo menu **📄 Relatório de hoje em PDF** e pelo botão PDF do app).
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
      mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
@@ -52,6 +59,7 @@ esta planilha pelo Apps Script, igual ao Planejamento.
 3. No celular, abra o app, toque em **⚙️ Ajustes**, cole o endereço /exec, **Salvar** e entre com o login e PIN.
 4. Para virar ícone: Chrome → menu ⋮ → **Adicionar à tela inicial** · iPhone (Safari) → Compartilhar → **Adicionar à Tela de Início**.
 5. Outras pessoas: o administrador cria em **Ajustes → 👥 Usuários** (Operador vê e lança; Administrador também edita pivôs e usuários).
+   Com mais de uma fazenda, marque no usuário **quais fazendas ele vê** (coluna FAZENDAS da aba `USUÁRIOS APP`; vazio = todas).
 
 Toda vez que o `Code.gs` ou o `Motor.gs` mudar: cole os arquivos e vá em **Implantar → Gerenciar implantações → lápis →
 Versão: Nova versão → Implantar**. O endereço /exec continua o mesmo.

@@ -20,10 +20,31 @@ var ABA = {
   LEITURAS: "LEITURAS",
   LOG: "LOG",
   PREVISAO: "PREVISAO",
+  FAZENDAS: "FAZENDAS",
   CACHE: "CACHE",
   USUARIOS: "USUÁRIOS APP",
   CONFIG_APP: "CONFIG APP",
 };
+
+/** Nome da fazenda quando a planilha veio de antes das fazendas (aba ESTACAO só). */
+var FAZENDA_PADRAO = "Água Viva";
+
+/** Colunas da aba FAZENDAS: uma linha por fazenda, com a estação dela. */
+var COLUNAS_FAZENDAS = [
+  ["nome", "Fazenda"],
+  ["mac", "MAC da estação Ecowitt (vazio = sem estação)"],
+  ["latitude", "Latitude"],
+  ["longitude", "Longitude"],
+  ["altitude", "Altitude (m)"],
+  ["alturaAnemometro", "Altura do anemômetro (m)"],
+  ["fuso", "Fuso horário"],
+  ["grupoChuva", "Pluviômetro (rainfall/rainfall_piezo)"],
+  ["emails", "E-mails do relatório"],
+  ["ibge", "Município (código IBGE)"],
+  ["chuvaMinima", "Chuva mínima que conta (mm)"],
+  ["pontaInicio", "Ponta — início (h)"],
+  ["pontaFim", "Ponta — fim (h)"],
+];
 
 var PASTA_BACKUP = "BACKUP";
 var PASTA_RELATORIOS = "RELATORIOS";
@@ -77,6 +98,8 @@ var COLUNAS_PIVOS = [
   ["tarifaPontaRsKwh", "Tarifa na ponta (R$/kWh, vazio = única)", true],
   ["grausDiaCiclo", "Graus-dia do ciclo (vazio = dias corridos)", true],
   ["sensorSolo", "Sensor de solo da estação (canal 1-8)", true],
+  ["fazenda", "Fazenda", true],
+  ["tipo", "Tipo (pivô/talhão)", true],
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
@@ -86,12 +109,13 @@ var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "", "2025-11-25", "2026-01-20", "S
 var CABECALHOS = {
   IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs.", "Por", "ID"],
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
-  LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)"],
-  CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)"],
-  BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas"],
+  LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
+  CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
+  BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
   LOG: ["Quando", "Ação", "Status", "Detalhe", "Dia do relatório"],
-  PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes"],
+  PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes", "Fazenda"],
 };
+var N_COLS_LEITURAS = 10;
 
 /* =========================== MENU E INSTALAÇÃO =========================== */
 
@@ -131,6 +155,8 @@ function instalar() {
       if (atuais.indexOf(c[1]) < 0) est.appendRow([c[1], c[2], c[3]]);
     });
   }
+
+  garantirFazendas_();
 
   var piv = criarAbaSeFaltar_(ss, ABA.PIVOS, COLUNAS_PIVOS.map(function (c) { return c[1]; }));
   if (piv.getLastRow() < 2) {
@@ -241,7 +267,8 @@ function configurarChaves() {
 
 /* =============================== CONFIGURAÇÃO =============================== */
 
-function lerEstacao_() {
+/** Aba ESTACAO (versão antiga, um só lugar) — hoje serve de padrão para a primeira fazenda. */
+function lerEstacaoAba_() {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.ESTACAO);
   var cfg = {};
   CAMPOS_ESTACAO.forEach(function (c) { cfg[c[0]] = c[2]; });
@@ -251,21 +278,88 @@ function lerEstacao_() {
       for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === c[1] && vals[i][1] !== "") cfg[c[0]] = vals[i][1];
     });
   }
+  return cfg;
+}
+
+/** Chave da fazenda: sem acento, minúscula ("Água Viva" → "agua viva"). */
+function chaveFazenda_(nome) { return chaveCultura_(nome); }
+
+function normalizarCfg_(cfg) {
   ["latitude", "longitude", "altitude", "alturaAnemometro", "ibge", "chuvaMinima", "pontaInicio", "pontaFim"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
   if (cfg.chuvaMinima === null) cfg.chuvaMinima = Motor.CHUVA_MINIMA_EFETIVA_MM;
   cfg.ponta = { inicioH: cfg.pontaInicio === null ? 18 : cfg.pontaInicio, fimH: cfg.pontaFim === null ? 21 : cfg.pontaFim };
-  cfg.fuso = String(cfg.fuso).trim();
-  cfg.grupoChuva = String(cfg.grupoChuva).trim() || "rainfall";
+  cfg.fuso = String(cfg.fuso || "America/Sao_Paulo").trim();
+  cfg.grupoChuva = String(cfg.grupoChuva || "").trim() || "rainfall";
   cfg.emails = String(cfg.emails || "").split(/[,;\s]+/).filter(function (e) { return e.indexOf("@") > 0; });
+  cfg.nome = String(cfg.nome || FAZENDA_PADRAO).trim() || FAZENDA_PADRAO;
+  cfg.chave = chaveFazenda_(cfg.nome);
+  cfg.mac = limparChave_(cfg.mac || "").toUpperCase();
+  cfg.temEstacao = !!cfg.mac;
   return cfg;
 }
+
+/**
+ * Fazendas cadastradas (aba FAZENDAS). Sem a aba, a planilha funciona como antes: uma fazenda só,
+ * com a aba ESTACAO e o MAC das propriedades do script.
+ */
+function lerFazendas_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.FAZENDAS);
+  var lista = [];
+  if (aba && aba.getLastRow() >= 2) {
+    var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
+    var col = {};
+    COLUNAS_FAZENDAS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
+    vals.slice(1).forEach(function (l) {
+      if (col.nome < 0 || String(l[col.nome]).trim() === "") return;
+      var cfg = {};
+      COLUNAS_FAZENDAS.forEach(function (c) { cfg[c[0]] = col[c[0]] < 0 ? "" : l[col[c[0]]]; });
+      lista.push(normalizarCfg_(cfg));
+    });
+  }
+  if (!lista.length) {
+    var cfg0 = lerEstacaoAba_();
+    cfg0.nome = FAZENDA_PADRAO;
+    cfg0.mac = PropertiesService.getScriptProperties().getProperty("ECOWITT_MAC") || "";
+    lista.push(normalizarCfg_(cfg0));
+  }
+  return lista;
+}
+
+/** Cria a aba FAZENDAS a partir da ESTACAO (planilha de versão anterior) e completa colunas que faltem. */
+function garantirFazendas_() {
+  var ss = SpreadsheetApp.getActive();
+  var aba = ss.getSheetByName(ABA.FAZENDAS);
+  if (!aba) {
+    aba = criarAbaSeFaltar_(ss, ABA.FAZENDAS, COLUNAS_FAZENDAS.map(function (c) { return c[1]; }));
+    var f = lerFazendas_()[0];
+    aba.getRange(2, 1, 1, COLUNAS_FAZENDAS.length).setValues([COLUNAS_FAZENDAS.map(function (c) {
+      var v = f[c[0]];
+      if (c[0] === "emails") return (v || []).join(", ");
+      return v === null || v === undefined ? "" : v;
+    })]);
+    return;
+  }
+  var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0] : [];
+  COLUNAS_FAZENDAS.forEach(function (c) {
+    if (cab.indexOf(c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
+  });
+}
+
+function fazendaPorChave_(chave) {
+  var fs = lerFazendas_();
+  return fs.filter(function (f) { return f.chave === chaveFazenda_(chave); })[0] || null;
+}
+
+/** A primeira fazenda — para quem precisa de um fuso ou um padrão geral. */
+function lerEstacao_() { return lerFazendas_()[0]; }
 
 function configEcowitt_(cfg) {
   var p = PropertiesService.getScriptProperties();
   var app = limparChave_(p.getProperty("ECOWITT_APPLICATION_KEY"));
   var api = limparChave_(p.getProperty("ECOWITT_API_KEY"));
-  var mac = limparChave_(p.getProperty("ECOWITT_MAC"));
-  if (!app || !api || !mac) throw new Error("Chaves da Ecowitt não configuradas (menu 💧 Manejo → 2. Configurar chaves Ecowitt).");
+  var mac = cfg.mac || limparChave_(p.getProperty("ECOWITT_MAC"));
+  if (!app || !api) throw new Error("Chaves da Ecowitt não configuradas (menu 💧 Manejo → 2. Configurar chaves Ecowitt).");
+  if (!mac) throw new Error("A fazenda " + cfg.nome + " não tem estação Ecowitt (MAC) cadastrada na aba FAZENDAS.");
   return { applicationKey: app, apiKey: api, mac: mac, fuso: cfg.fuso, grupoChuva: cfg.grupoChuva };
 }
 
@@ -311,10 +405,20 @@ function lerPivos_(cfg) {
   var faltando = COLUNAS_PIVOS.filter(function (c) { return col[c[0]] < 0 && !c[2]; }).map(function (c) { return c[1]; });
   if (faltando.length) throw new Error("Aba PIVOS sem as colunas: " + faltando.join(", "));
   var n = function (linha, k) { return col[k] < 0 ? null : Motor.numero(linha[col[k]]); };
+  var t = function (linha, k) { return col[k] < 0 ? "" : String(linha[col[k]] == null ? "" : linha[col[k]]).trim(); };
+  var fazendas = lerFazendas_();
   return vals.slice(1).filter(function (l) { return String(l[col.nome]).trim() !== ""; }).map(function (l) {
     var temEquip = n(l, "raioM") !== null && n(l, "vazaoM3h") !== null;
+    var faz = fazendaPorChave_(t(l, "fazenda")) || fazendas[0];
+    var tipo = /^t/i.test(chaveCultura_(t(l, "tipo"))) ? "talhao" : "pivo";
+    var temSolo = n(l, "cc") !== null && n(l, "pmp") !== null;
     return {
       nome: String(l[col.nome]).trim(),
+      fazenda: faz.nome,
+      chaveFazenda: faz.chave,
+      tipo: tipo,
+      /** Talhão sem solo cadastrado: só o relatório do ciclo, sem balanço hídrico. */
+      semBalanco: tipo === "talhao" && !temSolo,
       ativo: simNao_(l[col.ativo]),
       cultura: chaveCultura_(l[col.cultura]),
       cicloDias: n(l, "cicloDias"),
@@ -364,15 +468,26 @@ function fusoValido_(fuso) {
 
 /** Cadastro validado pelo motor; erros viram exceção com a lista em português. */
 function cadastroValidado_() {
-  var cfg = lerEstacao_();
+  var fazendas = lerFazendas_();
+  var cfg = fazendas[0];
   var pivos = lerPivos_(cfg);
-  var cad = {
-    estacao: { latitude: cfg.latitude, altitude: cfg.altitude, alturaAnemometro: cfg.alturaAnemometro, fuso: cfg.fuso },
-    pivos: pivos,
-  };
-  var erros = Motor.validarCadastro(cad, fusoValido_);
+  var erros = [];
+  fazendas.forEach(function (f) {
+    var dessa = pivos.filter(function (p) { return p.chaveFazenda === f.chave; });
+    var cad = {
+      estacao: { latitude: f.latitude, altitude: f.altitude, alturaAnemometro: f.alturaAnemometro, fuso: f.fuso },
+      pivos: dessa.filter(function (p) { return !p.semBalanco; }),
+    };
+    Motor.validarCadastro(cad, fusoValido_).forEach(function (e) { erros.push((fazendas.length > 1 ? f.nome + ": " : "") + e); });
+    dessa.filter(function (p) { return p.semBalanco; }).forEach(function (p) {
+      if (!Motor.CULTURAS[p.cultura]) erros.push(p.nome + ": cultura \"" + p.cultura + "\" não cadastrada");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(p.plantio || "")) erros.push(p.nome + ": plantio deve ser AAAA-MM-DD");
+    });
+  });
+  var nomes = {};
+  pivos.forEach(function (p) { var k = p.chaveFazenda + "|" + p.nome.toLowerCase(); if (nomes[k]) erros.push(p.nome + ": nome repetido na fazenda " + p.fazenda); nomes[k] = true; });
   if (erros.length) throw new Error("Cadastro com problemas:\n- " + erros.join("\n- "));
-  return { cfg: cfg, pivos: pivos };
+  return { cfg: cfg, fazendas: fazendas, pivos: pivos };
 }
 
 /* ================================ LEITURAS ================================ */
@@ -380,7 +495,9 @@ function cadastroValidado_() {
 function abaLeituras_() {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.LEITURAS);
   // planilha de versão anterior: a 9ª coluna (extras da estação) entra pelo cabeçalho
-  if (aba && aba.getLastColumn() < 9 && aba.getLastRow() >= 1) aba.getRange(1, 9).setValue(CABECALHOS.LEITURAS[8]).setFontWeight("bold");
+  if (aba && aba.getLastRow() >= 1) {
+    for (var c = aba.getLastColumn() + 1; c <= N_COLS_LEITURAS; c++) aba.getRange(1, c).setValue(CABECALHOS.LEITURAS[c - 1]).setFontWeight("bold");
+  }
   return aba;
 }
 
@@ -397,47 +514,57 @@ function linhaParaLeitura_(l) {
     intervaloMin: Motor.numero(l[6]) === null ? undefined : Motor.numero(l[6]),
     fonte: l[7] === "" ? undefined : String(l[7]),
     extras: extras,
+    fazenda: l[9] ? chaveFazenda_(l[9]) : "",
   };
 }
 
 function leituraParaLinha_(x) {
   var v = function (n) { return n === null || n === undefined ? "" : n; };
   return [x.quando, v(x.chuvaAcumDia), v(x.tempC), v(x.urPct), v(x.radWm2), v(x.ventoMs), v(x.intervaloMin), v(x.fonte),
-    x.extras && Object.keys(x.extras).length ? JSON.stringify(x.extras) : ""];
+    x.extras && Object.keys(x.extras).length ? JSON.stringify(x.extras) : "", x.fazenda || ""];
 }
 
-/** Leituras com ini <= quando <= fim. */
-function lerLeituras_(ini, fim) {
+/** A fazenda de uma linha de leitura: vazia = a primeira (planilha de antes das fazendas). */
+function fazendaDaLeitura_(l, primeira) { return l.fazenda || primeira; }
+
+/** Leituras com ini <= quando <= fim, de uma fazenda (chave). Sem fazenda: da primeira. */
+function lerLeituras_(ini, fim, fazenda) {
   var aba = abaLeituras_();
   if (aba.getLastRow() < 2) return [];
-  return aba.getRange(2, 1, aba.getLastRow() - 1, 9).getValues()
-    .filter(function (l) { var q = String(l[0]); return q >= ini && q <= fim; })
+  var primeira = lerFazendas_()[0].chave;
+  var alvo = fazenda ? chaveFazenda_(fazenda) : primeira;
+  return aba.getRange(2, 1, aba.getLastRow() - 1, N_COLS_LEITURAS).getValues()
+    .filter(function (l) { var q = String(l[0]); return q >= ini && q <= fim && (l[9] ? chaveFazenda_(l[9]) : primeira) === alvo; })
     .map(linhaParaLeitura_);
 }
 
-/** Grava sem duplicar (mesmo horário de medição) e mantém a aba em ordem. Devolve quantas entraram. */
-function gravarLeituras_(leituras) {
+/** Grava sem duplicar (mesmo horário + mesma fazenda) e mantém a aba em ordem. Devolve quantas entraram. */
+function gravarLeituras_(leituras, fazenda) {
   if (!leituras.length) return 0;
   var aba = abaLeituras_();
+  var primeira = lerFazendas_()[0].chave;
+  var chave = fazenda ? chaveFazenda_(fazenda) : primeira;
   var ultima = aba.getLastRow();
   var existentes = {};
   var maiorExistente = "";
   if (ultima >= 2) {
-    aba.getRange(2, 1, ultima - 1, 1).getValues().forEach(function (l) {
+    aba.getRange(2, 1, ultima - 1, N_COLS_LEITURAS).getValues().forEach(function (l) {
       var q = String(l[0]);
-      existentes[q] = true;
+      existentes[q + "|" + (l[9] ? chaveFazenda_(l[9]) : primeira)] = true;
       if (q > maiorExistente) maiorExistente = q;
     });
   }
   var novas = leituras.filter(function (l) {
-    if (existentes[l.quando]) return false;
-    existentes[l.quando] = true;
+    var k = l.quando + "|" + chave;
+    if (existentes[k]) return false;
+    existentes[k] = true;
+    l.fazenda = chave === primeira ? "" : chave;
     return true;
   });
   if (!novas.length) return 0;
   novas.sort(function (a, b) { return a.quando < b.quando ? -1 : 1; });
-  aba.getRange(ultima + 1, 1, novas.length, 9).setValues(novas.map(leituraParaLinha_));
-  if (novas[0].quando < maiorExistente) aba.getRange(2, 1, ultima - 1 + novas.length, 9).sort({ column: 1, ascending: true });
+  aba.getRange(ultima + 1, 1, novas.length, N_COLS_LEITURAS).setValues(novas.map(leituraParaLinha_));
+  if (novas[0].quando < maiorExistente) aba.getRange(2, 1, ultima - 1 + novas.length, N_COLS_LEITURAS).sort({ column: 1, ascending: true });
   return novas.length;
 }
 
@@ -459,25 +586,43 @@ function paramsEcowitt_(eco) {
   };
 }
 
-/** Lê a estação agora e grava. Devolve a leitura e se ela era nova. */
-function coletarAgora_() {
-  var cfg = lerEstacao_();
+/** Fazendas que têm estação Ecowitt própria. */
+function fazendasComEstacao_() {
+  var fs = lerFazendas_().filter(function (f) { return f.temEstacao; });
+  if (!fs.length) {
+    // planilha antiga: MAC nas propriedades vale para a primeira fazenda
+    var f0 = lerFazendas_()[0];
+    if (configEcowittOuNull_(f0)) fs = [f0];
+  }
+  return fs;
+}
+function configEcowittOuNull_(cfg) { try { return configEcowitt_(cfg); } catch (e) { return null; } }
+
+/** Lê a estação de uma fazenda agora e grava. Devolve a leitura e se ela era nova. */
+function coletarAgora_(cfg) {
+  cfg = cfg || fazendasComEstacao_()[0] || lerEstacao_();
   var eco = configEcowitt_(cfg);
   var p = paramsEcowitt_(eco);
   p.call_back = "all";
   var leitura = Motor.leituraDoTempoReal(chamarEcowitt_("/device/real_time", p), eco);
-  return { leitura: leitura, gravada: gravarLeituras_([leitura]) > 0 };
+  return { fazenda: cfg.nome, leitura: leitura, gravada: gravarLeituras_([leitura], cfg.chave) > 0 };
 }
 
-/** Gatilho a cada 10 min: uma leitura ao vivo. */
+/** Gatilho a cada 10 min: uma leitura ao vivo de cada estação. */
 function coletar() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return;
   try {
-    var r = coletarAgora_();
-    if (!r.gravada) log_("coletar", "repetida", "Estação sem dado novo desde " + r.leitura.quando);
-  } catch (e) {
-    log_("coletar", "erro", e.message);
+    var fs = fazendasComEstacao_();
+    if (!fs.length) { log_("coletar", "erro", "Nenhuma fazenda com estação (MAC) cadastrada."); return; }
+    fs.forEach(function (f) {
+      try {
+        var r = coletarAgora_(f);
+        if (!r.gravada) log_("coletar", "repetida", f.nome + ": estação sem dado novo desde " + r.leitura.quando);
+      } catch (e) {
+        log_("coletar", "erro", f.nome + ": " + e.message);
+      }
+    });
   } finally {
     lock.releaseLock();
   }
@@ -490,7 +635,7 @@ function menuColetar() {
     var l = r.leitura;
     var f = function (x, u) { return x === null || x === undefined ? "sem dado" : (Math.round(x * 10) / 10) + " " + u; };
     log_("coletar", r.gravada ? "ok" : "repetida", l.quando);
-    aviso_((r.gravada ? "✅ Leitura gravada na aba LEITURAS" : "ℹ️ A estação ainda não mandou leitura nova (a última já estava gravada)") +
+    aviso_((r.gravada ? "✅ Leitura gravada na aba LEITURAS" : "ℹ️ A estação ainda não mandou leitura nova (a última já estava gravada)") + " — " + r.fazenda +
       "\n\nMedida em: " + l.quando.replace("T", " ") +
       "\nTemperatura: " + f(l.tempC, "°C") + "\nUmidade: " + f(l.urPct, "%") +
       "\nRadiação: " + f(l.radWm2, "W/m²") + "\nVento: " + f(l.ventoMs, "m/s") + "\nChuva do dia: " + f(l.chuvaAcumDia, "mm"));
@@ -561,12 +706,12 @@ function historicoEcowitt_(eco, a, b, ciclo) {
  * Preenche buracos entre `ini` e `fim` pelo histórico do ecowitt.net, em blocos de 1 dia com 12 h de folga.
  * Para antes do limite de tempo do Apps Script e devolve até onde chegou (ou null se terminou).
  */
-function recuperar_(ini, fim, inicioMs) {
-  var cfg = lerEstacao_();
+function recuperar_(ini, fim, inicioMs, cfg) {
+  cfg = cfg || fazendasComEstacao_()[0] || lerEstacao_();
   var eco = configEcowitt_(cfg);
   var agora = Motor.paraLocal(Date.now(), cfg.fuso);
   var fimUtil = [fim, Motor.somarMinutos(agora, -15)].sort()[0];
-  var lacunas = Motor.encontrarLacunas(lerLeituras_(ini, fimUtil), ini, fimUtil);
+  var lacunas = Motor.encontrarLacunas(lerLeituras_(ini, fimUtil, cfg.chave), ini, fimUtil);
   var res = { lacunas: lacunas.length, gravadas: 0, erros: [], parouEm: null };
   for (var i = 0; i < lacunas.length; i++) {
     var lac = lacunas[i];
@@ -581,7 +726,7 @@ function recuperar_(ini, fim, inicioMs) {
       var b = [Motor.somarMinutos(a, 1440), z].sort()[0];
       try {
         var dentro = historicoEcowitt_(eco, a, b, ciclo).filter(function (l) { return l.quando > lac.de && l.quando < lac.ate; });
-        res.gravadas += gravarLeituras_(dentro);
+        res.gravadas += gravarLeituras_(dentro, cfg.chave);
       } catch (e) {
         res.erros.push(a + " → " + b + ": " + e.message);
       }
@@ -597,12 +742,15 @@ function recuperarRecentes() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return;
   try {
-    var cfg = lerEstacao_();
-    var agora = Motor.paraLocal(Date.now(), cfg.fuso);
-    var r = recuperar_(Motor.somarMinutos(agora, -2880), agora, Date.now());
-    if (r.lacunas) log_("recuperar", r.erros.length ? "erro" : "ok", r.lacunas + " lacuna(s), " + r.gravadas + " leitura(s). " + r.erros.join(" | "));
-  } catch (e) {
-    log_("recuperar", "erro", e.message);
+    fazendasComEstacao_().forEach(function (cfg) {
+      try {
+        var agora = Motor.paraLocal(Date.now(), cfg.fuso);
+        var r = recuperar_(Motor.somarMinutos(agora, -2880), agora, Date.now(), cfg);
+        if (r.lacunas) log_("recuperar", r.erros.length ? "erro" : "ok", cfg.nome + ": " + r.lacunas + " lacuna(s), " + r.gravadas + " leitura(s). " + r.erros.join(" | "));
+      } catch (e) {
+        log_("recuperar", "erro", cfg.nome + ": " + e.message);
+      }
+    });
   } finally {
     lock.releaseLock();
   }
@@ -654,54 +802,93 @@ function ultimoDiaFechado_(fuso) {
 function lancamentos_(aba, fuso) {
   var a = SpreadsheetApp.getActive().getSheetByName(aba);
   if (!a || a.getLastRow() < 2) return [];
+  var cab = a.getRange(1, 1, 1, a.getLastColumn()).getValues()[0].map(String);
+  var cf = cab.indexOf("Fazenda");
   return a.getRange(2, 1, a.getLastRow() - 1, a.getLastColumn()).getValues()
     .filter(function (l) { return l[0] !== "" && String(l[1]).trim() !== ""; })
-    .map(function (l) { return { data: dataIso_(l[0], fuso), pivo: String(l[1]).trim().toLowerCase(), l: l }; });
+    .map(function (l) { return { data: dataIso_(l[0], fuso), area: String(l[1]).trim().toLowerCase(), fazenda: cf >= 0 && l[cf] ? chaveFazenda_(l[cf]) : "", l: l }; });
 }
 
-/** Recalcula clima e balanço de todos os pivôs ativos até `dia` e escreve nas abas. */
-function calcular_(dia) {
-  var c = cadastroValidado_();
-  var cfg = c.cfg;
-  var estacao = { latitude: cfg.latitude, altitude: cfg.altitude, alturaAnemometro: cfg.alturaAnemometro };
-  dia = dia || ultimoDiaFechado_(cfg.fuso);
-  var pivos = c.pivos.filter(function (p) { return p.ativo; });
-  if (!pivos.length) throw new Error("Nenhum pivô ativo na aba PIVOS.");
-  pivos.forEach(function (p) { p.cultura = Motor.comCiclo(Motor.CULTURAS[p.cultura], p.cicloDias); });
+/** Clima diário de uma fazenda SEM estação: Open-Meteo (até 92 dias passados), com ET₀ e chuva do modelo. */
+function climaOpenMeteo_(cfg, ini, fim) {
+  var url = "https://api.open-meteo.com/v1/forecast?latitude=" + cfg.latitude + "&longitude=" + cfg.longitude +
+    "&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,relative_humidity_2m_mean,wind_speed_10m_mean,shortwave_radiation_sum,precipitation_sum,et0_fao_evapotranspiration,sunshine_duration" +
+    "&wind_speed_unit=ms&timezone=" + encodeURIComponent(cfg.fuso) + "&past_days=92&forecast_days=1";
+  var d = buscarJson_(url).daily;
+  if (!d || !d.time) throw new Error("Open-Meteo sem série diária para " + cfg.nome + ".");
+  var num = function (v) { var x = Number(v); return isFinite(x) ? x : NaN; };
+  var dias = [];
+  for (var i = 0; i < d.time.length; i++) {
+    var data = String(d.time[i]).slice(0, 10);
+    if (data < ini || data > fim) continue;
+    dias.push({
+      data: data, tmax: num(d.temperature_2m_max[i]), tmin: num(d.temperature_2m_min[i]), tmed: num(d.temperature_2m_mean[i]),
+      ur: num(d.relative_humidity_2m_mean[i]), vento: num(d.wind_speed_10m_mean[i]), rad: num(d.shortwave_radiation_sum[i]),
+      chuva: num(d.precipitation_sum[i]) || 0, n: 0, et0Externa: num(d.et0_fao_evapotranspiration[i]),
+      horasSol: isFinite(num(d.sunshine_duration[i])) ? Math.round((num(d.sunshine_duration[i]) / 3600) * 10) / 10 : undefined,
+      estimados: ["Open-Meteo (fazenda sem estação)"],
+    });
+  }
+  return dias;
+}
 
+/** Clima de uma fazenda entre `ini` e `dia`: da estação dela, ou do Open-Meteo quando não tem estação. */
+function climaDaFazenda_(cfg, ini, dia) {
+  // leituras da estação (ou importadas) da fazenda valem sempre; o Open-Meteo entra só quando não há nenhuma
+  var leituras = lerLeituras_(Motor.diaAnterior(ini) + "T" + Motor.HORA_FECHAMENTO, dia + "T" + Motor.HORA_FECHAMENTO, cfg.chave);
+  var clima = Motor.climaCompleto(leituras, ini, dia);
+  if (clima.length) return clima;
+  if (cfg.temEstacao) throw new Error(cfg.nome + ": Nenhuma leitura da estação entre " + ini + " e " + dia + ".");
+  if (cfg.latitude === null || cfg.longitude === null) throw new Error(cfg.nome + ": Nenhuma leitura da estação e sem latitude/longitude para usar o Open-Meteo.");
+  try {
+    return climaOpenMeteo_(cfg, ini, dia);
+  } catch (e) {
+    throw new Error(cfg.nome + ": Nenhuma leitura da estação entre " + ini + " e " + dia + ", e o Open-Meteo não respondeu (" + e.message + ").");
+  }
+}
+
+/** Calcula uma fazenda: clima, balanço de cada área, relatório do ciclo. */
+function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid) {
+  var estacao = { latitude: cfg.latitude, altitude: cfg.altitude, alturaAnemometro: cfg.alturaAnemometro };
+  areas.forEach(function (p) { p.cultura = Motor.comCiclo(Motor.CULTURAS[p.cultura], p.cicloDias); });
   var inicio = function (p) { return p.inicioBalanco || p.plantio; };
-  var iniGeral = pivos.map(inicio).filter(function (d) { return d <= dia; }).sort()[0] || dia;
-  var leituras = lerLeituras_(Motor.diaAnterior(iniGeral) + "T" + Motor.HORA_FECHAMENTO, dia + "T" + Motor.HORA_FECHAMENTO);
-  var clima = Motor.climaCompleto(leituras, iniGeral, dia);
-  if (!clima.length) throw new Error("Nenhuma leitura da estação entre " + iniGeral + " e " + dia + ".");
-  var previsao = lerPrevisao_();
+  var iniGeral = areas.map(inicio).filter(function (d) { return d <= dia; }).sort()[0] || dia;
+  var iniCiclo = areas.map(function (p) { return p.plantio; }).filter(function (d) { return d <= dia; }).sort()[0] || iniGeral;
+  var climaTudo = climaDaFazenda_(cfg, [iniGeral, iniCiclo].sort()[0], dia);
+  // balanço e aba CLIMA: do início do balanço em diante; ciclo: só dias em que a estação mediu de verdade
+  var clima = climaTudo.filter(function (d) { return d.data >= iniGeral; });
+  var climaCiclo = climaTudo.filter(function (d) { return !(d.estimados || []).some(function (e) { return /^(tmax|tmin|tmed)$/.test(e); }); });
   var diasPrev = previsao ? previsao.dias : [];
   // dia em que a estação ficou sem leituras: a ET₀ do Open-Meteo (dias passados) segura a decisão
   clima.forEach(function (d) {
-    if (d.n >= Motor.MIN_LEITURAS) return;
+    if (d.n >= Motor.MIN_LEITURAS || d.et0Externa !== undefined) return;
     var p = diasPrev.filter(function (x) { return x.data === d.data && x.et0Mm !== null && x.et0Mm !== undefined; })[0];
     if (p) d.et0Externa = p.et0Mm;
   });
-
-  escreverTabela_(ABA.CLIMA, CABECALHOS.CLIMA, clima.map(function (d) {
+  var et0De = function (d) { return d.et0Externa !== undefined ? d.et0Externa : Motor.et0PenmanMonteith(d, estacao); };
+  var et0PorDia = new Map(clima.map(function (d) { return [d.data, et0De(d)]; }));
+  var et0PorDiaCiclo = new Map(climaCiclo.map(function (d) { return [d.data, et0De(d)]; }));
+  var linhasClima = clima.map(function (d) {
     return [d.data, d.tmax, d.tmin, d.tmed, d.ur, d.vento, d.rad, d.chuva, d.n, (d.estimados || []).join(", "),
-      Motor.et0PenmanMonteith(d, estacao), Motor.et0Hargreaves(d, estacao)];
-  }));
-
-  var irrig = lancamentos_(ABA.IRRIGACOES, cfg.fuso);
-  var umid = lancamentos_(ABA.UMIDADE, cfg.fuso);
+      et0De(d), isFinite(d.tmax) ? Motor.et0Hargreaves(d, estacao) : "", d.horasSol === undefined ? "" : d.horasSol,
+      Math.round(Motor.fotoperiodoH(cfg.latitude, d.data) * 100) / 100, cfg.nome];
+  });
   var linhasBalanco = [];
-  var itens = pivos.map(function (pivo) {
+  var itens = areas.map(function (pivo) {
+    var chaveArea = pivo.nome.toLowerCase();
+    var minhasIrrig = irrig.filter(function (x) { return x.area === chaveArea && (!x.fazenda || x.fazenda === cfg.chave); });
+    var minhasUmid = umid.filter(function (x) { return x.area === chaveArea && (!x.fazenda || x.fazenda === cfg.chave); });
+    var ciclo = Motor.resumoCiclo(pivo.cultura, pivo.plantio, dia, cfg.latitude, climaCiclo, et0PorDiaCiclo, pivo.grausDiaCiclo);
+    if (pivo.semBalanco) return { pivo: pivo, aviso: "talhão sem balanço (só o relatório do ciclo)", ciclo: ciclo, fimCicloDas: Motor.fimDoCicloDas(pivo.cultura) };
     var ini = inicio(pivo);
-    if (ini > dia) return { pivo: pivo, aviso: "balanço começa em " + ini };
-    var chave = pivo.nome.toLowerCase();
+    if (ini > dia) return { pivo: pivo, aviso: "balanço começa em " + ini, ciclo: ciclo, fimCicloDas: Motor.fimDoCicloDas(pivo.cultura) };
     var dias = clima.filter(function (d) { return d.data >= ini; });
     var linhas = Motor.simularBalanco({
       pivo: pivo,
       estacao: estacao,
       dias: dias,
-      irrigacoes: irrig.filter(function (x) { return x.pivo === chave; }).map(function (x) { return { data: x.data, mm: Motor.numero(x.l[2]) || 0 }; }),
-      ajustes: umid.filter(function (x) { return x.pivo === chave && Motor.numero(x.l[2]) !== null; }).map(function (x) {
+      irrigacoes: minhasIrrig.map(function (x) { return { data: x.data, mm: Motor.numero(x.l[2]) || 0 }; }),
+      ajustes: minhasUmid.filter(function (x) { return Motor.numero(x.l[2]) !== null; }).map(function (x) {
         return {
           data: x.data, umidadeRaizPct: Motor.numero(x.l[2]),
           umidadeProfundaPct: Motor.numero(x.l[3]) === null ? undefined : Motor.numero(x.l[3]),
@@ -715,11 +902,11 @@ function calcular_(dia) {
     });
     linhas.forEach(function (l) {
       linhasBalanco.push([pivo.nome, l.data, l.das, l.estadio, l.kc, l.et0, l.etc, l.chuva, l.irrigacao, l.raizCm, l.cadMm,
-        l.fatorDeplecao, l.afdMm, l.deficit, l.ajustado ? "SIM" : "", l.decisao, l.alertas.join(" | ")]);
+        l.fatorDeplecao, l.afdMm, l.deficit, l.ajustado ? "SIM" : "", l.decisao, l.alertas.join(" | "), cfg.nome]);
     });
     var incertos = dias.filter(function (d) { return (d.estimados && d.estimados.length) || d.n < Motor.MIN_LEITURAS; }).length;
-    var irrigDoPivo = irrig.filter(function (x) { return x.pivo === chave && x.data <= dia; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
-    var umidDoPivo = umid.filter(function (x) { return x.pivo === chave && x.data <= dia && Motor.numero(x.l[2]) !== null; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+    var irrigDoPivo = minhasIrrig.filter(function (x) { return x.data <= dia; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+    var umidDoPivo = minhasUmid.filter(function (x) { return x.data <= dia && Motor.numero(x.l[2]) !== null; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
     var ui = irrigDoPivo[irrigDoPivo.length - 1], um = umidDoPivo[umidDoPivo.length - 1];
     return {
       pivo: pivo, linha: linhas[linhas.length - 1], diasIncertos: incertos,
@@ -727,46 +914,90 @@ function calcular_(dia) {
       ultimaIrrigacao: ui ? { data: ui.data, mm: Motor.numero(ui.l[2]) || 0 } : null,
       ultimaMedicao: um ? { data: um.data, umidadeRaizPct: Motor.numero(um.l[2]) } : null,
       fimCicloDas: Motor.fimDoCicloDas(pivo.cultura),
+      ciclo: ciclo,
     };
   });
-  escreverTabela_(ABA.BALANCO, CABECALHOS.BALANCO, linhasBalanco);
-
   var climaDia = clima[clima.length - 1];
-  var et0Dia = climaDia.et0Externa !== undefined ? climaDia.et0Externa : Motor.et0PenmanMonteith(climaDia, estacao);
+  var et0Dia = et0De(climaDia);
   var climaMsg = Object.assign({}, climaDia, { et0: et0Dia });
-  var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev);
-  var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL);
-  escreverPainel_(dia, climaDia, et0Dia, itens, msg);
-  salvarResumo_(dia, cfg, climaDia, et0Dia, itens, previsao);
-  return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, html: html, itens: itens };
+  var rotulo = lerFazendas_().length > 1 ? cfg.nome : "";   // com uma fazenda só, o nome não precisa aparecer
+  var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev, rotulo);
+  var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL, rotulo);
+  return { cfg: cfg, itens: itens, climaDia: climaDia, et0Dia: et0Dia, assunto: msg.assunto, texto: msg.texto, html: html,
+    linhasClima: linhasClima, linhasBalanco: linhasBalanco };
+}
+
+/** Recalcula clima e balanço de todas as áreas ativas de todas as fazendas até `dia` e escreve nas abas. */
+function calcular_(dia) {
+  var c = cadastroValidado_();
+  var cfg = c.cfg;
+  dia = dia || ultimoDiaFechado_(cfg.fuso);
+  var ativas = c.pivos.filter(function (p) { return p.ativo; });
+  if (!ativas.length) throw new Error("Nenhum pivô ativo na aba PIVOS.");
+  var irrig = lancamentos_(ABA.IRRIGACOES, cfg.fuso);
+  var umid = lancamentos_(ABA.UMIDADE, cfg.fuso);
+  var previsoes = lerPrevisoes_();
+  var fazendas = [];
+  var erros = [];
+  c.fazendas.forEach(function (f) {
+    var areas = ativas.filter(function (p) { return p.chaveFazenda === f.chave; });
+    if (!areas.length) return;
+    try {
+      fazendas.push(calcularFazenda_(f, areas, dia, previsoes[f.chave] || null, irrig, umid));
+    } catch (e) {
+      erros.push(f.nome + ": " + e.message);
+    }
+  });
+  if (!fazendas.length) throw new Error(erros.join(" | ") || "Nenhuma fazenda com área ativa.");
+  if (erros.length) log_("calcular", "parcial", erros.join(" | "));
+  var junta = function (k) { return fazendas.reduce(function (t, f) { return t.concat(f[k]); }, []); };
+  escreverTabela_(ABA.CLIMA, CABECALHOS.CLIMA, junta("linhasClima"));
+  escreverTabela_(ABA.BALANCO, CABECALHOS.BALANCO, junta("linhasBalanco"));
+  var itens = junta("itens");
+  escreverPainel_(dia, fazendas);
+  salvarResumo_(dia, fazendas, previsoes);
+  var f0 = fazendas[0];
+  return { dia: dia, cfg: cfg, fazendas: fazendas, itens: itens, assunto: f0.assunto, texto: f0.texto, html: f0.html, erros: erros };
 }
 
 /** Resumo do último cálculo para o app abrir rápido (aba oculta CACHE, célula A1). */
-function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
-  var r2 = function (x) { return Math.round(x * 100) / 100; };
-  var ult = ultimaLeitura_();
-  var resumo = {
-    dia: dia,
-    calculadoEm: Motor.paraLocal(Date.now(), cfg.fuso),
-    clima: { et0: r2(et0), chuva: r2(clima.chuva), n: clima.n, tmax: r2(clima.tmax), tmin: r2(clima.tmin), ur: r2(clima.ur), estimados: clima.estimados || [] },
-    pivos: itens.map(function (it) {
+function salvarResumo_(dia, fazendas, previsoes) {
+  var r2 = function (x) { return x === null || x === undefined || !isFinite(x) ? null : Math.round(x * 100) / 100; };
+  var climaDe = function (f) {
+    var c = f.climaDia;
+    return { et0: r2(f.et0Dia), chuva: r2(c.chuva), n: c.n, tmax: r2(c.tmax), tmin: r2(c.tmin), ur: r2(c.ur), horasSol: c.horasSol === undefined ? null : c.horasSol, estimados: c.estimados || [] };
+  };
+  var cicloDe = function (c) {
+    if (!c) return null;
+    return { dias: c.dias, grausDia: c.grausDia, grausDiaCiclo: c.grausDiaCiclo, fracaoGrausDia: c.fracaoGrausDia, tBaseC: c.tBaseC,
+      fotoperiodoHojeH: c.fotoperiodoHojeH, fotoperiodoAcumH: c.fotoperiodoAcumH, horasSolAcumH: c.horasSolAcumH, horasSolHojeH: c.horasSolHojeH,
+      chuvaMm: c.chuvaMm, diasComChuva: c.diasComChuva, et0Mm: c.et0Mm, tmaxAbs: r2(c.tmaxAbs), tminAbs: r2(c.tminAbs), tmedia: r2(c.tmedia),
+      diasQuentes: c.diasQuentes, diasFrios: c.diasFrios, faltamDias: c.faltamDias, fimCicloDas: c.fimCicloDas, diasComClima: c.diasComClima };
+  };
+  var pivos = [];
+  fazendas.forEach(function (f) {
+    var ult = ultimaLeitura_(f.cfg.chave);
+    var previsao = previsoes[f.cfg.chave] || null;
+    f.itens.forEach(function (it) {
       var l = it.linha;
       var cult = it.pivo.cultura;
       var eq = it.pivo.equipamento;
       var p = {
-        nome: it.pivo.nome, cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "",
+        nome: it.pivo.nome, fazenda: f.cfg.nome, chaveFazenda: f.cfg.chave, tipo: it.pivo.tipo, semBalanco: !!it.pivo.semBalanco,
+        cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "",
         latitude: it.pivo.latitude, longitude: it.pivo.longitude, contorno: it.pivo.contorno || null,
         raioM: eq ? eq.raioM : null, anguloGraus: eq ? eq.anguloGraus : null,
+        plantio: it.pivo.plantio, ciclo: cicloDe(it.ciclo), fimCicloDas: Motor.fimDoCicloDas(cult),
+        das: Motor.das(dia, it.pivo.plantio), emergenciaDias: cult.emergenciaDias || 0,
       };
-      if (!l) return p;
+      p.dae = Motor.dae(cult, p.das);
+      p.curvaKc = Motor.curvaKc(cult, it.pivo.plantioDiretoPalhada);
+      if (!l) { pivos.push(p); return; }
       p.sensorSolo = sensorSolo_(ult, it.pivo.sensorSolo);
       if (l.decisao === "IRRIGAR" && previsao) p.avisoChuva = Motor.avisoChuva(l.deficit, previsao.dias, dia);
       p.estadio = l.estadio;
       p.das = l.das;
       p.dae = Motor.dae(cult, l.das);
-      p.emergenciaDias = cult.emergenciaDias || 0;
-      p.fimCicloDas = Motor.fimDoCicloDas(cult);
-      p.curvaKc = Motor.curvaKc(cult, it.pivo.plantioDiretoPalhada);
       p.decisao = l.decisao;
       p.deficit = r2(l.deficit);
       p.afd = r2(l.afdMm);
@@ -787,8 +1018,15 @@ function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
         deficitFimVoltaMm: l.projecao.deficitFimVoltaMm === undefined ? null : r2(l.projecao.deficitFimVoltaMm),
         dias: l.projecao.dias.map(function (x) { return { data: x.data, deficit: r2(x.deficit) }; }),
       };
-      return p;
-    }),
+      pivos.push(p);
+    });
+  });
+  var resumo = {
+    dia: dia,
+    calculadoEm: Motor.paraLocal(Date.now(), fazendas[0].cfg.fuso),
+    clima: climaDe(fazendas[0]),
+    fazendas: fazendas.map(function (f) { return { nome: f.cfg.nome, chave: f.cfg.chave, temEstacao: !!f.cfg.temEstacao, clima: climaDe(f) }; }),
+    pivos: pivos,
   };
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
   aba.getRange(1, 1).setValue(JSON.stringify(resumo));
@@ -797,16 +1035,15 @@ function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
 
 /* ------------------------------ previsão do tempo ------------------------------ */
 
-/** Gatilho (a cada 3 h) e menu: busca Open-Meteo (mm, %) e INMET (texto) e grava na aba PREVISAO + CACHE. */
-function atualizarPrevisao() {
-  var cfg = lerEstacao_();
+/** Busca a previsão de UMA fazenda: Open-Meteo (mm, %, ET₀, horas) e INMET (texto). */
+function previsaoDaFazenda_(cfg) {
   var fontes = [], erros = [], om = [], inmet = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
       fontes.push("Open-Meteo");
     } catch (e) { erros.push("Open-Meteo: " + e.message); }
-  } else erros.push("Open-Meteo: preencha latitude e longitude na aba ESTACAO.");
+  } else erros.push("Open-Meteo: preencha latitude e longitude da fazenda.");
   if (cfg.ibge) {
     try {
       inmet = Motor.lerInmet(buscarJson_(Motor.INMET_URL + Math.round(cfg.ibge)));
@@ -814,27 +1051,40 @@ function atualizarPrevisao() {
     } catch (e) { erros.push("INMET: " + e.message); }
   }
   var dias = Motor.juntarPrevisao(om, inmet);
-  if (!dias.length) {
-    log_("previsão", "erro", erros.join(" | "));
-    return null;
-  }
-  // hora a hora (48 h) para as janelas de pulverização
+  if (!dias.length) return { previsao: null, erros: erros };
   var horas = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))));
     } catch (e) { erros.push("Open-Meteo horas: " + e.message); }
   }
-  var previsao = { atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas };
+  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas }, erros: erros };
+}
+
+/** Gatilho (a cada 3 h) e menu: previsão de todas as fazendas → aba PREVISAO + CACHE. Devolve a da primeira. */
+function atualizarPrevisao() {
+  var fazendas = lerFazendas_();
+  var mapa = lerPrevisoes_();
+  var linhas = [], resumoLog = [], falhou = false;
+  fazendas.forEach(function (cfg) {
+    var r = previsaoDaFazenda_(cfg);
+    if (!r.previsao) { resumoLog.push(cfg.nome + ": ERRO " + r.erros.join(" | ")); falhou = true; return; }
+    if (r.erros.length) falhou = true;
+    mapa[cfg.chave] = r.previsao;
+    resumoLog.push(cfg.nome + ": " + r.previsao.fontes.join(", ") + (r.erros.length ? " | " + r.erros.join(" | ") : ""));
+    r.previsao.dias.forEach(function (d) {
+      linhas.push([d.data, d.chuvaMm === null ? "" : d.chuvaMm, d.probPct === null ? "" : d.probPct, d.tmin === null ? "" : d.tmin,
+        d.tmax === null ? "" : d.tmax, d.resumo || "", r.previsao.atualizadoEm, r.previsao.fontes.join(", "), cfg.nome]);
+    });
+  });
+  var algum = fazendas.some(function (f) { return mapa[f.chave]; });
+  if (!algum) { log_("previsão", "erro", resumoLog.join(" / ")); return null; }
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
-  escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, dias.map(function (d) {
-    return [d.data, d.chuvaMm === null ? "" : d.chuvaMm, d.probPct === null ? "" : d.probPct, d.tmin === null ? "" : d.tmin,
-      d.tmax === null ? "" : d.tmax, d.resumo || "", previsao.atualizadoEm, fontes.join(", ")];
-  }));
+  escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, linhas);
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
-  aba.getRange(2, 1).setValue(JSON.stringify(previsao));
-  log_("previsão", erros.length ? "parcial" : "ok", fontes.join(", ") + (erros.length ? " | " + erros.join(" | ") : ""));
-  return previsao;
+  aba.getRange(2, 1).setValue(JSON.stringify({ porFazenda: mapa }));
+  log_("previsão", falhou ? "parcial" : "ok", resumoLog.join(" / "));
+  return mapa[fazendas[0].chave] || null;
 }
 
 function buscarJson_(url) {
@@ -844,18 +1094,30 @@ function buscarJson_(url) {
   return JSON.parse(resp.getContentText());
 }
 
-function lerPrevisao_() {
+/** Previsões guardadas, por chave da fazenda. Versão anterior (uma só) vira a da primeira fazenda. */
+function lerPrevisoes_() {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
-  if (!aba || aba.getLastRow() < 2) return null;
+  if (!aba || aba.getLastRow() < 2) return {};
   var t = aba.getRange(2, 1).getValue();
-  try { return t ? JSON.parse(t) : null; } catch (e) { return null; }
+  var o;
+  try { o = t ? JSON.parse(t) : null; } catch (e) { o = null; }
+  if (!o) return {};
+  if (o.porFazenda) return o.porFazenda;
+  if (o.dias) { var m = {}; m[lerFazendas_()[0].chave] = o; return m; }
+  return {};
+}
+
+/** Previsão de uma fazenda (chave); sem chave, da primeira. */
+function lerPrevisao_(chave) {
+  var fs = lerFazendas_();
+  return lerPrevisoes_()[chave ? chaveFazenda_(chave) : fs[0].chave] || null;
 }
 
 function menuPdf() {
   try {
     var r = calcular_(null);
-    var pdf = relatorioPdf_(r);
-    aviso_("PDF salvo na pasta RELATORIOS:\n" + pdf.arquivo.getName() + "\n" + pdf.arquivo.getUrl());
+    var linhas = r.fazendas.map(function (f) { var pdf = relatorioPdf_(r, f); return pdf.arquivo.getName() + "\n" + pdf.arquivo.getUrl(); });
+    aviso_("PDF salvo na pasta RELATORIOS:\n" + linhas.join("\n\n"));
   } catch (e) {
     aviso_("Não consegui gerar o PDF: " + e.message);
   }
@@ -864,6 +1126,8 @@ function menuPdf() {
 function menuPrevisao() {
   var p = atualizarPrevisao();
   if (!p) { aviso_("Não consegui buscar a previsão. Veja a aba LOG."); return; }
+  var n = lerFazendas_().length;
+  if (n > 1) { aviso_("Previsão atualizada para " + n + " fazendas. Veja a aba PREVISAO."); return; }
   var prox = p.dias.slice(0, 4).map(function (d) {
     return d.data.split("-").reverse().slice(0, 2).join("/") + ": " + (d.chuvaMm === null ? "?" : d.chuvaMm) + " mm" + (d.probPct === null ? "" : " (" + d.probPct + "%)") + (d.resumo ? " — " + d.resumo : "");
   });
@@ -928,33 +1192,31 @@ function escreverTabela_(nome, cabecalho, linhas) {
   if (linhas.length) aba.getRange(2, 1, linhas.length, cabecalho.length).setValues(linhas);
 }
 
-function escreverPainel_(dia, clima, et0, itens, msg) {
+function escreverPainel_(dia, fazendas) {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PAINEL);
   aba.clearContents();
-  var r1 = function (x) { return Math.round(x * 10) / 10; };
-  var linhas = [
-    ["MANEJO DE IRRIGAÇÃO — " + dia.split("-").reverse().join("/"), "", "", "", "", "", "", "", "", "", "", ""],
-    ["ET0 (mm)", r1(et0), "Chuva (mm)", r1(clima.chuva), "Leituras", clima.n + " de 144", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", "", "", "", ""],
-    ["Pivô", "Cultura / estádio", "DAS", "Decisão", "Déficit (mm)", "AFD (mm)", "Lâmina bruta (mm)", "Percentímetro (%)",
-      "Volta (h)", "Energia (kWh)", "Custo (R$)", "Alertas"],
-  ];
-  itens.forEach(function (it) {
-    var l = it.linha;
-    if (!l) {
-      linhas.push([it.pivo.nome, it.aviso || "", "", "", "", "", "", "", "", "", "", ""]);
-      return;
-    }
-    var r = l.recomendacao;
-    linhas.push([it.pivo.nome, it.pivo.cultura.nome + " " + l.estadio, l.das, l.decisao, r1(l.deficit), r1(l.afdMm),
-      r ? r1(r.laminaBrutaMm) : "", r ? Math.round(r.percentimetroPct) : "", r ? r1(r.tempoVoltaH) : "",
-      r ? Math.round(r.energiaKwh) : "", r ? Math.round(r.custoRs * 100) / 100 : "", l.alertas.join(" | ")]);
+  var r1 = function (x) { return x === null || x === undefined || !isFinite(x) ? "" : Math.round(x * 10) / 10; };
+  var vazio = function () { return ["", "", "", "", "", "", "", "", "", "", "", "", ""]; };
+  var linhas = [["MANEJO DE IRRIGAÇÃO — " + dia.split("-").reverse().join("/")].concat(vazio().slice(1))];
+  fazendas.forEach(function (f) {
+    var clima = f.climaDia;
+    linhas.push(vazio());
+    linhas.push([f.cfg.nome.toUpperCase(), "ET0 (mm)", r1(f.et0Dia), "Chuva (mm)", r1(clima.chuva), "Leituras", clima.n + " de 144", "Horas de sol", clima.horasSol === undefined ? "" : clima.horasSol, "", "", "", ""]);
+    linhas.push(["Área", "Cultura / estádio", "DAS", "Decisão", "Déficit (mm)", "AFD (mm)", "Lâmina bruta (mm)", "Percentímetro (%)",
+      "Volta (h)", "Energia (kWh)", "Custo (R$)", "Graus-dia acum.", "Alertas"]);
+    f.itens.forEach(function (it) {
+      var l = it.linha, gd = it.ciclo ? it.ciclo.grausDia : "";
+      if (!l) { linhas.push([it.pivo.nome, it.pivo.cultura.nome, Motor.das(dia, it.pivo.plantio), it.aviso || "", "", "", "", "", "", "", "", gd, ""]); return; }
+      var r = l.recomendacao;
+      linhas.push([it.pivo.nome, it.pivo.cultura.nome + " " + l.estadio, l.das, l.decisao, r1(l.deficit), r1(l.afdMm),
+        r ? r1(r.laminaBrutaMm) : "", r ? Math.round(r.percentimetroPct) : "", r ? r1(r.tempoVoltaH) : "",
+        r ? Math.round(r.energiaKwh) : "", r ? Math.round(r.custoRs * 100) / 100 : "", gd, l.alertas.join(" | ")]);
+    });
+    linhas.push(vazio());
+    linhas.push(["Mensagem enviada:", f.texto.replace(/\*/g, "")].concat(vazio().slice(2)));
   });
-  linhas.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-  linhas.push(["Mensagem enviada:", msg.texto.replace(/\*/g, ""), "", "", "", "", "", "", "", "", "", ""]);
-  aba.getRange(1, 1, linhas.length, 12).setValues(linhas);
+  aba.getRange(1, 1, linhas.length, 13).setValues(linhas);
   aba.getRange(1, 1).setFontWeight("bold");
-  aba.getRange(4, 1, 1, 12).setFontWeight("bold");
 }
 
 function jaEnviado_(dia, canal) {
@@ -977,15 +1239,18 @@ function salvarNaPasta_(pasta, nome, conteudoOuBlob) {
  * Relatório do dia em PDF: o mesmo HTML do e-mail + o balanço dos últimos 30 dias de cada pivô,
  * convertido pelo próprio Google (HTML → PDF). Fica em RELATORIOS/AAAA-MM-DD.pdf.
  */
-function relatorioPdf_(r) {
-  var fuso = r.cfg.fuso;
-  var partes = ['<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Manejo de irrigação ' + r.dia + '</title>',
+function relatorioPdf_(r, f) {
+  f = f || r.fazendas[0];
+  var fuso = f.cfg.fuso;
+  var varias = lerFazendas_().length > 1;
+  var nomeArq = r.dia + (varias ? " " + f.cfg.nome : "");
+  var partes = ['<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Manejo de irrigação ' + r.dia + ' ' + esc_(f.cfg.nome) + '</title>',
     '<style>body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#33474f;margin:18px}table.bal{border-collapse:collapse;width:100%;font-size:10.5px;margin:6px 0 14px}',
     'table.bal th,table.bal td{border:1px solid #dde3e6;padding:3px 5px;text-align:right}table.bal th{background:#eef3f5;color:#16404d}table.bal td:first-child,table.bal th:first-child{text-align:left}',
     'tr.irr td{background:#e3effc}tr.est td{color:#b00020}h3{color:#16404d;margin:16px 0 4px;page-break-before:auto}.rodape{color:#64757d;font-size:10px;margin-top:16px}</style></head><body>',
-    r.html, '<h2 style="color:#16404d;margin-top:22px">Balanço dos últimos 30 dias</h2>'];
-  r.itens.forEach(function (it) {
-    var h = historico_(it.pivo.nome, 30);
+    f.html, '<h2 style="color:#16404d;margin-top:22px">Balanço dos últimos 30 dias</h2>'];
+  f.itens.forEach(function (it) {
+    var h = historico_(it.pivo.nome, 30, f.cfg.chave);
     if (!h.linhas.length) return;
     partes.push('<h3>' + esc_(it.pivo.nome) + ' — ' + esc_(it.pivo.cultura.nome) + '</h3>');
     partes.push('<table class="bal"><tr><th>Dia</th><th>DAS</th><th>Estádio</th><th>Kc</th><th>ET₀</th><th>ETc</th><th>Chuva</th><th>Irrig.</th><th>Raiz</th><th>CAD</th><th>AFD</th><th>Déficit</th><th>% AFD</th><th>Decisão</th></tr>');
@@ -998,9 +1263,9 @@ function relatorioPdf_(r) {
     partes.push('</table>');
   });
   partes.push('<div class="rodape">Gerado em ' + Motor.paraLocal(Date.now(), fuso).replace("T", " ") + ' · Fazenda Água Viva · ' + APP_URL + '</div></body></html>');
-  var blob = Utilities.newBlob(partes.join("\n"), "text/html", r.dia + ".html").getAs("application/pdf");
-  var arquivo = salvarNaPasta_(pastaDoApp_(PASTA_RELATORIOS), r.dia + ".pdf", blob);
-  return { arquivo: arquivo, blob: blob };
+  var blob = Utilities.newBlob(partes.join("\n"), "text/html", nomeArq + ".html").getAs("application/pdf");
+  var arquivo = salvarNaPasta_(pastaDoApp_(PASTA_RELATORIOS), nomeArq + ".pdf", blob);
+  return { arquivo: arquivo, blob: blob, nome: nomeArq + ".pdf" };
 }
 
 function esc_(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -1008,29 +1273,34 @@ function esc_(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").repl
 function calcularEEnviar_(dia, forcar) {
   var r = calcular_(dia);
   var pasta = pastaDoApp_(PASTA_RELATORIOS);
-  salvarNaPasta_(pasta, r.dia + ".txt", r.assunto + "\n\n" + r.texto.replace(/\*/g, ""));
-  var pdf = null;
-  try {
-    pdf = relatorioPdf_(r);
-  } catch (e) {
-    log_("pdf", "erro", e.message, r.dia);
-  }
-  r.pdfUrl = pdf ? pdf.arquivo.getUrl() : null;
-
-  if (!r.cfg.emails.length) {
-    log_("e-mail", "sem destinatário", "Preencha os e-mails na aba ESTACAO.", r.dia);
-  } else if (!forcar && jaEnviado_(r.dia, "e-mail")) {
-    log_("e-mail", "já enviado", "", r.dia);
-  } else {
+  var varias = lerFazendas_().length > 1;
+  r.fazendas.forEach(function (f) {
+    var nome = r.dia + (varias ? " " + f.cfg.nome : "");
+    var canal = "e-mail" + (varias ? " " + f.cfg.nome : "");
+    salvarNaPasta_(pasta, nome + ".txt", f.assunto + "\n\n" + f.texto.replace(/\*/g, ""));
+    var pdf = null;
     try {
-      var email = { to: r.cfg.emails.join(","), subject: r.assunto, body: r.texto.replace(/\*/g, ""), htmlBody: r.html };
-      if (pdf) email.attachments = [pdf.blob];
-      MailApp.sendEmail(email);
-      log_("e-mail", "enviado", r.cfg.emails.join(", "), r.dia);
+      pdf = relatorioPdf_(r, f);
     } catch (e) {
-      log_("e-mail", "erro", e.message, r.dia);
+      log_("pdf", "erro", f.cfg.nome + ": " + e.message, r.dia);
     }
-  }
+    f.pdfUrl = pdf ? pdf.arquivo.getUrl() : null;
+    if (!f.cfg.emails.length) {
+      log_(canal, "sem destinatário", "Preencha os e-mails da fazenda " + f.cfg.nome + " na aba FAZENDAS.", r.dia);
+    } else if (!forcar && jaEnviado_(r.dia, canal)) {
+      log_(canal, "já enviado", "", r.dia);
+    } else {
+      try {
+        var email = { to: f.cfg.emails.join(","), subject: f.assunto, body: f.texto.replace(/\*/g, ""), htmlBody: f.html };
+        if (pdf) email.attachments = [pdf.blob];
+        MailApp.sendEmail(email);
+        log_(canal, "enviado", f.cfg.emails.join(", "), r.dia);
+      } catch (e) {
+        log_(canal, "erro", e.message, r.dia);
+      }
+    }
+  });
+  r.pdfUrl = r.fazendas[0].pdfUrl;
   return r;
 }
 
@@ -1044,12 +1314,16 @@ function relatorioDiario() {
   try {
     var cfg = lerEstacao_();
     var agora = Motor.paraLocal(Date.now(), cfg.fuso);
-    try {
-      // Antes de decidir, tenta tapar buracos do dia (no máximo ~2 min, para sobrar tempo ao cálculo).
-      recuperar_(Motor.somarMinutos(agora, -1440), agora, Date.now() - LIMITE_EXECUCAO_MS + 2 * 60 * 1000);
-    } catch (e) {
-      log_("recuperar", "erro", e.message);
-    }
+    var alvos = fazendasComEstacao_();
+    if (!alvos.length) alvos = [lerFazendas_()[0]];   // sem chaves: tenta mesmo assim, para o erro ir pro LOG
+    alvos.forEach(function (f) {
+      try {
+        // Antes de decidir, tenta tapar buracos do dia (no máximo ~2 min, para sobrar tempo ao cálculo).
+        recuperar_(Motor.somarMinutos(agora, -1440), agora, Date.now() - LIMITE_EXECUCAO_MS + 2 * 60 * 1000, f);
+      } catch (e) {
+        log_("recuperar", "erro", f.nome + ": " + e.message);
+      }
+    });
     calcularEEnviar_(null, false);
   } catch (e) {
     log_("relatório", "erro", e.message);
@@ -1205,11 +1479,11 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-11";
+var VERSAO_SERVIDOR = "2026.10.10-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
-var COLS_USUARIOS = ["NOME", "LOGIN", "PERFIL", "PIN NOVO", "PIN", "ATIVO", "VERSÃO", "ÚLTIMO ACESSO"];
+var COLS_USUARIOS = ["NOME", "LOGIN", "PERFIL", "PIN NOVO", "PIN", "ATIVO", "VERSÃO", "ÚLTIMO ACESSO", "FAZENDAS"];
 
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -1230,13 +1504,20 @@ function doGet_(p) {
   if (!u && loginExigido_()) return { login: true, erro: "Entre com seu login e PIN." };
   if (acao === "dados") return dadosApp_(u);
   if (acao === "hash") return { ok: true, hash: hashDados_() };
-  if (acao === "historico") return { ok: true, historico: historico_(p.pivo, Number(p.dias) || 30) };
-  if (acao === "rosa") return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || "")) };
+  var faz = p.fazenda ? chaveFazenda_(p.fazenda) : (fazendasDoUsuario_(u) || [lerFazendas_()[0].chave])[0];
+  if (acao === "historico") {
+    var h = historico_(p.pivo, Number(p.dias) || 30, p.fazenda ? faz : null);
+    if (h.fazenda) exigirFazenda_(u, h.fazenda, h.fazenda);
+    return { ok: true, historico: h };
+  }
+  if (acao === "rosa") { exigirFazenda_(u, faz, faz); return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || ""), faz) }; }
   if (acao === "pdf") {
     // relatório do último dia calculado (ou de um dia pedido) em PDF, em base64, para o app baixar
+    exigirFazenda_(u, faz, faz);
     var r = calcular_(p.dia ? dataIso_(p.dia, lerEstacao_().fuso) : null);
-    var pdf = relatorioPdf_(r);
-    return { ok: true, nome: r.dia + ".pdf", url: pdf.arquivo.getUrl(), base64: Utilities.base64Encode(pdf.blob.getBytes()) };
+    var f = r.fazendas.filter(function (x) { return x.cfg.chave === faz; })[0] || r.fazendas[0];
+    var pdf = relatorioPdf_(r, f);
+    return { ok: true, nome: pdf.nome, url: pdf.arquivo.getUrl(), base64: Utilities.base64Encode(pdf.blob.getBytes()) };
   }
   if (acao === "usuarios") {
     exigirAdmin_(u);
@@ -1297,11 +1578,28 @@ function hojeLocal_() {
 }
 
 /** Última leitura ao vivo com tudo que a estação mandou + tendência da pressão (3 h). */
-function ultimaLeitura_() {
+/** As últimas `n` linhas de LEITURAS de uma fazenda (chave; sem chave = a primeira). */
+function ultimasLeituras_(n, chave) {
   var aba = abaLeituras_();
-  if (!aba || aba.getLastRow() < 2) return null;
-  var n = Math.min(40, aba.getLastRow() - 1);
-  var ls = aba.getRange(aba.getLastRow() - n + 1, 1, n, 9).getValues().map(linhaParaLeitura_);
+  if (!aba || aba.getLastRow() < 2) return [];
+  var primeira = lerFazendas_()[0].chave;
+  var alvo = chave ? chaveFazenda_(chave) : primeira;
+  var total = aba.getLastRow() - 1;
+  var saida = [];
+  // lê em blocos de trás pra frente até juntar n linhas da fazenda
+  for (var fim = total; fim >= 1 && saida.length < n; fim -= 400) {
+    var ini = Math.max(1, fim - 399);
+    var bloco = aba.getRange(ini + 1, 1, fim - ini + 1, N_COLS_LEITURAS).getValues().map(linhaParaLeitura_)
+      .filter(function (l) { return fazendaDaLeitura_(l, primeira) === alvo; });
+    saida = bloco.concat(saida);
+    if (ini === 1) break;
+  }
+  return saida.slice(-n);
+}
+
+function ultimaLeitura_(chave) {
+  var ls = ultimasLeituras_(40, chave);
+  if (!ls.length) return null;
   var l = ls[ls.length - 1];
   // extras só existem na coleta ao vivo; se a última linha veio do histórico, usa os extras mais recentes
   var comExtras = ls.filter(function (x) { return x.extras && Object.keys(x.extras).length; }).pop();
@@ -1321,22 +1619,20 @@ function ultimaLeitura_() {
  * direção, separadas por faixa de velocidade (km/h: < 3 calmaria, 3–10, 10–20, > 20), e a média.
  * Usa a direção gravada nos extras (coleta ao vivo); leituras sem direção não entram.
  */
-function rosaVentos24h_() {
-  var aba = abaLeituras_();
-  if (!aba || aba.getLastRow() < 2) return null;
-  var n = Math.min(200, aba.getLastRow() - 1);
-  var ls = aba.getRange(aba.getLastRow() - n + 1, 1, n, 9).getValues().map(linhaParaLeitura_);
+function rosaVentos24h_(chave) {
+  var ls = ultimasLeituras_(200, chave);
+  if (!ls.length) return null;
   var fim = ls[ls.length - 1].quando;
   return rosaVentos_(ls, Motor.somarMinutos(fim, -1440), fim);
 }
 
 /** Rosa dos ventos de um período escolhido no app (datas AAAA-MM-DD, no máximo 120 dias). */
-function rosaVentosPeriodo_(de, ate) {
+function rosaVentosPeriodo_(de, ate, chave) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate)) throw new Error("Datas no formato AAAA-MM-DD.");
   if (ate < de) throw new Error("A data final vem antes da inicial.");
   if (Motor.das(ate, de) > 120) throw new Error("Período de no máximo 120 dias.");
   var ini = de + "T00:00:00", fim = ate + "T23:59:59";
-  return rosaVentos_(lerLeituras_(ini, fim), ini, fim);
+  return rosaVentos_(lerLeituras_(ini, fim, chave), ini, fim);
 }
 
 function rosaVentos_(ls, ini, fim) {
@@ -1379,19 +1675,41 @@ function dadosApp_(u) {
       erroCalculo = e.message;
     }
   }
+  var permitidas = fazendasDoUsuario_(u);
+  var fazendas = lerFazendas_().filter(function (f) { return !permitidas || permitidas.indexOf(f.chave) >= 0; });
+  if (!fazendas.length) fazendas = [lerFazendas_()[0]];
+  var chaves = fazendas.map(function (f) { return f.chave; });
+  var minha = function (chave) { return chaves.indexOf(chave) >= 0; };
+  if (resumo) {
+    resumo = JSON.parse(JSON.stringify(resumo));
+    resumo.pivos = (resumo.pivos || []).filter(function (p) { return minha(p.chaveFazenda || chaves[0]); });
+    resumo.fazendas = (resumo.fazendas || []).filter(function (f) { return minha(f.chave); });
+    if (resumo.fazendas.length) resumo.clima = resumo.fazendas[0].clima;
+  }
+  var cadastro = cadastroPivos_();
+  cadastro.pivos = cadastro.pivos.filter(function (p) { return minha(chaveFazenda_(p.fazenda || fazendas[0].nome)); });
+  var previsoes = lerPrevisoes_();
+  var estacoes = {};
+  fazendas.forEach(function (f) {
+    estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
+      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null };
+  });
+  var f0 = estacoes[chaves[0]];
   return {
     ok: true,
     versao: VERSAO_SERVIDOR,
     hoje: hojeLocal_(),
     usuario: u ? usuarioPublico_(u) : null,
     exigido: loginExigido_(),
+    fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }),
+    estacoes: estacoes,
     resumo: resumo,
-    previsao: lerPrevisao_(),
-    vento24h: rosaVentos24h_(),
+    previsao: f0.previsao,
+    vento24h: f0.vento24h,
     erroCalculo: erroCalculo,
-    ultimaLeitura: ultimaLeitura_(),
-    cadastro: cadastroPivos_(),
-    lancamentos: lancamentosApp_(30),
+    ultimaLeitura: f0.ultimaLeitura,
+    cadastro: cadastro,
+    lancamentos: lancamentosApp_(30).filter(function (l) { return minha(l.chaveFazenda || chaves[0]); }),
     hash: hashDados_(),
   };
 }
@@ -1403,7 +1721,7 @@ function hashDados_() {
   var n = function (nome) { var a = ss.getSheetByName(nome); return a ? a.getLastRow() : 0; };
   var ult = ultimaLeitura_();
   var prev = lerPrevisao_();
-  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), ult ? ult.quando : "", prev ? prev.atualizadoEm : ""].join("|");
+  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), n(ABA.LEITURAS), ult ? ult.quando : "", prev ? prev.atualizadoEm : ""].join("|");
 }
 
 function recalcularApp_() {
@@ -1415,15 +1733,16 @@ function recalcularApp_() {
   }
 }
 
-function historico_(nome, dias) {
+function historico_(nome, dias, chave) {
   var alvo = String(nome || "").toLowerCase();
+  var faz = chave ? chaveFazenda_(chave) : "";
   var bal = SpreadsheetApp.getActive().getSheetByName(ABA.BALANCO);
   if (!bal || bal.getLastRow() < 2) return { pivo: nome, linhas: [] };
   var cab = bal.getRange(1, 1, 1, bal.getLastColumn()).getValues()[0];
   var col = function (h) { return cab.indexOf(h); };
   var fuso = lerEstacao_().fuso;
   var linhas = bal.getRange(2, 1, bal.getLastRow() - 1, cab.length).getValues()
-    .filter(function (l) { return String(l[col("Pivô")]).toLowerCase() === alvo; })
+    .filter(function (l) { return String(l[col("Pivô")]).toLowerCase() === alvo && (!faz || col("Fazenda") < 0 || chaveFazenda_(l[col("Fazenda")]) === faz); })
     .map(function (l) {
       var n = function (h) { var x = Motor.numero(l[col(h)]); return x === null ? null : Math.round(x * 100) / 100; };
       return {
@@ -1434,24 +1753,30 @@ function historico_(nome, dias) {
         alertas: String(l[col("Alertas")] || "").split(" | ").filter(function (a) { return a; }),
       };
     });
-  var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
+  var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo && (!faz || x.chaveFazenda === faz); })[0];
+  if (p) faz = p.chaveFazenda;
   var eq = p && p.equipamento;
   var areaHa = eq ? (Math.PI * eq.raioM * eq.raioM * (eq.anguloGraus / 360)) / 10000 : null;
   return { pivo: nome, laminaMinimaMm: p ? p.laminaMinimaMm : null, areaHa: areaHa, eficienciaPct: eq ? eq.eficienciaPct : null,
     cultura: p ? Motor.CULTURAS[p.cultura] && Motor.CULTURAS[p.cultura].nome : null, plantio: p ? p.plantio : null,
-    linhas: linhas.slice(-dias), clima: climaHistorico_(dias, fuso) };
+    fazenda: p ? p.fazenda : null, tipo: p ? p.tipo : null, semBalanco: p ? !!p.semBalanco : false,
+    linhas: linhas.slice(-dias), clima: climaHistorico_(dias, fuso, faz) };
 }
 
 /** Série diária da estação (aba CLIMA) para o gráfico do Histórico. */
-function climaHistorico_(dias, fuso) {
+function climaHistorico_(dias, fuso, chave) {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CLIMA);
   if (!aba || aba.getLastRow() < 2) return [];
   var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
   var col = function (h) { return cab.indexOf(h); };
-  return aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues().slice(-dias).map(function (l) {
-    var n = function (h) { var x = Motor.numero(l[col(h)]); return x === null ? null : Math.round(x * 10) / 10; };
-    return { data: dataIso_(l[col("Data")], fuso), tmax: n("Tmax"), tmin: n("Tmin"), ur: n("UR"), chuva: n("Chuva (mm)"), et0: n("ET0 PM (mm)"), vento: n("Vento"), rad: n("Radiação (MJ/m²)") };
-  });
+  var faz = chave ? chaveFazenda_(chave) : lerFazendas_()[0].chave;
+  return aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues()
+    .filter(function (l) { return col("Fazenda") < 0 || !l[col("Fazenda")] || chaveFazenda_(l[col("Fazenda")]) === faz; })
+    .slice(-dias).map(function (l) {
+      var n = function (h) { var x = Motor.numero(l[col(h)]); return x === null ? null : Math.round(x * 10) / 10; };
+      return { data: dataIso_(l[col("Data")], fuso), tmax: n("Tmax"), tmin: n("Tmin"), ur: n("UR"), chuva: n("Chuva (mm)"), et0: n("ET0 PM (mm)"), vento: n("Vento"), rad: n("Radiação (MJ/m²)"),
+        horasSol: col("Horas de sol") < 0 ? null : n("Horas de sol"), fotoperiodo: col("Fotoperíodo (h)") < 0 ? null : n("Fotoperíodo (h)") };
+    });
 }
 
 function cadastroPivos_() {
@@ -1470,7 +1795,9 @@ function cadastroPivos_() {
       return o;
     });
   }
-  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: catalogoCulturas_() };
+  var fazendas = lerFazendas_();
+  pivos.forEach(function (p) { if (!p.fazenda) p.fazenda = fazendas[0].nome; if (!p.tipo) p.tipo = "pivô"; });
+  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: catalogoCulturas_(), fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }) };
 }
 
 /** Catálogo de culturas para o app: nome, ciclo, curva de Kc (sem palhada), sugestões e fonte. */
@@ -1492,13 +1819,13 @@ function garantirColunaId_(nome) {
   var aba = SpreadsheetApp.getActive().getSheetByName(nome);
   var ultCol = Math.max(1, aba.getLastColumn());
   var cab = aba.getRange(1, 1, 1, ultCol).getValues()[0].map(String);
-  ["Por", "ID"].forEach(function (h) {
+  ["Por", "ID", "Fazenda"].forEach(function (h) {
     if (cab.indexOf(h) < 0) {
       cab.push(h);
       aba.getRange(1, cab.length).setValue(h);
     }
   });
-  return { aba: aba, cab: cab, por: cab.indexOf("Por") + 1, id: cab.indexOf("ID") + 1 };
+  return { aba: aba, cab: cab, por: cab.indexOf("Por") + 1, id: cab.indexOf("ID") + 1, fazenda: cab.indexOf("Fazenda") + 1 };
 }
 
 function novoId_() {
@@ -1528,13 +1855,20 @@ function lancamentosApp_(limite) {
     var r = linhasLancamento_(nome);
     return r.linhas.filter(function (l) { return String(l[0]) !== "" && String(l[1]).trim() !== ""; }).map(function (l) {
       var v = function (x) { return x === "" || x === null ? "" : x instanceof Date ? dataIso_(x, fuso) : x; };
+      var cf = r.g.cab.indexOf("Fazenda");
       return {
         id: String(l[r.g.id - 1]), tipo: tipo, data: dataIso_(l[0], fuso), pivo: String(l[1]),
-        valores: l.slice(2, 2 + nValores).map(v), por: String(l[r.g.por - 1] || ""),
+        valores: l.slice(2, 2 + nValores).map(v), por: String(l[r.g.por - 1] || ""), fazenda: cf >= 0 && l[cf] ? chaveFazenda_(l[cf]) : "",
       };
     });
   };
+  var areas = lerPivos_(lerEstacao_());
   var todos = ler(ABA.IRRIGACOES, "irrigacao", 2).concat(ler(ABA.UMIDADE, "umidade", 4));
+  todos.forEach(function (l) {
+    var a = areas.filter(function (x) { return x.nome.toLowerCase() === String(l.pivo).trim().toLowerCase() && (!l.fazenda || x.chaveFazenda === l.fazenda); })[0];
+    l.chaveFazenda = a ? a.chaveFazenda : (l.fazenda || "");
+    l.fazenda = a ? a.fazenda : "";
+  });
   todos.sort(function (a, b) { return a.data < b.data ? 1 : a.data > b.data ? -1 : a.id < b.id ? 1 : -1; });
   return todos.slice(0, limite || 30);
 }
@@ -1555,8 +1889,13 @@ function gravarLancamento_(d, u) {
   var tipo = d.tipo === "umidade" ? "umidade" : d.tipo === "irrigacao" ? "irrigacao" : null;
   if (!tipo) throw new Error("Tipo de lançamento desconhecido.");
   var alvo = String(d.pivo || "").trim().toLowerCase();
-  var p = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo; })[0];
+  var fazPedida = d.fazenda ? chaveFazenda_(d.fazenda) : "";
+  var candidatas = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo && (!fazPedida || x.chaveFazenda === fazPedida); });
+  if (candidatas.length > 1) throw new Error("Há mais de uma área chamada \"" + d.pivo + "\": informe a fazenda.");
+  var p = candidatas[0];
   if (!p) throw new Error("Pivô \"" + d.pivo + "\" não está na aba PIVOS.");
+  exigirFazenda_(u, p.chaveFazenda, p.fazenda);
+  if (p.semBalanco && tipo === "irrigacao") throw new Error(p.nome + " é um talhão sem balanço: não recebe irrigação.");
   var data = dataIso_(d.data, lerEstacao_().fuso);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error("Data inválida: " + d.data);
   if (data > hojeLocal_()) throw new Error("A data não pode ser no futuro.");
@@ -1587,6 +1926,7 @@ function gravarLancamento_(d, u) {
   while (linha.length < r.g.cab.length) linha.push("");
   linha[r.g.por - 1] = T_(por);
   linha[r.g.id - 1] = id;
+  if (r.g.fazenda > 0) linha[r.g.fazenda - 1] = p.fazenda;
   var idx = -1;
   r.linhas.forEach(function (l, i) { if (String(l[r.g.id - 1]) === id) idx = i; });
   var nLinha = idx >= 0 ? idx + 2 : r.g.aba.getLastRow() + 1;
@@ -1631,10 +1971,18 @@ function salvarPivo_(dados, nomeOriginal) {
   var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
   var nome = String(dados.nome || "").trim();
   if (!nome) throw new Error("Dê um nome ao pivô.");
-  var nomes = aba.getLastRow() >= 2 ? aba.getRange(2, 1, aba.getLastRow() - 1, 1).getValues().map(function (l) { return String(l[0]).trim().toLowerCase(); }) : [];
-  var idxOriginal = nomeOriginal ? nomes.indexOf(String(nomeOriginal).trim().toLowerCase()) : -1;
-  var idxNome = nomes.indexOf(nome.toLowerCase());
-  if (idxNome >= 0 && idxNome !== idxOriginal) throw new Error("Já existe um pivô chamado " + nome + ".");
+  var colFaz = cab.indexOf("Fazenda");
+  var fazendas = lerFazendas_();
+  var fazNome = dados.fazenda ? (fazendaPorChave_(dados.fazenda) || {}).nome : null;
+  if (dados.fazenda && !fazNome) throw new Error("Fazenda \"" + dados.fazenda + "\" não está na aba FAZENDAS.");
+  var chaveLinha = function (l) { return chaveFazenda_(colFaz >= 0 && l[colFaz] ? l[colFaz] : fazendas[0].nome) + "|" + String(l[0]).trim().toLowerCase(); };
+  var linhasAtuais = aba.getLastRow() >= 2 ? aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues() : [];
+  var chaves = linhasAtuais.map(chaveLinha);
+  var fazOriginal = dados.fazendaOriginal ? chaveFazenda_(dados.fazendaOriginal) : chaveFazenda_(fazNome || fazendas[0].nome);
+  var idxOriginal = nomeOriginal ? chaves.indexOf(fazOriginal + "|" + String(nomeOriginal).trim().toLowerCase()) : -1;
+  if (nomeOriginal && idxOriginal < 0) idxOriginal = linhasAtuais.map(function (l) { return String(l[0]).trim().toLowerCase(); }).indexOf(String(nomeOriginal).trim().toLowerCase());
+  var idxNome = chaves.indexOf(chaveFazenda_(fazNome || fazendas[0].nome) + "|" + nome.toLowerCase());
+  if (idxNome >= 0 && idxNome !== idxOriginal) throw new Error("Já existe uma área chamada " + nome + " nessa fazenda.");
   var linha = idxOriginal >= 0 ? idxOriginal + 2 : aba.getLastRow() + 1;
   var antiga = linha <= aba.getLastRow() ? aba.getRange(linha, 1, 1, cab.length).getValues()[0] : cab.map(function () { return ""; });
   var nova = cab.map(function (h, i) {
@@ -1643,6 +1991,8 @@ function salvarPivo_(dados, nomeOriginal) {
     var v = dados[c[0]];
     if (c[0] === "ativo" || c[0] === "palhada") return v === true || String(v).toUpperCase() === "SIM" ? "SIM" : "NÃO";
     if (c[0] === "nome" || c[0] === "cultura" || c[0] === "plantio" || c[0] === "inicioBalanco") return T_(String(v == null ? "" : v).trim());
+    if (c[0] === "fazenda") return T_(fazNome || "");
+    if (c[0] === "tipo") return /^t/i.test(chaveCultura_(String(v || ""))) ? "talhão" : "pivô";
     if (c[0] === "contorno") return T_(contornoLido_(typeof v === "string" ? v : JSON.stringify(v)) ? (typeof v === "string" ? v : JSON.stringify(v)) : "");
     var n = Motor.numero(v);
     return n === null ? "" : n;
@@ -1671,8 +2021,24 @@ function abaUsuarios_() {
   if (aba.getLastRow() === 0) {
     aba.getRange(1, 1, 1, COLS_USUARIOS.length).setValues([COLS_USUARIOS]).setFontWeight("bold");
     aba.setFrozenRows(1);
+  } else {
+    var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim().toUpperCase(); });
+    COLS_USUARIOS.forEach(function (h) { if (cab.indexOf(h) < 0) { aba.getRange(1, cab.length + 1).setValue(h).setFontWeight("bold"); cab.push(h); } });
   }
   return aba;
+}
+
+/** Fazendas que o usuário vê: null = todas (coluna FAZENDAS vazia, ou sem login exigido). */
+function fazendasDoUsuario_(u) {
+  if (!u || !u.fazendas || !u.fazendas.length) return null;
+  return u.fazendas;
+}
+function podeVerFazenda_(u, chave) {
+  var fs = fazendasDoUsuario_(u);
+  return !fs || fs.indexOf(chaveFazenda_(chave)) >= 0;
+}
+function exigirFazenda_(u, chave, oque) {
+  if (!podeVerFazenda_(u, chave)) throw new Error("Você não tem acesso à fazenda " + oque + ".");
 }
 
 function abaConfigApp_() {
@@ -1731,6 +2097,7 @@ function usuarios_() {
       perfil: String(l[c("PERFIL")]).trim().toUpperCase() === "ADMIN" ? "ADMIN" : "OPERADOR",
       pinNovo: String(l[c("PIN NOVO")]).trim(), pin: String(l[c("PIN")]).trim(),
       ativo: String(l[c("ATIVO")]).trim().toUpperCase() !== "NÃO", versao: Number(l[c("VERSÃO")]) || 1,
+      fazendas: c("FAZENDAS") < 0 ? [] : String(l[c("FAZENDAS")] || "").split(/[,;]+/).map(function (f) { return chaveFazenda_(f); }).filter(function (f) { return f; }),
     };
   }).filter(function (x) { return x.login; });
 }
@@ -1745,7 +2112,7 @@ function gravarCampoUsuario_(linha, campos) {
 }
 
 function usuarioPublico_(u) {
-  return { nome: u.nome, login: u.login, perfil: u.perfil };
+  return { nome: u.nome, login: u.login, perfil: u.perfil, fazendas: u.fazendas || [] };
 }
 
 function pinValido_(pin) {
@@ -1813,7 +2180,7 @@ function exigirAdmin_(u) {
 
 function listarUsuarios_() {
   return usuarios_().map(function (x) {
-    return { nome: x.nome, login: x.login, perfil: x.perfil, ativo: x.ativo, temPin: !!(x.pin || x.pinNovo) };
+    return { nome: x.nome, login: x.login, perfil: x.perfil, ativo: x.ativo, temPin: !!(x.pin || x.pinNovo), fazendas: x.fazendas || [] };
   });
 }
 
@@ -1845,6 +2212,11 @@ function gravarUsuario_(d) {
   var linha = atual ? atual.linha : aba.getLastRow() + 1;
   var versao = atual ? atual.versao + (s.pin || ativo === "NÃO" || perfil !== atual.perfil ? 1 : 0) : 1;
   var campos = { "NOME": T_(String(s.nome).trim()), "LOGIN": login, "PERFIL": perfil, "ATIVO": ativo, "VERSÃO": versao };
+  if ("fazendas" in s) {
+    var lista = Array.isArray(s.fazendas) ? s.fazendas : String(s.fazendas || "").split(/[,;]+/);
+    var validas = lerFazendas_().filter(function (f) { return lista.map(chaveFazenda_).indexOf(f.chave) >= 0; }).map(function (f) { return f.nome; });
+    campos["FAZENDAS"] = T_(validas.join(", "));
+  }
   if (s.pin) {
     campos["PIN"] = hashPin_(login, String(s.pin));
     campos["PIN NOVO"] = "";

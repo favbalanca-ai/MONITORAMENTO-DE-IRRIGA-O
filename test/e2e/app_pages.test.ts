@@ -11,7 +11,7 @@ import { deflateRawSync } from "node:zlib";
 import { extname, join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { deLocal } from "../../src/coletor/tempo.ts";
-import { criarAmbiente, type Ambiente } from "../apps_script/fake.ts";
+import { criarAmbiente, setFazenda, type Ambiente } from "../apps_script/fake.ts";
 import { leiturasMeteoCorrigido } from "../pivo2_exemplo.ts";
 
 const PASTA_APP = new URL("../../app/", import.meta.url).pathname;
@@ -468,4 +468,50 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   await page.getByText(/Desenho "Pivô 3" · raio ≈ [34]\d\d m · 37 pontos/).waitFor();
   assert.equal(await page.inputValue("#p_latitude"), "-14,9");
   await ctx.close();
+});
+
+test("duas fazendas: seletor no app, talhão com relatório do ciclo, operador vê só a sua fazenda", async () => {
+  const amb = planilha();
+  setFazenda(amb, "MAC da estação Ecowitt (vazio = sem estação)", "AA:BB:CC:DD:EE:FF"); // Água Viva tem estação
+  amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "", 3126208, 2, 18, 21]);
+  const time: string[] = [], serie = (v: number) => Array.from({ length: 94 }, () => v);
+  for (let i = 92; i >= -1; i--) time.push(new Date(Date.parse("2026-02-08T00:00:00Z") - i * 86400000).toISOString().slice(0, 10));
+  const omDiario = { daily: { time, temperature_2m_max: serie(31), temperature_2m_min: serie(19), temperature_2m_mean: serie(25), relative_humidity_2m_mean: serie(55), wind_speed_10m_mean: serie(2), shortwave_radiation_sum: serie(21), precipitation_sum: serie(0), et0_fao_evapotranspiration: serie(4.5), sunshine_duration: serie(9 * 3600) } };
+  amb.respostaHttp = (url) => (url.includes("past_days=92") ? { code: 200, corpo: omDiario } : { code: 500, corpo: {} });
+  const adm = amb.post({ __login: { login: "fabiana", pin: "1234" } }).token;
+  amb.post({ s: adm, __pivo: { dados: { nome: "Talhão 1", fazenda: "Novo Pago", tipo: "talhão", ativo: "SIM", cultura: "milho", plantio: "2026-01-05", palhada: "NÃO" }, original: null } });
+  amb.aba("USUÁRIOS APP").appendRow(["Carlos", "carlos", "OPERADOR", "9999", "", "SIM", 1, "", "Novo Pago"]);
+
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "fabiana", "1234");
+  await page.locator("#faz-sel").waitFor();
+  assert.deepEqual(await page.locator("#faz-sel option").allTextContents(), ["Água Viva", "Novo Pago (sem estação)"]);
+  await page.locator(".card.pivo").first().waitFor();
+  assert.equal(await page.locator(".card.sem-ciclo").count(), 0);
+  await page.selectOption("#faz-sel", "novo pago");
+  await page.locator(".card.sem-ciclo").waitFor();
+  const talhao = await page.locator(".card.sem-ciclo").innerText();
+  assert.match(talhao, /Talhão 1[\s\S]*Milho[\s\S]*talhão[\s\S]*GRAUS-DIA\s+525/i); // 35 d × (25 − 10)
+  assert.match(talhao, /LUZ \(FOTOPERÍODO\)[\s\S]*HORAS DE SOL\s+315/i);
+  assert.match(talhao, /34 dias desde o plantio · faltam 86/);
+  assert.equal(await page.locator(".card.pivo").count(), 0);
+  // cadastro: a lista mostra só as áreas da fazenda escolhida e o formulário tem Fazenda/Tipo
+  await page.goto(base + "#/pivos");
+  await page.getByText(/Talhão \(só relatório do ciclo\)/).waitFor();
+  assert.equal(await page.getByText("Pivô 2", { exact: true }).count(), 0);
+  await page.getByRole("link", { name: "Editar" }).click();
+  assert.equal(await page.locator("#p_tipo").inputValue(), "talhão");
+  assert.equal(await page.locator('fieldset[data-grupo="Equipamento"]').isHidden(), true);
+  await page.screenshot({ path: PRINTS + "13_fazendas.png", fullPage: true });
+  await ctx.close();
+
+  // operador restrito: sem seletor, só o Novo Pago
+  const op = await abrir(amb);
+  await configurarEEntrar(op.page, "carlos", "9999");
+  await op.page.locator(".card.sem-ciclo").waitFor();
+  assert.equal(await op.page.locator("#faz-sel").count(), 0);
+  assert.equal(await op.page.locator(".card.pivo").count(), 0);
+  await op.page.getByRole("link", { name: /Lançar/ }).click();
+  assert.deepEqual(await op.page.locator("#l-pivo option").allTextContents(), []); // talhão sem balanço não recebe irrigação
+  await op.ctx.close();
 });

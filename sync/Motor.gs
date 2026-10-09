@@ -147,7 +147,19 @@ var Motor = (function () {
           rad: rads.length ? wm2ParaMJDia(media(rads)) : NaN,
           chuva: chuvaNoite + chuvaDia,
           n: fatiasCobertas(janela, ini, fim),
+          horasSol: horasDeSol(janela),
       };
+  }
+  /** Radiação a partir da qual a leitura conta como "sol" (W/m²) — o limiar clássico de insolação do heliógrafo. */
+  const RAD_SOL_WM2 = 120;
+  /** Horas de sol efetivo: leituras com radiação acima do limiar, cada uma valendo o seu intervalo. */
+  function horasDeSol(janela) {
+      var _a;
+      let min = 0;
+      for (const l of janela)
+          if (l.radWm2 !== null && l.radWm2 > RAD_SOL_WM2)
+              min += (_a = l.intervaloMin) !== null && _a !== void 0 ? _a : 10;
+      return Math.round((min / 60) * 10) / 10;
   }
   /**
    * Quanto da janela tem leitura, em equivalentes de 10 min (máximo 144). Cada leitura "vale" o tempo do seu
@@ -239,6 +251,14 @@ var Motor = (function () {
           0.082 *
           dr *
           (ws * Math.sin(phi) * Math.sin(delta) + Math.cos(phi) * Math.cos(delta) * Math.sin(ws)));
+  }
+  /** Fotoperíodo: horas entre o nascer e o pôr do sol pela latitude e data — FAO-56 eq. 34 (N = 24/π · ωs). */
+  function fotoperiodoH(latitude, data) {
+      const j = diaDoAno(data);
+      const phi = (latitude * Math.PI) / 180;
+      const delta = 0.409 * Math.sin((2 * Math.PI * j) / 365 - 1.39);
+      const ws = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(delta))));
+      return (24 / Math.PI) * ws;
   }
   /** Converte o vento medido na altura h para 2 m — FAO-56 eq. 47. */
   const ventoA2m = (u, h) => h === 2 ? u : (u * 4.87) / Math.log(67.8 * h - 5.42);
@@ -1077,6 +1097,79 @@ var Motor = (function () {
       }
       return melhor;
   }
+  // ---- src/motor/ciclo.ts ----
+  /**
+   * Resumo meteorológico do ciclo de uma área (pivô ou talhão): graus-dia, horas de luz, chuva, ET₀ e extremos
+   * do plantio até o dia do cálculo. É o "relatório do ciclo" — serve também para talhão sem pivô.
+   */
+  
+  
+  const TEMP_DIA_QUENTE = 32;
+  const TEMP_DIA_FRIO = 10;
+  function resumoCiclo(cultura, plantio, ate, latitude, clima, et0PorDia, grausDiaCiclo) {
+      var _a, _b, _c;
+      const porData = new Map(clima.map((d) => [d.data, d]));
+      const serie = [];
+      let gdAcum = 0, foto = 0, sol = 0, temSol = false, chuva = 0, diasChuva = 0, et0 = 0, tmaxAbs = -Infinity, tminAbs = Infinity, somaT = 0, nT = 0, quentes = 0, frios = 0, comClima = 0;
+      let fotoHoje = 0, solHoje = null;
+      for (let t = Date.parse(plantio + "T00:00:00Z"); t <= Date.parse(ate + "T00:00:00Z"); t += 86400000) {
+          const data = new Date(t).toISOString().slice(0, 10);
+          const fp = fotoperiodoH(latitude, data);
+          foto += fp;
+          fotoHoje = fp;
+          const d = porData.get(data);
+          if (!d || !Number.isFinite(d.tmed))
+              continue;
+          comClima++;
+          const gd = grausDiaDoDia(cultura, d.tmed);
+          gdAcum += gd;
+          if (d.horasSol !== undefined) {
+              sol += d.horasSol;
+              temSol = true;
+              solHoje = d.horasSol;
+          }
+          chuva += d.chuva;
+          if (d.chuva >= 1)
+              diasChuva++;
+          const e = (_a = et0PorDia.get(data)) !== null && _a !== void 0 ? _a : 0;
+          et0 += e;
+          if (d.tmax > tmaxAbs)
+              tmaxAbs = d.tmax;
+          if (d.tmin < tminAbs)
+              tminAbs = d.tmin;
+          somaT += d.tmed;
+          nT++;
+          if (d.tmax >= TEMP_DIA_QUENTE)
+              quentes++;
+          if (d.tmin <= TEMP_DIA_FRIO)
+              frios++;
+          serie.push({ data, gd: Math.round(gd * 10) / 10, gdAcum: Math.round(gdAcum), fotoperiodo: Math.round(fp * 100) / 100, horasSol: (_b = d.horasSol) !== null && _b !== void 0 ? _b : null, chuva: d.chuva, et0: Math.round(e * 100) / 100, tmax: d.tmax, tmin: d.tmin });
+      }
+      const fim = fimDoCicloDas(cultura);
+      const dias = das(ate, plantio) + 1;
+      return {
+          plantio, ate, dias, diasComClima: comClima,
+          grausDia: Math.round(gdAcum),
+          grausDiaCiclo: grausDiaCiclo !== null && grausDiaCiclo !== void 0 ? grausDiaCiclo : null,
+          fracaoGrausDia: grausDiaCiclo ? Math.round((gdAcum / grausDiaCiclo) * 1000) / 1000 : null,
+          tBaseC: (_c = cultura.tBaseC) !== null && _c !== void 0 ? _c : null,
+          fotoperiodoHojeH: Math.round(fotoHoje * 100) / 100,
+          fotoperiodoAcumH: Math.round(foto),
+          horasSolAcumH: temSol ? Math.round(sol) : null,
+          horasSolHojeH: solHoje,
+          chuvaMm: Math.round(chuva * 10) / 10,
+          diasComChuva: diasChuva,
+          et0Mm: Math.round(et0 * 10) / 10,
+          tmaxAbs: nT ? tmaxAbs : NaN,
+          tminAbs: nT ? tminAbs : NaN,
+          tmedia: nT ? Math.round((somaT / nT) * 10) / 10 : NaN,
+          diasQuentes: quentes,
+          diasFrios: frios,
+          fimCicloDas: fim,
+          faltamDias: fim - das(ate, plantio),
+          serie,
+      };
+  }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
   function formatador(fuso) {
@@ -1325,19 +1418,28 @@ var Motor = (function () {
       return { cont, aguaM3, kwh, custo, ha };
   }
   /** Texto do relatório do dia — cabe no WhatsApp, com *negrito* no estilo do WhatsApp. */
-  function montarMensagem(data, clima, itens, previsao = []) {
+  /** Linha do ciclo para o relatório: graus-dia, luz, chuva e ET₀ acumulados desde o plantio. */
+  function linhaCiclo(c) {
+      var _a;
+      const gd = `${n0(c.grausDia)} GD` + (c.grausDiaCiclo ? ` de ${n0(c.grausDiaCiclo)} (${n0(((_a = c.fracaoGrausDia) !== null && _a !== void 0 ? _a : 0) * 100)}%)` : c.tBaseC !== null ? ` (base ${c.tBaseC} °C)` : "");
+      const luz = `luz ${n1(c.fotoperiodoHojeH)} h/dia (${n0(c.fotoperiodoAcumH)} h acum.)` + (c.horasSolAcumH !== null ? ` · sol ${n0(c.horasSolAcumH)} h` : "");
+      return `Ciclo ${c.dias} d: ${gd} · ${luz} · chuva ${n1(c.chuvaMm)} mm em ${c.diasComChuva} d · ET₀ ${n0(c.et0Mm)} mm · ${n0(c.tminAbs)}–${n0(c.tmaxAbs)} °C` +
+          (c.diasQuentes ? ` · ${c.diasQuentes} d > 32 °C` : "") + (c.diasFrios ? ` · ${c.diasFrios} d < 10 °C` : "") + (c.faltamDias >= 0 ? ` · faltam ${c.faltamDias} d` : ` · ciclo encerrado há ${-c.faltamDias} d`);
+  }
+  function montarMensagem(data, clima, itens, previsao = [], nomeFazenda = "") {
       var _a, _b, _c, _d, _e;
       const irrigar = itens.filter((i) => { var _a; return ((_a = i.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; }).length;
-      const assunto = `Manejo ${br(data)}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
+      const assunto = `Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
       const rs = resumoDoDia(itens);
       const l = [
-          `💧 *Manejo de irrigação — ${br(data)}*`,
+          `💧 *Manejo de irrigação — ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}*`,
           `Janela ${br(diaAnterior(data))} 18h → ${br(data)} 18h`,
           `🔴 ${rs.cont.ruim} irrigar · 🟡 ${rs.cont.atencao} atenção · 🟢 ${rs.cont.bom} ok${rs.cont.sem ? ` · ⚫ ${rs.cont.sem} sem dados` : ""}`,
       ];
       if (rs.ha > 0)
           l.push(`Hoje: ${n0(rs.aguaM3)} m³ de água em ${n1(rs.ha)} ha · ${n0(rs.kwh)} kWh · R$ ${n2(rs.custo)}`);
-      l.push(`ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s · ${clima.n} de 144 leituras`);
+      l.push(`ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s` +
+          (clima.horasSol !== undefined ? ` · sol ${n1(clima.horasSol)} h` : "") + ` · ${clima.n} de 144 leituras`);
       if ((_a = clima.estimados) === null || _a === void 0 ? void 0 : _a.length)
           l.push(`⚠️ Estação sem dado de ${clima.estimados.join(", ")}: valores do dia vizinho.`);
       const prox = previsao.filter((d) => d.data > data).slice(0, 3);
@@ -1353,7 +1455,9 @@ var Motor = (function () {
           l.push("");
           const x = it.linha;
           if (!x) {
-              l.push(`⚫ *${it.pivo.nome}* — ${(_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo"}`);
+              l.push(`${it.pivo.semBalanco ? "🌱" : "⚫"} *${it.pivo.nome}* — ${it.pivo.cultura.nome}${it.pivo.semBalanco ? " (talhão)" : ""} — ${(_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo"}`);
+              if (it.ciclo)
+                  l.push(`   ${linhaCiclo(it.ciclo)}`);
               continue;
           }
           const sem = semaforoDoItem(it);
@@ -1400,6 +1504,8 @@ var Motor = (function () {
           if (it.historico && it.historico.length > 1) {
               l.push(`   Déficit (mm) nos últimos dias: ${it.historico.map((h) => `${br(h.data)} ${n0(h.deficit)}`).join(" · ")}`);
           }
+          if (it.ciclo)
+              l.push(`   ${linhaCiclo(it.ciclo)}`);
           for (const a of x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado")))
               l.push(`   ⚠️ ${a}`);
           if (it.diasIncertos)
@@ -1410,7 +1516,7 @@ var Motor = (function () {
   }
   const h = (t) => String(t !== null && t !== void 0 ? t : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   /** Versão em HTML do mesmo relatório, para o e-mail (cores do semáforo e tabelinha por pivô). */
-  function montarMensagemHtml(data, clima, itens, previsao = [], linkApp = "") {
+  function montarMensagemHtml(data, clima, itens, previsao = [], linkApp = "", nomeFazenda = "") {
       var _a, _b, _c, _d, _e;
       const rs = resumoDoDia(itens);
       const prox = previsao.filter((d) => d.data > data).slice(0, 3);
@@ -1418,7 +1524,7 @@ var Motor = (function () {
       const chip = (txt, cor) => `<span style="display:inline-block;background:${cor};color:#fff;border-radius:999px;padding:3px 10px;font-weight:700;font-size:12px;margin-right:4px">${txt}</span>`;
       const linha = (rot, val) => `<tr><td style="padding:3px 8px 3px 0;color:#64757d;white-space:nowrap">${rot}</td><td style="padding:3px 0">${val}</td></tr>`;
       let html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#33474f;max-width:640px;font-size:14px;line-height:1.45">`;
-      html += `<h2 style="color:#16404d;margin:0 0 4px">💧 Manejo de irrigação — ${h(br(data))}</h2>`;
+      html += `<h2 style="color:#16404d;margin:0 0 4px">💧 Manejo de irrigação — ${h(br(data))}${nomeFazenda ? ` · ${h(nomeFazenda)}` : ""}</h2>`;
       html += `<div style="color:#64757d;font-size:13px;margin-bottom:10px">Janela ${h(br(diaAnterior(data)))} 18h → ${h(br(data))} 18h</div>`;
       html += `<div style="margin-bottom:10px">${chip(`${rs.cont.ruim} irrigar`, SEM_COR.ruim)}${chip(`${rs.cont.atencao} atenção`, SEM_COR.atencao)}${chip(`${rs.cont.bom} ok`, SEM_COR.bom)}${rs.cont.sem ? chip(`${rs.cont.sem} sem dados`, SEM_COR.sem) : ""}</div>`;
       if (rs.ha > 0)
@@ -1435,7 +1541,10 @@ var Motor = (function () {
           const fim = it.fimCicloDas !== undefined && x ? it.fimCicloDas - x.das : null;
           html += `<div style="display:flex;justify-content:space-between"><b style="font-size:15px;color:#16404d">${h(it.pivo.nome)}</b>${x ? chip(x.decisao, SEM_COR[sem]) : ""}</div>`;
           if (!x) {
-              html += `<div style="color:#64757d">${h((_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo")}</div></div>`;
+              html += `<div style="color:#64757d">${h(it.pivo.cultura.nome)}${it.pivo.semBalanco ? " · talhão" : ""} — ${h((_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo")}</div>`;
+              if (it.ciclo)
+                  html += `<div style="font-size:13px;margin-top:6px">${h(linhaCiclo(it.ciclo))}</div>`;
+              html += `</div>`;
               continue;
           }
           html += `<div style="color:#64757d;font-size:13px;margin-bottom:6px">${h(it.pivo.cultura.nome)} · ${h(x.estadio)} · ${x.das} DAS${fim !== null ? (fim >= 0 ? ` · faltam ${fim} d do ciclo` : ` · <span style="color:#c62828">ciclo encerrado há ${-fim} d</span>`) : ""}</div>`;
@@ -1462,6 +1571,8 @@ var Motor = (function () {
               html += linha("Lançamentos", `${it.ultimaIrrigacao ? `última irrigação ${h(br(it.ultimaIrrigacao.data))} (${n1(it.ultimaIrrigacao.mm)} mm)` : "sem irrigação lançada"}${it.ultimaMedicao ? ` · última medição ${h(br(it.ultimaMedicao.data))} (${n0(it.ultimaMedicao.umidadeRaizPct)}%)` : ""}`);
           if (it.historico && it.historico.length > 1)
               html += linha("Déficit (mm)", it.historico.map((d) => `${h(br(d.data))} <b>${n0(d.deficit)}</b>`).join(" · "));
+          if (it.ciclo)
+              html += linha("Ciclo", h(linhaCiclo(it.ciclo)).replace(/^Ciclo \d+ d: /, ""));
           html += `</table>`;
           const alertas = x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado"));
           if (alertas.length)
@@ -1481,5 +1592,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, montarMensagem, montarMensagemHtml };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, montarMensagem, montarMensagemHtml };
 })();

@@ -105,6 +105,11 @@ h1,h2,h3{letter-spacing:-.01em}
 @media(min-width:960px){.cards{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .loading{color:var(--muted);padding:30px 0}
 .fila-bar{background:var(--amber-soft);color:#7a5200;font-size:13px;padding:8px 26px;border-bottom:1px solid #f0dca0}
+.faz-bar{display:flex;align-items:center;gap:10px;padding:8px 26px;background:var(--teal-soft);border-bottom:1px solid var(--line)}
+.faz-rot{margin:0;font-size:12px;font-weight:700;color:var(--ink2);white-space:nowrap;display:flex;align-items:center;gap:5px}
+.faz-bar select{max-width:320px;min-height:36px;padding:6px 10px}
+.card.sem-ciclo{border-left:5px solid var(--teal)}
+.kpis-ciclo div{background:var(--teal-soft)}.kpis-ciclo b{color:var(--ink2)}
 
 /* Peças */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px;animation:entra .25s ease both}
@@ -307,6 +312,7 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   #page-title{font-size:17px}
   .content{padding:14px 16px calc(90px + env(safe-area-inset-bottom,0px))}
   .fila-bar{padding:8px 16px}
+  .faz-bar{padding:8px 16px}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .semaforos{gap:6px}
   .resumo h2{font-size:18px}

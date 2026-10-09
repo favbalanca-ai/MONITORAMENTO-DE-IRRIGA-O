@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { deLocal } from "../src/coletor/tempo.ts";
-import { criarAmbiente, type Ambiente } from "./apps_script/fake.ts";
+import { criarAmbiente, setFazenda, type Ambiente } from "./apps_script/fake.ts";
 import { leiturasMeteoCorrigido } from "./pivo2_exemplo.ts";
 
 /** Planilha instalada, leituras de jan/fev, "agora" = 08/02 19h e um admin e um operador. */
@@ -31,7 +31,7 @@ test("login com PIN: admin, PIN NOVO da planilha vira hash, PIN errado bloqueia 
   const amb = pronto();
   const a = entrar(amb, "FABIANA", "1234");
   assert.equal(a.ok, true);
-  assert.deepEqual(a.usuario, { nome: "Fabiana", login: "fabiana", perfil: "ADMIN" });
+  assert.deepEqual({ ...a.usuario, fazendas: [...a.usuario.fazendas] }, { nome: "Fabiana", login: "fabiana", perfil: "ADMIN", fazendas: [] });
   assert.ok(a.token.includes("."));
 
   const j = entrar(amb, "jose", "4321");
@@ -353,9 +353,77 @@ test("ESTACAO: chuva mínima e horário de ponta entram no cálculo; tarifa de p
   assert.match(it.texto, /Ligar às \*21:00\* \(fora da ponta\)/);
   // chuva de 4,3 mm no dia conta (≥ 2); muda o mínimo para 5 e ela deixa de contar
   assert.equal(Math.round(l.chuva * 10) / 10, 4.3);
-  const est = amb.aba("ESTACAO");
-  est.set(est.dados.findIndex((x) => String(x[0]).startsWith("Chuva mínima")) + 1, 2, 5);
+  setFazenda(amb, "Chuva mínima que conta (mm)", 5);
   const l2 = amb.chamar<{ itens: { linha: { chuva: number; alertas: string[] } }[] }>("calcular_", "2026-02-08").itens[0]!.linha;
   assert.equal(l2.chuva, 0);
   assert.ok(l2.alertas.some((a) => /abaixo de 5 mm/.test(a)));
+});
+
+test("duas fazendas: cada usuário vê só a sua; talhão sem pivô tem só o relatório do ciclo", () => {
+  const amb = pronto();
+  // segunda fazenda sem estação: o clima vem do Open-Meteo (92 dias passados)
+  const faz = amb.aba("FAZENDAS");
+  faz.appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);
+  const time: string[] = [], tmax: number[] = [], tmin: number[] = [], tmean: number[] = [], ur: number[] = [], vento: number[] = [], rad: number[] = [], chuva: number[] = [], et0: number[] = [], sol: number[] = [];
+  for (let i = 92; i >= -1; i--) {
+    const d = new Date(Date.parse("2026-02-08T00:00:00Z") - i * 86400000).toISOString().slice(0, 10);
+    time.push(d); tmax.push(30); tmin.push(18); tmean.push(24); ur.push(60); vento.push(2); rad.push(20); chuva.push(i % 7 === 0 ? 8 : 0); et0.push(4.2); sol.push(8 * 3600);
+  }
+  const omDiario = { daily: { time, temperature_2m_max: tmax, temperature_2m_min: tmin, temperature_2m_mean: tmean, relative_humidity_2m_mean: ur, wind_speed_10m_mean: vento, shortwave_radiation_sum: rad, precipitation_sum: chuva, et0_fao_evapotranspiration: et0, sunshine_duration: sol } };
+  amb.respostaHttp = (url) => (url.includes("past_days=92") ? { code: 200, corpo: omDiario } : { code: 500, corpo: {} });
+  // áreas da fazenda nova: um pivô (copiando o Pivô 2) e um talhão só com cultura e plantio
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  assert.deepEqual([...cad.fazendas.map((f: { nome: string }) => f.nome)], ["Água Viva", "Novo Pago"]);
+  let r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 1", fazenda: "Novo Pago", plantio: "2026-01-10", inicioBalanco: "2026-01-10" }, original: null } });
+  assert.equal(r.ok, true, r.erro);
+  r = amb.post({ s: adm, __pivo: { dados: { nome: "Talhão 1", fazenda: "Novo Pago", tipo: "talhão", ativo: "SIM", cultura: "milho", plantio: "2026-01-05", palhada: "NÃO" }, original: null } });
+  assert.equal(r.ok, true, r.erro);
+  // mesmo nome em fazendas diferentes é permitido
+  r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 2", fazenda: "Novo Pago" }, original: null } });
+  assert.equal(r.ok, true, r.erro);
+  assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 2", fazenda: "Novo Pago" }, original: null } }).erro, /Já existe uma área chamada Pivô 2 nessa fazenda/);
+
+  const calc = amb.chamar<{ fazendas: { cfg: { nome: string }; itens: { pivo: { nome: string; semBalanco: boolean }; linha?: unknown; aviso?: string; ciclo: { grausDia: number; horasSolAcumH: number | null; fotoperiodoAcumH: number } }[]; assunto: string; texto: string }[] }>("calcular_", "2026-02-08");
+  assert.deepEqual([...calc.fazendas.map((f) => f.cfg.nome)], ["Água Viva", "Novo Pago"]);
+  const np = calc.fazendas[1]!;
+  assert.match(np.assunto, /Manejo 08\/02 · Novo Pago/);
+  const talhao = np.itens.find((i) => i.pivo.nome === "Talhão 1")!;
+  assert.equal(talhao.pivo.semBalanco, true);
+  assert.equal(talhao.linha, undefined);
+  assert.match(talhao.aviso!, /talhão sem balanço/);
+  assert.equal(talhao.ciclo.grausDia, 35 * 14); // 35 dias (05/01–08/02) × (24 − 10)
+  assert.equal(talhao.ciclo.horasSolAcumH, 35 * 8);
+  assert.match(np.texto, /🌱 \*Talhão 1\* — Milho \(talhão\)[\s\S]*Ciclo 35 d: 490 GD/);
+  const p1 = np.itens.find((i) => i.pivo.nome === "Pivô 1")!;
+  assert.ok(p1.linha, "pivô da fazenda sem estação tem balanço pelo Open-Meteo");
+  assert.ok((p1.linha as { alertas: string[] }).alertas.some((a) => /Open-Meteo/.test(a)));
+
+  // operador restrito ao Novo Pago
+  amb.aba("USUÁRIOS APP").appendRow(["Carlos", "carlos", "OPERADOR", "9999", "", "SIM", 1, "", "Novo Pago"]);
+  const op = entrar(amb, "carlos", "9999").token;
+  const d = amb.get({ acao: "dados", s: op });
+  assert.deepEqual([...d.fazendas.map((f: { nome: string }) => f.nome)], ["Novo Pago"]);
+  assert.deepEqual([...d.resumo.pivos.map((p: { nome: string }) => p.nome)].sort(), ["Pivô 1", "Pivô 2", "Talhão 1"]);
+  assert.ok(d.resumo.pivos.every((p: { fazenda: string }) => p.fazenda === "Novo Pago"));
+  assert.deepEqual([...d.cadastro.pivos.map((p: { nome: string }) => p.nome)].sort(), ["Pivô 1", "Pivô 2", "Talhão 1"]);
+  assert.equal(d.estacoes["novo pago"].temEstacao, false);
+  // lançar na fazenda do outro: recusa; na própria, com o nome repetido, precisa dizer a fazenda
+  assert.match(amb.post({ s: op, __lancamento: { id: "L1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "10", fazenda: "Água Viva" } }).erro, /não tem acesso à fazenda/);
+  assert.match(amb.post({ s: op, __lancamento: { id: "L1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "10" } }).erro, /mais de uma área chamada/);
+  const ok = amb.post({ s: op, __lancamento: { id: "L1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "10", fazenda: "Novo Pago" } });
+  assert.equal(ok.ok, true, ok.erro);
+  assert.equal(amb.aba("IRRIGACOES").objetos()[0]!["Fazenda"], "Novo Pago");
+  assert.match(amb.post({ s: op, __lancamento: { id: "L2", tipo: "irrigacao", pivo: "Talhão 1", data: "2026-02-08", mm: "10", fazenda: "Novo Pago" } }).erro, /talhão sem balanço/);
+  // o admin (sem restrição) vê tudo, e a irrigação ficou na área certa
+  const tudo = amb.get({ acao: "dados", s: adm });
+  assert.equal(tudo.resumo.pivos.length, 4);
+  const p2np = tudo.resumo.pivos.find((p: { nome: string; fazenda: string }) => p.nome === "Pivô 2" && p.fazenda === "Novo Pago");
+  const p2av = tudo.resumo.pivos.find((p: { nome: string; fazenda: string }) => p.nome === "Pivô 2" && p.fazenda === "Água Viva");
+  assert.equal(p2np.irrigacao, 10);
+  assert.equal(p2av.irrigacao, 0);
+  assert.equal(tudo.lancamentos[0].fazenda, "Novo Pago");
+  // histórico e rosa respeitam a fazenda
+  assert.match(amb.get({ acao: "historico", s: op, pivo: "Pivô 2", fazenda: "Água Viva" }).erro, /não tem acesso/);
+  assert.equal(amb.get({ acao: "historico", s: op, pivo: "Pivô 2", fazenda: "Novo Pago" }).historico.fazenda, "Novo Pago");
 });

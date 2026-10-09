@@ -33,9 +33,13 @@ feitos sem internet.
   Open-Meteo) e a melhor hora pra aplicar (janelas boas; senão as de atenção; senão a hora menos ruim).
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede).
-- **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê.
+- **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
+  **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
+  cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).
   Posição: **Importar KMZ com os pivôs** (um desenho por pivô, casado pelo nome ou número), ou no pivô
   **KMZ/KML** de um desenho só, ou **📍 Usar minha posição** parado no centro do pivô.
+- **Fazendas** — com mais de uma fazenda na planilha aparece um seletor no topo; cada usuário só vê as fazendas
+  que o administrador liberou para ele (Ajustes → Usuários).
 - **Ajustes** — endereço da planilha (/exec), puxar/enviar agora, lançamentos recusados, conta,
   usuários (administrador) e o registro das conversas com a planilha.
 - **Entrar** — login + PIN. **Minha conta** — trocar PIN, sair.

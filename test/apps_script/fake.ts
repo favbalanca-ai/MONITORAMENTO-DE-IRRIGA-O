@@ -273,3 +273,14 @@ export function criarAmbiente(): Ambiente {
   amb.post = (corpo) => JSON.parse((amb.chamar<{ texto: string }>("doPost", { postData: { contents: JSON.stringify(corpo) } })).texto);
   return amb;
 }
+
+/** Escreve um valor na linha de uma fazenda da aba FAZENDAS (pelo cabeçalho). Sem nome = a primeira linha. */
+export function setFazenda(amb: Ambiente, coluna: string, valor: Celula, fazenda?: string) {
+  const aba = amb.aba("FAZENDAS");
+  const cab = aba.dados[0]!.map(String);
+  const col = cab.indexOf(coluna);
+  if (col < 0) throw new Error(`FAZENDAS sem a coluna ${coluna}`);
+  let linha = 2;
+  if (fazenda) { const i = aba.dados.findIndex((l, k) => k > 0 && String(l[0]) === fazenda); if (i < 0) throw new Error(`fazenda ${fazenda} não existe`); linha = i + 1; }
+  aba.set(linha, col + 1, valor);
+}

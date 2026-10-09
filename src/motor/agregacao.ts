@@ -56,7 +56,18 @@ export function agregarDia(leituras: Leitura[], data: DataISO): DiaClima | null 
     rad: rads.length ? wm2ParaMJDia(media(rads)) : NaN,
     chuva: chuvaNoite + chuvaDia,
     n: fatiasCobertas(janela, ini, fim),
+    horasSol: horasDeSol(janela),
   };
+}
+
+/** Radiação a partir da qual a leitura conta como "sol" (W/m²) — o limiar clássico de insolação do heliógrafo. */
+export const RAD_SOL_WM2 = 120;
+
+/** Horas de sol efetivo: leituras com radiação acima do limiar, cada uma valendo o seu intervalo. */
+export function horasDeSol(janela: Leitura[]): number {
+  let min = 0;
+  for (const l of janela) if (l.radWm2 !== null && l.radWm2 > RAD_SOL_WM2) min += l.intervaloMin ?? 10;
+  return Math.round((min / 60) * 10) / 10;
 }
 
 /**

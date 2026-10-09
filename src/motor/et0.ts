@@ -24,6 +24,15 @@ export function radiacaoExtraterrestre(latitude: number, data: DataISO): number 
   );
 }
 
+/** Fotoperíodo: horas entre o nascer e o pôr do sol pela latitude e data — FAO-56 eq. 34 (N = 24/π · ωs). */
+export function fotoperiodoH(latitude: number, data: DataISO): number {
+  const j = diaDoAno(data);
+  const phi = (latitude * Math.PI) / 180;
+  const delta = 0.409 * Math.sin((2 * Math.PI * j) / 365 - 1.39);
+  const ws = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(delta))));
+  return (24 / Math.PI) * ws;
+}
+
 /** Converte o vento medido na altura h para 2 m — FAO-56 eq. 47. */
 export const ventoA2m = (u: number, h: number): number =>
   h === 2 ? u : (u * 4.87) / Math.log(67.8 * h - 5.42);

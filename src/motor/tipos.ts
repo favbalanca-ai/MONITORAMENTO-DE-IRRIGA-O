@@ -39,6 +39,8 @@ export interface DiaClima {
   et0Externa?: number;
   /** Leituras na janela, em equivalentes de 10 min (144 = dia completo). */
   n: number;
+  /** Horas com sol "forte" (radiação acima de 120 W/m²) medidas pela estação. */
+  horasSol?: number;
   /** Campos que faltaram na janela e foram preenchidos com o dia válido mais próximo. */
   estimados?: string[];
 }

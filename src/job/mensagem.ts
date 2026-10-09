@@ -2,6 +2,7 @@ import type { LinhaBalanco } from "../motor/balanco.ts";
 import type { DataISO, DiaClima } from "../motor/tipos.ts";
 import { diaAnterior } from "../motor/agregacao.ts";
 import { avisoChuva, chuvaPrevista, type DiaPrevisao } from "../motor/previsao.ts";
+import type { ResumoCiclo } from "../motor/ciclo.ts";
 
 /** Número no formato brasileiro (1.234,5) sem depender do Intl — o Apps Script nem sempre tem pt-BR. */
 function br_(x: number, casas: number): string {
@@ -20,8 +21,10 @@ function horas(h: number): string {
 }
 
 export interface ItemRelatorio {
-  pivo: { nome: string; cultura: { nome: string }; laminaMinimaMm?: number; equipamento?: { raioM: number; anguloGraus: number } };
+  pivo: { nome: string; cultura: { nome: string }; laminaMinimaMm?: number; equipamento?: { raioM: number; anguloGraus: number }; tipo?: string; semBalanco?: boolean };
   linha?: LinhaBalanco;
+  /** Relatório meteorológico do ciclo (graus-dia, luz, chuva, ET₀…). */
+  ciclo?: ResumoCiclo;
   /** Últimos 7 dias do balanço (para a tabelinha do relatório). */
   historico?: LinhaBalanco[];
   /** Dias do balanço com clima estimado ou sem dados suficientes. */
@@ -67,22 +70,32 @@ export function resumoDoDia(itens: ItemRelatorio[]) {
 }
 
 /** Texto do relatório do dia — cabe no WhatsApp, com *negrito* no estilo do WhatsApp. */
+/** Linha do ciclo para o relatório: graus-dia, luz, chuva e ET₀ acumulados desde o plantio. */
+export function linhaCiclo(c: ResumoCiclo): string {
+  const gd = `${n0(c.grausDia)} GD` + (c.grausDiaCiclo ? ` de ${n0(c.grausDiaCiclo)} (${n0((c.fracaoGrausDia ?? 0) * 100)}%)` : c.tBaseC !== null ? ` (base ${c.tBaseC} °C)` : "");
+  const luz = `luz ${n1(c.fotoperiodoHojeH)} h/dia (${n0(c.fotoperiodoAcumH)} h acum.)` + (c.horasSolAcumH !== null ? ` · sol ${n0(c.horasSolAcumH)} h` : "");
+  return `Ciclo ${c.dias} d: ${gd} · ${luz} · chuva ${n1(c.chuvaMm)} mm em ${c.diasComChuva} d · ET₀ ${n0(c.et0Mm)} mm · ${n0(c.tminAbs)}–${n0(c.tmaxAbs)} °C` +
+    (c.diasQuentes ? ` · ${c.diasQuentes} d > 32 °C` : "") + (c.diasFrios ? ` · ${c.diasFrios} d < 10 °C` : "") + (c.faltamDias >= 0 ? ` · faltam ${c.faltamDias} d` : ` · ciclo encerrado há ${-c.faltamDias} d`);
+}
+
 export function montarMensagem(
   data: DataISO,
   clima: DiaClima & { et0: number },
   itens: ItemRelatorio[],
   previsao: DiaPrevisao[] = [],
+  nomeFazenda = "",
 ): { assunto: string; texto: string } {
   const irrigar = itens.filter((i) => i.linha?.decisao === "IRRIGAR").length;
-  const assunto = `Manejo ${br(data)}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
+  const assunto = `Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
   const rs = resumoDoDia(itens);
   const l: string[] = [
-    `💧 *Manejo de irrigação — ${br(data)}*`,
+    `💧 *Manejo de irrigação — ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}*`,
     `Janela ${br(diaAnterior(data))} 18h → ${br(data)} 18h`,
     `🔴 ${rs.cont.ruim} irrigar · 🟡 ${rs.cont.atencao} atenção · 🟢 ${rs.cont.bom} ok${rs.cont.sem ? ` · ⚫ ${rs.cont.sem} sem dados` : ""}`,
   ];
   if (rs.ha > 0) l.push(`Hoje: ${n0(rs.aguaM3)} m³ de água em ${n1(rs.ha)} ha · ${n0(rs.kwh)} kWh · R$ ${n2(rs.custo)}`);
-  l.push(`ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s · ${clima.n} de 144 leituras`);
+  l.push(`ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s` +
+    (clima.horasSol !== undefined ? ` · sol ${n1(clima.horasSol)} h` : "") + ` · ${clima.n} de 144 leituras`);
   if (clima.estimados?.length) l.push(`⚠️ Estação sem dado de ${clima.estimados.join(", ")}: valores do dia vizinho.`);
   const prox = previsao.filter((d) => d.data > data).slice(0, 3);
   if (prox.length) {
@@ -99,7 +112,8 @@ export function montarMensagem(
     l.push("");
     const x = it.linha;
     if (!x) {
-      l.push(`⚫ *${it.pivo.nome}* — ${it.aviso ?? "sem cálculo"}`);
+      l.push(`${it.pivo.semBalanco ? "🌱" : "⚫"} *${it.pivo.nome}* — ${it.pivo.cultura.nome}${it.pivo.semBalanco ? " (talhão)" : ""} — ${it.aviso ?? "sem cálculo"}`);
+      if (it.ciclo) l.push(`   ${linhaCiclo(it.ciclo)}`);
       continue;
     }
     const sem = semaforoDoItem(it);
@@ -137,6 +151,7 @@ export function montarMensagem(
     if (it.historico && it.historico.length > 1) {
       l.push(`   Déficit (mm) nos últimos dias: ${it.historico.map((h) => `${br(h.data)} ${n0(h.deficit)}`).join(" · ")}`);
     }
+    if (it.ciclo) l.push(`   ${linhaCiclo(it.ciclo)}`);
     for (const a of x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado"))) l.push(`   ⚠️ ${a}`);
     if (it.diasIncertos) l.push(`   ℹ️ ${it.diasIncertos} dia(s) do balanço com clima estimado ou incompleto.`);
   }
@@ -153,6 +168,7 @@ export function montarMensagemHtml(
   itens: ItemRelatorio[],
   previsao: DiaPrevisao[] = [],
   linkApp = "",
+  nomeFazenda = "",
 ): string {
   const rs = resumoDoDia(itens);
   const prox = previsao.filter((d) => d.data > data).slice(0, 3);
@@ -160,7 +176,7 @@ export function montarMensagemHtml(
   const chip = (txt: string, cor: string) => `<span style="display:inline-block;background:${cor};color:#fff;border-radius:999px;padding:3px 10px;font-weight:700;font-size:12px;margin-right:4px">${txt}</span>`;
   const linha = (rot: string, val: string) => `<tr><td style="padding:3px 8px 3px 0;color:#64757d;white-space:nowrap">${rot}</td><td style="padding:3px 0">${val}</td></tr>`;
   let html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#33474f;max-width:640px;font-size:14px;line-height:1.45">`;
-  html += `<h2 style="color:#16404d;margin:0 0 4px">💧 Manejo de irrigação — ${h(br(data))}</h2>`;
+  html += `<h2 style="color:#16404d;margin:0 0 4px">💧 Manejo de irrigação — ${h(br(data))}${nomeFazenda ? ` · ${h(nomeFazenda)}` : ""}</h2>`;
   html += `<div style="color:#64757d;font-size:13px;margin-bottom:10px">Janela ${h(br(diaAnterior(data)))} 18h → ${h(br(data))} 18h</div>`;
   html += `<div style="margin-bottom:10px">${chip(`${rs.cont.ruim} irrigar`, SEM_COR.ruim)}${chip(`${rs.cont.atencao} atenção`, SEM_COR.atencao)}${chip(`${rs.cont.bom} ok`, SEM_COR.bom)}${rs.cont.sem ? chip(`${rs.cont.sem} sem dados`, SEM_COR.sem) : ""}</div>`;
   if (rs.ha > 0) html += `<div style="margin-bottom:6px"><b>Hoje:</b> ${n0(rs.aguaM3)} m³ de água em ${n1(rs.ha)} ha · ${n0(rs.kwh)} kWh · R$ ${n2(rs.custo)}</div>`;
@@ -173,7 +189,11 @@ export function montarMensagemHtml(
     html += `<div style="border:1px solid #e2e8ec;border-left:5px solid ${SEM_COR[sem]};border-radius:10px;padding:10px 12px;margin-bottom:10px">`;
     const fim = it.fimCicloDas !== undefined && x ? it.fimCicloDas - x.das : null;
     html += `<div style="display:flex;justify-content:space-between"><b style="font-size:15px;color:#16404d">${h(it.pivo.nome)}</b>${x ? chip(x.decisao, SEM_COR[sem]) : ""}</div>`;
-    if (!x) { html += `<div style="color:#64757d">${h(it.aviso ?? "sem cálculo")}</div></div>`; continue; }
+    if (!x) {
+      html += `<div style="color:#64757d">${h(it.pivo.cultura.nome)}${it.pivo.semBalanco ? " · talhão" : ""} — ${h(it.aviso ?? "sem cálculo")}</div>`;
+      if (it.ciclo) html += `<div style="font-size:13px;margin-top:6px">${h(linhaCiclo(it.ciclo))}</div>`;
+      html += `</div>`; continue;
+    }
     html += `<div style="color:#64757d;font-size:13px;margin-bottom:6px">${h(it.pivo.cultura.nome)} · ${h(x.estadio)} · ${x.das} DAS${fim !== null ? (fim >= 0 ? ` · faltam ${fim} d do ciclo` : ` · <span style="color:#c62828">ciclo encerrado há ${-fim} d</span>`) : ""}</div>`;
     const pct = x.afdMm > 0 ? Math.min(100, (x.deficit / x.afdMm) * 100) : 0;
     html += `<div style="height:10px;background:#eef2f4;border-radius:6px;overflow:hidden;margin:4px 0"><div style="width:${pct.toFixed(0)}%;height:10px;background:#e65100"></div></div>`;
@@ -191,6 +211,7 @@ export function montarMensagemHtml(
     html += linha("Hoje", `ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}`);
     if (it.ultimaIrrigacao || it.ultimaMedicao) html += linha("Lançamentos", `${it.ultimaIrrigacao ? `última irrigação ${h(br(it.ultimaIrrigacao.data))} (${n1(it.ultimaIrrigacao.mm)} mm)` : "sem irrigação lançada"}${it.ultimaMedicao ? ` · última medição ${h(br(it.ultimaMedicao.data))} (${n0(it.ultimaMedicao.umidadeRaizPct)}%)` : ""}`);
     if (it.historico && it.historico.length > 1) html += linha("Déficit (mm)", it.historico.map((d) => `${h(br(d.data))} <b>${n0(d.deficit)}</b>`).join(" · "));
+    if (it.ciclo) html += linha("Ciclo", h(linhaCiclo(it.ciclo)).replace(/^Ciclo \d+ d: /, ""));
     html += `</table>`;
     const alertas = x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado"));
     if (alertas.length) html += `<div style="margin-top:6px">${alertas.map((a) => `<div style="background:#fff2cc;color:#7a5200;border-radius:8px;padding:5px 9px;font-size:13px;margin-top:4px">⚠️ ${h(a)}</div>`).join("")}</div>`;

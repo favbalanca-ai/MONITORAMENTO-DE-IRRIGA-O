@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { gerarMotorGs, DESTINO } from "../scripts/gerar_apps_script.ts";
 import { deLocal } from "../src/coletor/tempo.ts";
-import { criarAmbiente, type Ambiente } from "./apps_script/fake.ts";
+import { criarAmbiente, setFazenda, type Ambiente } from "./apps_script/fake.ts";
 import { leiturasMeteoCorrigido } from "./pivo2_exemplo.ts";
 
 const fixture = async (nome: string) => JSON.parse(await readFile(new URL(`./fixtures/${nome}`, import.meta.url), "utf8"));
@@ -12,17 +12,14 @@ const EMAIL = "teste@exemplo.com";
 function instalado(): Ambiente {
   const amb = criarAmbiente();
   amb.chamar("instalar");
-  const est = amb.aba("ESTACAO");
-  const linhaEmail = est.dados.findIndex((l) => String(l[0]).startsWith("E-mails"));
-  est.set(linhaEmail + 1, 2, EMAIL);
+  setFazenda(amb, "E-mails do relatório", EMAIL);
   return amb;
 }
 
 function comLeiturasPivo2(): Ambiente {
   const amb = instalado();
   // a seção 7 foi feita contando toda chuva: zera a chuva mínima para reproduzir a tabela
-  const est = amb.aba("ESTACAO");
-  est.set(est.dados.findIndex((l) => String(l[0]).startsWith("Chuva mínima")) + 1, 2, 0);
+  setFazenda(amb, "Chuva mínima que conta (mm)", 0);
   const n = amb.chamar<number>("gravarLeituras_", leiturasMeteoCorrigido());
   assert.equal(n, 2834);
   return amb;
