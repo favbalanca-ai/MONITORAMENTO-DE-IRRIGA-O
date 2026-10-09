@@ -387,6 +387,11 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(j48, /Terrestre: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
+  // rosa dos ventos 24 h: uma leitura ao vivo vinda de 135° (SE) a 11 km/h
+  const rosa = await page.locator(".card.rosa24").innerText();
+  assert.match(rosa, /Vento nas últimas 24 h\s+1 leituras/);
+  assert.match(rosa, /Predominante: SE \(100% do tempo, média 11 km\/h\)/);
+  assert.match(rosa, /Calmaria \(< 3 km\/h\): 0%/);
   await page.screenshot({ path: PRINTS + "12_clima.png", fullPage: true });
   await page.getByRole("link", { name: /Hoje/ }).click();
   await page.getByText("Detalhes").first().click();

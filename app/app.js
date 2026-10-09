@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-8';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-9';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -322,6 +322,36 @@ function rosaDosVentos(dirGraus, ventoMs, rajadaMs) {
   return '<div class="rosa">' + s + '<small>de <b>' + esc(pontoCardeal(d)) + '</b> (' + Math.round(d) + '°)' + (rajadaMs != null ? ' · rajada ' + br(rajadaMs * 3.6, 0) : '') + '</small></div>';
 }
 
+const DIR16 = ['N', 'NNE', 'NE', 'LNE', 'L', 'LSE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+const FAIXAS_VENTO = [['3–10 km/h', '#9ad6e0'], ['10–20 km/h', '#3e9aaa'], ['> 20 km/h', '#16404d']];
+/** Cartão "Vento nas últimas 24 h": rosa dos ventos com 16 setores empilhados por faixa de velocidade. */
+function cardRosa24h() {
+  const r = DADOS.vento24h; if (!r || !r.total) return '';
+  const c = 110, R = 92, maxN = Math.max(1, ...r.setores.map((s) => s.n));
+  const pt = (ang, rad) => [c + rad * Math.sin((ang * Math.PI) / 180), c - rad * Math.cos((ang * Math.PI) / 180)];
+  const fatia = (i, r0, r1) => { const a0 = i * 22.5 - 10.5, a1 = i * 22.5 + 10.5; const [x0, y0] = pt(a0, r1), [x1, y1] = pt(a1, r1), [x2, y2] = pt(a1, r0), [x3, y3] = pt(a0, r0);
+    return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) + ' A' + r1 + ' ' + r1 + ' 0 0 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' L' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' A' + r0 + ' ' + r0 + ' 0 0 0 ' + x3.toFixed(1) + ' ' + y3.toFixed(1) + ' Z'; };
+  let s = '<svg viewBox="0 0 220 220" role="img" aria-label="Rosa dos ventos das últimas 24 horas">';
+  [0.25, 0.5, 0.75, 1].forEach((f) => { s += '<circle cx="' + c + '" cy="' + c + '" r="' + (R * f).toFixed(1) + '" fill="none" stroke="var(--line)"/>'; });
+  for (let a = 0; a < 360; a += 45) { const [x, y] = pt(a, R); s += '<line x1="' + c + '" y1="' + c + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="var(--line)"/>'; }
+  r.setores.forEach((st, i) => {
+    if (!st.n) return;
+    let r0 = 0;
+    [1, 2, 3].forEach((f) => { const n = st.faixas[f] || 0; if (!n) return; const r1 = r0 + (n / maxN) * R;
+      s += '<path d="' + fatia(i, Math.max(r0, 0.01), r1) + '" fill="' + FAIXAS_VENTO[f - 1][1] + '" stroke="var(--card)" stroke-width="1"><title>' + DIR16[i] + ': ' + st.n + ' leitura(s) · média ' + st.mediaKmh + ' km/h</title></path>'; r0 = r1; });
+  });
+  DIR16.forEach((n, i) => { if (i % 2) return; const [x, y] = pt(i * 22.5, R + 11); s += '<text x="' + x.toFixed(1) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="middle" class="' + (i % 4 ? 'sec' : 'pri') + '">' + n + '</text>'; });
+  s += '</svg>';
+  const pct = (n) => Math.round((n / r.total) * 100);
+  const pred = r.predominante >= 0 ? DIR16[r.predominante] : null;
+  return '<div class="card rosa24"><div class="row"><h2>' + ico('vento') + ' Vento nas últimas 24 h</h2><span class="muted">' + r.total + ' leituras</span></div>' +
+    '<div class="rosa24-corpo">' + s + '<div class="rosa24-info">' +
+    (pred ? '<p>Predominante: <b>' + esc(pred) + '</b> (' + pct(r.setores[r.predominante].n) + '% do tempo, média ' + r.setores[r.predominante].mediaKmh + ' km/h)</p>' : '') +
+    '<p>Calmaria (&lt; 3 km/h): <b>' + pct(r.calmaria) + '%</b> do tempo</p>' +
+    '<div class="legenda" style="margin-top:6px">' + FAIXAS_VENTO.map((f) => '<span style="--c:' + f[1] + '">' + f[0] + '</span>').join('') + '</div>' +
+    '<p class="muted">Cada fatia aponta de onde o vento veio; quanto mais comprida, mais vezes veio dali. Serve pra saber pra que lado a deriva vai e de onde a chuva costuma chegar.</p></div></div></div>';
+}
+
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
 function cardEstacao() {
   const u = DADOS.ultimaLeitura; if (!u || !u.quando) return '';
@@ -411,6 +441,7 @@ V.clima = function () {
   if (!DADOS) return semDados();
   const r = DADOS.resumo || {};
   return (cardEstacao() || '<div class="card vazio">A estação ainda não mandou nenhuma leitura.</div>') +
+    cardRosa24h() +
     (cardPrevisao(r.dia) || '<div class="card vazio">Sem previsão ainda. Na planilha: 💧 Manejo → 🌧 Atualizar previsão do tempo.</div>') +
     miniMapa() +
     '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +

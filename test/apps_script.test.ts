@@ -300,6 +300,12 @@ test("sensor de solo da estação aparece no pivô; histórico traz o clima diá
   amb.chamar("calcular_", "2026-02-08");
   const r = amb.chamar<{ pivos: { sensorSolo: { canal: number; umidadePct: number; tempC: number } }[] }>("lerResumo_");
   assert.deepEqual({ ...r.pivos[0]!.sensorSolo, quando: undefined }, { canal: 2, umidadePct: 31, tempC: 25, quando: undefined });
+  // rosa dos ventos: a leitura ao vivo tem direção 120° (SE-L) a 2 m/s = 7 km/h → setor 5, faixa 3–10
+  const rosa = amb.chamar<{ total: number; calmaria: number; predominante: number; setores: { n: number; faixas: number[]; mediaKmh: number }[] }>("rosaVentos24h_");
+  assert.equal(rosa.total, 1);
+  assert.equal(rosa.predominante, 5);
+  assert.deepEqual([...rosa.setores[5]!.faixas], [0, 1, 0, 0]);
+  assert.equal(rosa.setores[5]!.mediaKmh, 7);
   const h = amb.chamar<{ clima: { data: string; tmax: number; et0: number }[] }>("historico_", "Pivô 2", 10);
   assert.equal(h.clima.length, 10);
   assert.equal(h.clima[h.clima.length - 1]!.data, "2026-02-08");

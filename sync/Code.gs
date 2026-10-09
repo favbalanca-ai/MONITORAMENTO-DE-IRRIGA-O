@@ -1138,7 +1138,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-4";
+var VERSAO_SERVIDOR = "2026.10.09-5";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1242,6 +1242,35 @@ function ultimaLeitura_() {
   return r;
 }
 
+/**
+ * Rosa dos ventos das últimas 24 h: 16 setores de 22,5°, cada um com quantas leituras vieram daquela
+ * direção, separadas por faixa de velocidade (km/h: < 3 calmaria, 3–10, 10–20, > 20), e a média.
+ * Usa a direção gravada nos extras (coleta ao vivo); leituras sem direção não entram.
+ */
+function rosaVentos24h_() {
+  var aba = abaLeituras_();
+  if (!aba || aba.getLastRow() < 2) return null;
+  var n = Math.min(200, aba.getLastRow() - 1);
+  var ls = aba.getRange(aba.getLastRow() - n + 1, 1, n, 9).getValues().map(linhaParaLeitura_);
+  var fim = ls[ls.length - 1].quando, ini = Motor.somarMinutos(fim, -1440);
+  var setores = [];
+  for (var i = 0; i < 16; i++) setores.push({ n: 0, faixas: [0, 0, 0, 0], soma: 0 });
+  var total = 0, calmaria = 0;
+  ls.forEach(function (l) {
+    if (l.quando < ini || !l.extras || l.extras["wind.wind_direction"] === undefined) return;
+    var kmh = (l.ventoMs || 0) * 3.6;
+    total++;
+    if (kmh < 3) { calmaria++; return; } // sem vento a direção não significa nada
+    var s = Math.round((((l.extras["wind.wind_direction"] % 360) + 360) % 360) / 22.5) % 16;
+    var f = kmh < 10 ? 1 : kmh < 20 ? 2 : 3;
+    setores[s].n++; setores[s].faixas[f]++; setores[s].soma += kmh;
+  });
+  if (!total) return null;
+  var maior = 0, idx = -1;
+  setores.forEach(function (s, i) { s.mediaKmh = s.n ? Math.round(s.soma / s.n) : 0; delete s.soma; if (s.n > maior) { maior = s.n; idx = i; } });
+  return { de: ini, ate: fim, total: total, calmaria: calmaria, setores: setores, predominante: idx };
+}
+
 /** Umidade/temperatura do sensor de solo de um canal, da última leitura. */
 function sensorSolo_(ult, canal) {
   if (!ult || !canal || !ult.extras) return null;
@@ -1271,6 +1300,7 @@ function dadosApp_(u) {
     exigido: loginExigido_(),
     resumo: resumo,
     previsao: lerPrevisao_(),
+    vento24h: rosaVentos24h_(),
     erroCalculo: erroCalculo,
     ultimaLeitura: ultimaLeitura_(),
     cadastro: cadastroPivos_(),

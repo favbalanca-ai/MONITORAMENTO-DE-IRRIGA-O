@@ -176,6 +176,13 @@ h1,h2,h3{letter-spacing:-.01em}
 .j48-txt{font-size:13px;margin-top:8px;background:rgba(255,255,255,.12);border-radius:10px;padding:8px 10px}
 @media(max-width:640px){.aplic-grid{grid-template-columns:minmax(0,1fr)}}
 
+/* rosa dos ventos 24 h */
+.rosa24-corpo{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:center;margin-top:8px}
+.rosa24 svg{width:220px;height:220px}
+.rosa24 text{fill:var(--muted);font-size:11px;font-weight:700}.rosa24 text.sec{font-size:9px;font-weight:600}
+.rosa24-info p{font-size:13px;margin:4px 0}
+@media(max-width:640px){.rosa24-corpo{grid-template-columns:minmax(0,1fr)}.rosa24 svg{margin:0 auto;display:block}}
+
 /* Resumo do dia (tela Hoje) */
 .resumo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .resumo-dia{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
