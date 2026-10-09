@@ -31,10 +31,11 @@
     <nav id="nav">
       <a href="#/hoje" data-view="hoje"><span class="ico" data-ico="hoje"></span><span class="lbl">Hoje</span></a>
       <a href="#/lancar" data-view="lancar"><span class="ico" data-ico="lancar"></span><span class="lbl">Lançar</span></a>
+      <a href="#/clima" data-view="clima"><span class="ico" data-ico="sol"></span><span class="lbl">Clima</span></a>
       <a href="#/historico" data-view="historico"><span class="ico" data-ico="historico"></span><span class="lbl">Histórico</span></a>
       <a href="#/mapa" data-view="mapa"><span class="ico" data-ico="mapa"></span><span class="lbl">Mapa</span></a>
       <a href="#/pivos" data-view="pivos"><span class="ico" data-ico="pivos"></span><span class="lbl">Pivôs</span></a>
-      <a href="#/sync" data-view="sync"><span class="ico" data-ico="sync"></span><span class="lbl">Ajustes</span></a>
+      <a href="#/sync" data-view="sync" class="so-pc"><span class="ico" data-ico="sync"></span><span class="lbl">Ajustes</span></a>
     </nav>
     <div class="sidebar-foot">
       <button id="btn-update" class="btn btn-ghost btn-sm" type="button" title="Baixar a versão nova do app">🔄 Atualizar app</button>
@@ -45,7 +46,7 @@
     <header class="topbar">
       <h1 id="page-title">Hoje</h1>
       <div class="topbar-right">
-        <a href="#/sync" id="sync-status" class="sync-status" title="Estado da sincronização"><span class="dot"></span><span class="sync-status-txt">Local</span></a>
+        <a href="#/sync" id="sync-status" class="sync-status" title="Sincronização e ajustes"><span class="dot"></span><span class="sync-status-txt">Local</span><span class="ico" data-ico="sync"></span></a>
         <a href="#/conta" id="user-chip" class="user-chip" hidden title="Minha conta"></a>
       </div>
     </header>

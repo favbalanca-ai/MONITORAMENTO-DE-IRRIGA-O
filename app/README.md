@@ -9,7 +9,7 @@ feitos sem internet.
 - **Hoje** — a decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
   tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**. Cartão **Próximos dias**
   com a previsão de chuva (mm e % do Open-Meteo, texto do INMET) e aviso quando a chuva prevista cobre o
-  déficit. Resumo no topo (quantos pivôs em cada estado), e em cada pivô: **próxima irrigação prevista** (com a
+  déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
   ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
   cinza sem dados. Modo escuro segue o ajuste do aparelho; no computador os pivôs ficam em duas colunas.
@@ -19,7 +19,7 @@ feitos sem internet.
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — gráfico de déficit, AFD, lâmina mínima, chuva e irrigação (15 a 120 dias), gráfico do clima da
   estação no período (Tmáx/Tmín, UR, chuva) e tabela.
-- Cartão **Estação agora** na Hoje: última leitura com sensação, orvalho, vento e rajada (bússola), UV, radiação,
+- **Clima** — cartão **Estação agora**: última leitura com sensação, orvalho, vento e rajada (bússola), UV, radiação,
   chuva de hoje e taxa, pressão com tendência de 3 h, raios e sensores de solo (o que a estação mandar). Avisos
   pra quem vai ligar o pivô: chovendo agora, vento forte (≥ 4 m/s, deriva), raios, estação sem leitura nova.
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque

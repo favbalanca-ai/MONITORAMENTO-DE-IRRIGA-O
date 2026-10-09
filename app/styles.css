@@ -73,6 +73,7 @@ h1,h2,h3{letter-spacing:-.01em}
 .sync-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);
   text-decoration:none;background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:4px 10px}
 .sync-status .dot{width:9px;height:9px;border-radius:50%;background:#b8c4c9}
+.sync-status .ico .svg{width:15px;height:15px;opacity:.7}
 .sync-status.ok .dot{background:var(--green)} .sync-status.busy .dot{background:var(--amber)}
 .sync-status.err .dot{background:var(--red)}
 .user-chip{font-size:12px;font-weight:700;color:var(--ink2);background:var(--teal-soft);border-radius:20px;padding:5px 10px;text-decoration:none;white-space:nowrap}
@@ -228,7 +229,8 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   #app{display:block}
   .sidebar{width:100%;height:auto;position:fixed;bottom:0;left:0;top:auto;z-index:20;flex-direction:row;transform:translateZ(0);
     background:#16404d;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.15)}
-  .brand,.sidebar-foot{display:none}
+  .brand,.sidebar-foot,#nav a.so-pc{display:none}
+  .sync-status .sync-status-txt{display:none}
   #nav{flex-direction:row;padding:4px 2px;gap:0}
   #nav a{flex:1;flex-direction:column;gap:2px;padding:7px 1px 6px;font-size:10.5px;border-radius:8px;justify-content:center;min-height:52px}
   #nav a .ico{width:auto}

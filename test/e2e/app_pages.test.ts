@@ -117,7 +117,7 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   assert.match(card, /PERCENTÍMETRO\s+\d+%/i);
   assert.match(await page.locator(".resumo").innerText(), /1 pivô pra irrigar/);
   assert.match(await page.locator("#user-chip").innerText(), /Fabiana/);
-  assert.match(await page.locator("#sync-status").innerText(), /Sincronizado/);
+  assert.ok(await page.locator("#sync-status.ok").count() === 1, "estado sincronizado");
   await page.screenshot({ path: PRINTS + "2_hoje.png", fullPage: true });
   assert.deepEqual((page as unknown as { erros: string[] }).erros, []);
   await ctx.close();
@@ -202,7 +202,6 @@ test("histórico desenha gráfico e tabela", async () => {
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "jose", "4321");
   await page.getByRole("link", { name: /Histórico/ }).click();
-  await page.locator("svg[aria-label='Clima da estação']").waitFor();
   await page.locator("#grafico svg").waitFor();
   assert.equal(await page.locator("#grafico svg circle").count(), 20);
   assert.equal(await page.locator("#tab-hist tbody tr").count(), 20);
@@ -350,7 +349,12 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   amb.chamar("calcular_", "2026-02-08");
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "jose", "4321");
+  // Hoje só decide; o clima fica na aba Clima
+  await page.getByText(/prev. 2 dias 20,5 mm/).waitFor();
+  assert.equal(await page.locator(".card.estacao").count(), 0);
+  await page.getByRole("link", { name: /Clima/ }).click();
   await page.getByText("Próximos dias").waitFor();
+  await page.locator("svg[aria-label='Clima da estação']").waitFor();
   const est = await page.locator(".card.estacao").innerText();
   assert.match(est, /27,4\s*°C/);
   assert.match(est, /sensação 29° · UR 61% · orvalho 19°/);
@@ -361,13 +365,15 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(est, /Chovendo agora \(3,2 mm\/h\)/);
   assert.match(est, /Vento forte \(6,5 m\/s\)/);
   assert.match(est, /SE/);
-  await page.getByText(/Sensor de solo 2: 33%/).waitFor();
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
+  await page.screenshot({ path: PRINTS + "12_clima.png", fullPage: true });
+  await page.getByRole("link", { name: /Hoje/ }).click();
+  await page.getByText("Detalhes").first().click();
+  await page.getByText(/Sensor de solo 2: 33%/).waitFor();
   // com a chuva mínima de 2 mm o déficit sobe a ~27,6 mm e os 20,5 mm previstos não cobrem: sem aviso de adiar
   assert.equal(await page.getByText(/avalie adiar a irrigação/).count(), 0);
   await page.getByText(/Ao fim da volta o déficit chega a ≈/).waitFor();
-  await page.getByText(/🌧 prev. 2 dias/).waitFor();
   assert.equal(await page.locator(".card.sem-ruim").count(), 1);
   // irrigando bastante hoje, a decisão vira NÃO IRRIGAR e aparece a próxima irrigação prevista
   amb.post({ __login: { login: "jose", pin: "4321" } });

@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -165,7 +165,7 @@ async function enviarFila() {
 
 /* ================= navegação ================= */
 const V = {};
-const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', historico: 'Histórico', mapa: 'Mapa', pivos: 'Pivôs', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
+const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', clima: 'Clima', historico: 'Histórico', mapa: 'Mapa', pivos: 'Pivôs', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
 function editando() { const a = document.activeElement; return !!a && /INPUT|SELECT|TEXTAREA/.test(a.tagName) && !!a.value; }
 
 function route(opts) {
@@ -298,16 +298,33 @@ V.hoje = function () {
     '<button class="btn btn-outline btn-sm" data-act="recalcular">' + ico('refresh') + ' Recalcular</button></div>' +
     '<div class="semaforos">' + ['ruim', 'atencao', 'bom', 'sem'].map((k) => '<div class="sem-chip sem-' + k + (cont[k] ? '' : ' vazio') + '"><span class="ico">' + SEM_ICONE[k] + '</span><b>' + cont[k] + '</b><small>' + SEM_ROTULO[k] + '</small></div>').join('') + '</div>' +
     '<div class="chips"><span class="chip">ET₀ <b>' + br(c.et0, 1) + '</b> mm</span><span class="chip">Chuva <b>' + br(c.chuva, 1) + '</b> mm</span>' +
-    '<span class="chip">🌡 <b>' + br(c.tmin, 0) + '–' + br(c.tmax, 0) + '</b> °C</span><span class="chip">UR <b>' + br(c.ur, 0) + '</b>%</span>' +
-    '<span class="chip">Leituras <b>' + esc(c.n) + '</b>/144</span>' + (prox2.length ? '<span class="chip">🌧 prev. 2 dias <b>' + br(chuva2, 1) + '</b> mm</span>' : '') + '</div>' +
-    '<p class="muted" style="margin-top:8px">Calculado em ' + esc(dataBr(r.calculadoEm)) + ' às ' + esc((r.calculadoEm || '').slice(11, 16)) +
-    (ult ? ' · última leitura ' + esc(dataBr(ult.quando)) + ' ' + esc(ult.quando.slice(11, 16)) + (ult.tempC != null ? ' (' + br(ult.tempC, 1) + ' °C)' : '') : '') + '</p>' +
+    (prox2.length ? '<a class="chip" href="#/clima">' + ico('chuva') + ' prev. 2 dias <b>' + br(chuva2, 1) + '</b> mm</a>' : '') +
+    (c.n < 144 ? '<span class="chip">Leituras <b>' + esc(c.n) + '</b>/144</span>' : '') + '</div>' +
+    '<p class="muted" style="margin-top:8px">Calculado ' + esc(dataBr(r.calculadoEm)) + ' ' + esc((r.calculadoEm || '').slice(11, 16)) +
+    (ult ? ' · estação ' + esc(ult.quando.slice(11, 16)) + (ult.tempC != null ? ' ' + br(ult.tempC, 0) + '°' : '') : '') + ' · <a href="#/clima">ver o clima</a></p>' +
     (c.estimados && c.estimados.length ? '<ul class="alertas"><li>Estação sem dado de ' + esc(c.estimados.join(', ')) + ' — usado o dia vizinho.</li></ul>' : '') + '</div>';
-  h += cardEstacao();
-  h += miniMapa();
-  h += cardPrevisao(r.dia);
   h += '<div class="cards">' + pivos.map(cardPivo).join('') + '</div>';
   return h || '<div class="card vazio">Nenhum pivô ativo.</div>';
+};
+/* ================= CLIMA (estação agora, previsão, histórico do tempo) ================= */
+let CLIMA = null;
+V.clima = function () {
+  if (!DADOS) return semDados();
+  const r = DADOS.resumo || {};
+  return (cardEstacao() || '<div class="card vazio">A estação ainda não mandou nenhuma leitura.</div>') +
+    (cardPrevisao(r.dia) || '<div class="card vazio">Sem previsão ainda. Na planilha: 💧 Manejo → 🌧 Atualizar previsão do tempo.</div>') +
+    miniMapa() +
+    '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
+    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>';
+};
+V.clima_depois = async function () {
+  if (V.hoje_depois) V.hoje_depois();
+  const ps = DADOS && DADOS.cadastro ? DADOS.cadastro.pivos : [];
+  if (!ps.length || !syncUrl()) return;
+  try {
+    const r = await chamar('GET', { acao: 'historico', pivo: ps[0].nome, dias: 30 });
+    if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; const el = $('#grafico-clima'); if (el) el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; }
+  } catch (e) { const el = $('#grafico-clima'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 };
 /** Cartão de um pivô na tela Hoje: o essencial em cima, o resto em "detalhes". */
 function cardPivo(p) {
@@ -329,18 +346,23 @@ function cardPivo(p) {
     principal = '<p class="prox">' + ico('calendario') + ' ' + (pj.proximaIrrigacao ? 'Próxima irrigação prevista: <b>' + esc(dataBr(pj.proximaIrrigacao)) + '</b> (em ' + pj.emDias + ' dia' + (pj.emDias === 1 ? '' : 's') + ', sem chuva)' : 'Sem irrigação prevista nos próximos ' + pj.dias.length + ' dias (sem chuva)') + '</p>';
   }
   const alertas = (p.alertas || []).filter((a) => a.indexOf('Só ') !== 0 && a.indexOf('Clima estimado') !== 0);
-  const avisos = (p.avisoChuva ? '<ul class="alertas"><li>🌧 ' + esc(p.avisoChuva) + '</li></ul>' : '') +
-    (alertas.length ? '<ul class="alertas">' + alertas.map((a) => '<li>⚠️ ' + esc(a) + '</li>').join('') + '</ul>' : '');
+  // na frente só o que muda a decisão de hoje; o resto vai para "Detalhes"
+  const naFrente = alertas.filter((a) => /AFD|Tensiômetro|Ciclo da cultura|Lâmina mínima|percolação/.test(a));
+  const noDetalhe = alertas.filter((a) => naFrente.indexOf(a) < 0);
+  const avisos = (p.avisoChuva ? '<ul class="alertas"><li>' + ico('chuva') + ' ' + esc(p.avisoChuva) + '</li></ul>' : '') +
+    (naFrente.length ? '<ul class="alertas">' + naFrente.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '');
   return '<div class="card pivo sem-' + st + '"><div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span><span class="tag">' + esc(p.estadio) + '</span><span class="tag">' + esc(p.das) + ' DAS' +
     (p.emergenciaDias ? ' · ' + esc(p.dae) + ' DAE' : '') + '</span>' + (fim ? '<span class="tag tag-erro">ciclo encerrado</span>' : '') + '</div></div>' +
     '<span class="badge ' + classeDec(p.decisao) + '">' + SEM_ICONE[st] + ' ' + esc(p.decisao) + '</span></div>' +
     '<div class="bar" title="Déficit em relação à AFD"><span style="width:' + pct.toFixed(1) + '%"></span>' + (marca != null ? '<i style="left:' + marca.toFixed(1) + '%"></i>' : '') + '</div>' +
     '<div class="bar-rotulos"><span>Déficit <b>' + br(p.deficit, 1) + ' mm</b></span>' + (marca != null && marca > 22 && marca < 78 ? '<span class="marca" style="left:' + marca.toFixed(1) + '%">lâmina mín. ' + br(p.laminaMinimaMm, 0) + '</span>' : '') + '<span>AFD ' + br(p.afd, 1) + ' mm</span></div>' +
     principal + avisos +
+    '<details class="det"><summary>Detalhes</summary>' +
     (p.sensorSolo ? '<p class="muted" style="margin-top:8px">' + ico('solo') + ' Sensor de solo ' + p.sensorSolo.canal + ': <b>' + br(p.sensorSolo.umidadePct, 0) + '%</b>' + (p.sensorSolo.tempC != null ? ' · ' + br(p.sensorSolo.tempC, 1) + ' °C' : '') + ' <span class="muted">(' + esc(dataBr(p.sensorSolo.quando)) + ' ' + esc(String(p.sensorSolo.quando).slice(11, 16)) + ', só informativo)</span></p>' : '') +
-    '<details class="det"><summary>Detalhes</summary><div class="chips"><span class="chip">ETc <b>' + br(p.etc, 1) + '</b> mm</span><span class="chip">Kc <b>' + br(p.kc, 2) + '</b></span><span class="chip">CAD <b>' + br(p.cad, 1) + '</b> mm</span>' +
+    '<div class="chips"><span class="chip">ETc <b>' + br(p.etc, 1) + '</b> mm</span><span class="chip">Kc <b>' + br(p.kc, 2) + '</b></span><span class="chip">CAD <b>' + br(p.cad, 1) + '</b> mm</span>' +
     (p.irrigacao ? '<span class="chip">Irrigado <b>' + br(p.irrigacao, 1) + '</b> mm</span>' : '') + (p.rec && p.decisao === 'IRRIGAR' ? '<span class="chip">Energia <b>' + br(p.rec.energiaKwh, 0) + '</b> kWh</span>' : '') + '</div>' +
     (pj && pj.dias && pj.dias.length ? '<p class="muted" style="margin-top:8px">Déficit previsto (sem chuva): ' + pj.dias.slice(0, 5).map((d) => esc(dataBr(d.data)) + ' <b>' + br(d.deficit, 0) + '</b>').join(' · ') + ' mm</p>' : '') +
+    (noDetalhe.length ? '<ul class="alertas" style="margin-top:8px">' + noDetalhe.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
     (p.curvaKc ? '<details class="kc-det"><summary class="muted">Curva de Kc do ciclo</summary>' + graficoKc(p.curvaKc, p.das, p.emergenciaDias) + '</details>' : '') +
     (p.diasIncertos ? '<p class="muted" style="margin-top:8px">ℹ️ ' + esc(p.diasIncertos) + ' dia(s) do balanço com clima estimado ou incompleto.</p>' : '') + '</details></div>';
 }
@@ -483,8 +505,6 @@ V.historico = function () {
     '<div><label for="h-dias">Período</label><select id="h-dias" data-act="hist">' + [15, 30, 60, 120].map((d) => '<option value="' + d + '"' + (d === dias ? ' selected' : '') + '>' + d + ' dias</option>').join('') + '</select></div></div></div>' +
     '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="vazio">Carregando…</div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span></div></div>' +
-    '<div class="card"><h2>Estação no período</h2><div id="grafico-clima">' + (HIST && HIST.pivo === piv ? graficoClima(HIST.clima) : '') + '</div>' +
-    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>' +
     '<div class="card" id="tab-hist">' + (HIST && HIST.pivo === piv ? tabelaHist(HIST) : '') + '</div>';
 };
 V.historico_depois = function () { carregarHist(); };
@@ -495,7 +515,7 @@ async function carregarHist() {
     const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'sem resposta');
     HIST = r.historico;
-    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); if ($('#grafico-clima')) $('#grafico-clima').innerHTML = graficoClima(HIST.clima); }
+    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); }
   } catch (e) { if ($('#grafico')) $('#grafico').innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 }
 function grafico(h) {
