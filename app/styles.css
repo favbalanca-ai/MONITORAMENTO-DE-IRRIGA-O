@@ -11,9 +11,8 @@
   --tag:#eef3f5; --tag-text:#3f5862;
   color-scheme:light;
 }
-/* Modo escuro: segue o ajuste do celular (à noite no campo a tela clara incomoda) */
-@media (prefers-color-scheme: dark){
-  :root{
+/* Tema: claro é o padrão; "escuro" ou "auto" (segue o celular) ficam em Ajustes */
+  :root[data-tema="escuro"]{
     --ink:#dbe9ec; --ink2:#7cc4d0; --teal:#3e9aaa; --teal-soft:#15323a;
     --bg:#0f1a1e; --card:#17262c; --line:#24383f; --muted:#8fa6ad; --text:#d5e1e5;
     --green:#7bd389; --green-soft:#16301b; --amber:#f0c25a; --amber-soft:#3a2d10;
@@ -23,18 +22,41 @@
     --tag:#1f3238; --tag-text:#b7cbd1;
     color-scheme:dark;
   }
-  .sidebar{background:linear-gradient(180deg,#0b1619,#10232a)}
-  .topbar{background:var(--card)}
-  input,select{background:#10202a;color:var(--text)}
-  .seg button.on{background:#25404a;color:var(--ink)}
-  .btn-outline{background:#10202a}
-  .kpis div{background:#182a40}
-  .alertas li{background:#3a2d10;color:#f0d08a}
-  .fila-bar{background:#3a2d10;color:#f0d08a;border-color:#5a4718}
-  .bar{background:#223238}
-  .rotulo-pivo{background:rgba(219,233,236,.9);color:#16404d}
-  .toast{background:#dbe9ec;color:#16404d}
-  .sem-chip{background:#10202a}
+  :root[data-tema="escuro"] .sidebar{background:linear-gradient(180deg,#0b1619,#10232a)}
+  :root[data-tema="escuro"] .topbar{background:var(--card)}
+  :root[data-tema="escuro"] input,:root[data-tema="escuro"] select{background:#10202a;color:var(--text)}
+  :root[data-tema="escuro"] .seg button.on{background:#25404a;color:var(--ink)}
+  :root[data-tema="escuro"] .btn-outline{background:#10202a}
+  :root[data-tema="escuro"] .kpis div{background:#182a40}
+  :root[data-tema="escuro"] .alertas li{background:#3a2d10;color:#f0d08a}
+  :root[data-tema="escuro"] .fila-bar{background:#3a2d10;color:#f0d08a;border-color:#5a4718}
+  :root[data-tema="escuro"] .bar{background:#223238}
+  :root[data-tema="escuro"] .rotulo-pivo{background:rgba(219,233,236,.9);color:#16404d}
+  :root[data-tema="escuro"] .toast{background:#dbe9ec;color:#16404d}
+  :root[data-tema="escuro"] .sem-chip{background:#10202a}
+@media (prefers-color-scheme: dark){
+  :root[data-tema="auto"]{
+    --ink:#dbe9ec; --ink2:#7cc4d0; --teal:#3e9aaa; --teal-soft:#15323a;
+    --bg:#0f1a1e; --card:#17262c; --line:#24383f; --muted:#8fa6ad; --text:#d5e1e5;
+    --green:#7bd389; --green-soft:#16301b; --amber:#f0c25a; --amber-soft:#3a2d10;
+    --red:#ff8a80; --red-soft:#3d1c1c; --blue:#8ab4f8; --blue-soft:#182a40;
+    --chuva:#5aa7e8; --irrig:#3fbfae; --deficit:#ff9a52; --afd:#c78cf0;
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+    --tag:#1f3238; --tag-text:#b7cbd1;
+    color-scheme:dark;
+  }
+  :root[data-tema="auto"] .sidebar{background:linear-gradient(180deg,#0b1619,#10232a)}
+  :root[data-tema="auto"] .topbar{background:var(--card)}
+  :root[data-tema="auto"] input,:root[data-tema="auto"] select{background:#10202a;color:var(--text)}
+  :root[data-tema="auto"] .seg button.on{background:#25404a;color:var(--ink)}
+  :root[data-tema="auto"] .btn-outline{background:#10202a}
+  :root[data-tema="auto"] .kpis div{background:#182a40}
+  :root[data-tema="auto"] .alertas li{background:#3a2d10;color:#f0d08a}
+  :root[data-tema="auto"] .fila-bar{background:#3a2d10;color:#f0d08a;border-color:#5a4718}
+  :root[data-tema="auto"] .bar{background:#223238}
+  :root[data-tema="auto"] .rotulo-pivo{background:rgba(219,233,236,.9);color:#16404d}
+  :root[data-tema="auto"] .toast{background:#dbe9ec;color:#16404d}
+  :root[data-tema="auto"] .sem-chip{background:#10202a}
 }
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none!important}
@@ -108,7 +130,8 @@ h1,h2,h3{letter-spacing:-.01em}
 .bar>span{position:absolute;left:0;top:0;bottom:0;background:var(--deficit);border-radius:6px}
 .bar>i{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
 /* Estação agora */
-.estacao{background:linear-gradient(135deg,#16404d 0%,#2e7d8c 100%);color:#e8f3f5;border:0}
+.estacao{background:linear-gradient(135deg,#2e7d8c 0%,#4fb0c0 100%);color:#fff;border:0}
+.estacao .est-stat{background:rgba(255,255,255,.2)}
 .estacao.velha{background:linear-gradient(135deg,#4d4d4d,#777)}
 .est-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .est-rotulo{font-size:12px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:6px}
@@ -172,6 +195,7 @@ h1,h2,h3{letter-spacing:-.01em}
 #mini-mapa{height:150px;background:#dfe7ea;pointer-events:none}
 .mini-rotulo{position:absolute;left:10px;bottom:8px;background:rgba(22,64,77,.85);color:#fff;font-size:12px;font-weight:700;padding:3px 9px;border-radius:8px}
 .seg-sub{margin-top:0;margin-bottom:8px}
+.seg-3{grid-template-columns:1fr 1fr 1fr}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 .kpis div{background:var(--blue-soft);border-radius:10px;padding:8px 10px;min-width:0}
 .kpis small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}

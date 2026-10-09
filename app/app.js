@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-6';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-7';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -928,6 +928,7 @@ V.sync = function () {
     (syncUrl() ? '<p class="muted">🔎 Testar endereço abre a planilha numa aba nova. Certo = aparece um texto com <b>"login":true</b> ou <b>"ok":true</b>. Tela de login do Google = falta "Qualquer pessoa" na implantação. "Arquivo não existe" = endereço errado.</p>' : '') +
     '<p class="muted">Estado: ' + esc(estado.st === 'ok' ? 'sincronizado' : estado.st === 'err' ? 'erro — ' + (estado.msg || '') : estado.st === 'busy' ? 'sincronizando…' : 'parado') +
     (DADOS && DADOS.versao ? ' · planilha v' + esc(DADOS.versao) : '') + ' · app v' + APP_VERSION + '</p></div>' +
+    '<div class="card"><h2>Aparência</h2><div class="seg seg-3" role="tablist" style="margin-top:10px">' + [['claro', 'Claro'], ['escuro', 'Escuro'], ['auto', 'Automático']].map((t) => '<button type="button" data-act="tema" data-tema="' + t[0] + '" class="' + (temaAtual() === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div><p class="muted">Automático segue o ajuste do celular (escuro à noite).</p></div>' +
     (f.some((x) => x.erro) ? '<div class="card"><h2>Recusados pela planilha</h2><ul class="lista">' + f.filter((x) => x.erro).map((x) => '<li><div class="t">' + esc(x.op === 'apagar' ? 'Apagar ' + x.id : x.d.pivo + ' ' + dataBr(x.d.data)) + '<div class="muted" style="color:var(--red)">' + esc(x.erro) + '</div></div><button class="btn btn-danger btn-sm" data-act="descartar" data-id="' + esc(x.id) + '" data-op="' + esc(x.op) + '">Descartar</button></li>').join('') + '</ul></div>' : '') +
     '<div class="card"><h2>Conta</h2><div class="toolbar" style="margin-top:10px">' +
     (u ? '<a class="btn btn-outline" href="#/conta">👤 ' + esc(u.nome) + ' (' + (u.perfil === 'ADMIN' ? 'administrador' : 'operador') + ')</a>' + (u.perfil === 'ADMIN' ? '<a class="btn btn-outline" href="#/usuarios">👥 Usuários</a>' : '')
@@ -1002,6 +1003,9 @@ V.usuarios_depois = async function () {
   catch (e) { $('#l-users').innerHTML = '<li class="vazio">' + esc(e.message) + '</li>'; }
 };
 
+function temaAtual() { try { return localStorage.getItem('irrigacao_tema') || 'claro'; } catch (e) { return 'claro'; } }
+function aplicarTema(t) { try { localStorage.setItem('irrigacao_tema', t); } catch (e) { /* sem espaço */ } document.documentElement.dataset.tema = t; }
+
 /* ================= ações (data-act) ================= */
 document.addEventListener('click', async (ev) => {
   const go = ev.target.closest('[data-go]'); if (go) { location.hash = go.dataset.go; return; }
@@ -1009,6 +1013,7 @@ document.addEventListener('click', async (ev) => {
   const act = a.dataset.act;
   if (act === 'tipo') { tipoLanc = a.dataset.tipo; route({ manterRolagem: true }); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
+  else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
   else if (act === 'recalcular') {
     a.disabled = true; a.textContent = 'Recalculando…';
     try { const r = await chamar('POST', null, { __recalcular: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); if (r.aviso) toast(r.aviso, true); else toast('Recalculado.'); await puxar(true); }

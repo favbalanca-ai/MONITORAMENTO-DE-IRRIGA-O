@@ -12,7 +12,7 @@ feitos sem internet.
   déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
   ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
-  cinza sem dados. Modo escuro segue o ajuste do aparelho; no computador os pivôs ficam em duas colunas.
+  cinza sem dados. Tema claro por padrão; em Ajustes dá pra escolher escuro ou automático (segue o aparelho); no computador os pivôs ficam em duas colunas.
 - **Lançar** — irrigação pelo **percentímetro usado** (a lâmina sai do equipamento cadastrado) ou pela lâmina em mm,
   ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
