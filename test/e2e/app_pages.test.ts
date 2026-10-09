@@ -393,6 +393,13 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(rosa, /Predominante: SE \(100% do tempo, média 11 km\/h\)/);
   assert.match(rosa, /Calmaria \(< 3 km\/h\): 0%/);
   await page.screenshot({ path: PRINTS + "12_clima.png", fullPage: true });
+  // filtro por período: janeiro (histórico sem direção) → nada; volta para as 24 h
+  await page.fill("#r-de", "2026-01-20"); await page.fill("#r-ate", "2026-01-25");
+  await page.getByRole("button", { name: "Ver período" }).click();
+  await page.getByText("Vento de 20/01 a 25/01").waitFor();
+  await page.getByText("Nenhuma leitura com direção do vento nesse período.").waitFor();
+  await page.getByRole("button", { name: "Últimas 24 h" }).click();
+  await page.getByText("Vento nas últimas 24 h").waitFor();
   await page.getByRole("link", { name: /Hoje/ }).click();
   await page.getByText("Detalhes").first().click();
   await page.getByText(/Sensor de solo 2: 33%/).waitFor();

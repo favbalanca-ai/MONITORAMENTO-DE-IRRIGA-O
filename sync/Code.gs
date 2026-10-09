@@ -1138,7 +1138,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-5";
+var VERSAO_SERVIDOR = "2026.10.09-6";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1164,6 +1164,7 @@ function doGet_(p) {
   if (acao === "dados") return dadosApp_(u);
   if (acao === "hash") return { ok: true, hash: hashDados_() };
   if (acao === "historico") return { ok: true, historico: historico_(p.pivo, Number(p.dias) || 30) };
+  if (acao === "rosa") return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || "")) };
   if (acao === "usuarios") {
     exigirAdmin_(u);
     return { ok: true, usuarios: listarUsuarios_() };
@@ -1252,7 +1253,20 @@ function rosaVentos24h_() {
   if (!aba || aba.getLastRow() < 2) return null;
   var n = Math.min(200, aba.getLastRow() - 1);
   var ls = aba.getRange(aba.getLastRow() - n + 1, 1, n, 9).getValues().map(linhaParaLeitura_);
-  var fim = ls[ls.length - 1].quando, ini = Motor.somarMinutos(fim, -1440);
+  var fim = ls[ls.length - 1].quando;
+  return rosaVentos_(ls, Motor.somarMinutos(fim, -1440), fim);
+}
+
+/** Rosa dos ventos de um período escolhido no app (datas AAAA-MM-DD, no máximo 120 dias). */
+function rosaVentosPeriodo_(de, ate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate)) throw new Error("Datas no formato AAAA-MM-DD.");
+  if (ate < de) throw new Error("A data final vem antes da inicial.");
+  if (Motor.das(ate, de) > 120) throw new Error("Período de no máximo 120 dias.");
+  var ini = de + "T00:00:00", fim = ate + "T23:59:59";
+  return rosaVentos_(lerLeituras_(ini, fim), ini, fim);
+}
+
+function rosaVentos_(ls, ini, fim) {
   var setores = [];
   for (var i = 0; i < 16; i++) setores.push({ n: 0, faixas: [0, 0, 0, 0], soma: 0 });
   var total = 0, calmaria = 0;
@@ -1265,9 +1279,9 @@ function rosaVentos24h_() {
     var f = kmh < 10 ? 1 : kmh < 20 ? 2 : 3;
     setores[s].n++; setores[s].faixas[f]++; setores[s].soma += kmh;
   });
-  if (!total) return null;
   var maior = 0, idx = -1;
   setores.forEach(function (s, i) { s.mediaKmh = s.n ? Math.round(s.soma / s.n) : 0; delete s.soma; if (s.n > maior) { maior = s.n; idx = i; } });
+  if (!total) return { de: ini, ate: fim, total: 0, calmaria: 0, setores: setores, predominante: -1 };
   return { de: ini, ate: fim, total: total, calmaria: calmaria, setores: setores, predominante: idx };
 }
 

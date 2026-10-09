@@ -297,6 +297,27 @@ test("pivô com latitude/longitude e contorno vai para o resumo; latitude sem lo
   assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "" }, original: "Pivô 2" } }).erro, /precisam vir juntas/);
 });
 
+test("rosa dos ventos por período pelo GET", () => {
+  const amb = pronto();
+  const s = entrar(amb, "jose", "4321").token;
+  // três leituras ao vivo com direção nos extras, em dias diferentes
+  const base = { chuvaAcumDia: 0, tempC: 25, urPct: 60, radWm2: 300, intervaloMin: 10, fonte: "ecowitt" };
+  amb.chamar("gravarLeituras_", [
+    { ...base, quando: "2026-02-01T10:01:00", ventoMs: 2, extras: { "wind.wind_direction": 90 } },
+    { ...base, quando: "2026-02-02T10:01:00", ventoMs: 4, extras: { "wind.wind_direction": 95 } },
+    { ...base, quando: "2026-02-05T10:01:00", ventoMs: 0.5, extras: { "wind.wind_direction": 200 } },
+  ]);
+  const r = amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03" }).rosa;
+  assert.equal(r.total, 2);
+  assert.equal(r.predominante, 4); // L
+  assert.deepEqual([...r.setores[4].faixas], [0, 1, 1, 0]);
+  const r2 = amb.get({ acao: "rosa", s, de: "2026-02-05", ate: "2026-02-05" }).rosa;
+  assert.equal(r2.total, 1);
+  assert.equal(r2.calmaria, 1);
+  assert.match(amb.get({ acao: "rosa", s, de: "2026-02-05", ate: "2026-02-01" }).erro, /final vem antes/);
+  assert.match(amb.get({ acao: "rosa", s, de: "2025-01-01", ate: "2026-02-01" }).erro, /120 dias/);
+});
+
 test("lançar pelo percentímetro: a lâmina líquida sai do equipamento e a observação registra", () => {
   const amb = pronto();
   const s = entrar(amb, "jose", "4321").token;

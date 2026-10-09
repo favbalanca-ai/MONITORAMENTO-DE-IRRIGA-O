@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-9';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-10';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -325,8 +325,13 @@ function rosaDosVentos(dirGraus, ventoMs, rajadaMs) {
 const DIR16 = ['N', 'NNE', 'NE', 'LNE', 'L', 'LSE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 const FAIXAS_VENTO = [['3–10 km/h', '#9ad6e0'], ['10–20 km/h', '#3e9aaa'], ['> 20 km/h', '#16404d']];
 /** Cartão "Vento nas últimas 24 h": rosa dos ventos com 16 setores empilhados por faixa de velocidade. */
+let ROSA = null; // período escolhido pelo usuário: { de, ate, dados } (null = últimas 24 h da planilha)
 function cardRosa24h() {
-  const r = DADOS.vento24h; if (!r || !r.total) return '';
+  const r = ROSA ? ROSA.dados : DADOS.vento24h; if (!r) return '';
+  const filtro = '<div class="rosa-filtro"><div class="grid2"><div><label for="r-de">De</label><input type="date" id="r-de" value="' + esc(ROSA ? ROSA.de : '') + '" max="' + hojeIso() + '"></div><div><label for="r-ate">Até</label><input type="date" id="r-ate" value="' + esc(ROSA ? ROSA.ate : '') + '" max="' + hojeIso() + '"></div></div>' +
+    '<div class="toolbar" style="margin:8px 0 0"><button type="button" class="btn btn-outline btn-sm" data-act="rosa-periodo">Ver período</button>' + (ROSA ? '<button type="button" class="btn btn-outline btn-sm" data-act="rosa-24h">Últimas 24 h</button>' : '') + '</div></div>';
+  const titulo = ROSA ? 'Vento de ' + dataBr(ROSA.de) + ' a ' + dataBr(ROSA.ate) : 'Vento nas últimas 24 h';
+  if (!r.total) return '<div class="card rosa24"><div class="row"><h2>' + ico('vento') + ' ' + esc(titulo) + '</h2></div><p class="muted">Nenhuma leitura com direção do vento nesse período.</p>' + filtro + '</div>';
   const c = 110, R = 92, maxN = Math.max(1, ...r.setores.map((s) => s.n));
   const pt = (ang, rad) => [c + rad * Math.sin((ang * Math.PI) / 180), c - rad * Math.cos((ang * Math.PI) / 180)];
   const fatia = (i, r0, r1) => { const a0 = i * 22.5 - 10.5, a1 = i * 22.5 + 10.5; const [x0, y0] = pt(a0, r1), [x1, y1] = pt(a1, r1), [x2, y2] = pt(a1, r0), [x3, y3] = pt(a0, r0);
@@ -344,12 +349,22 @@ function cardRosa24h() {
   s += '</svg>';
   const pct = (n) => Math.round((n / r.total) * 100);
   const pred = r.predominante >= 0 ? DIR16[r.predominante] : null;
-  return '<div class="card rosa24"><div class="row"><h2>' + ico('vento') + ' Vento nas últimas 24 h</h2><span class="muted">' + r.total + ' leituras</span></div>' +
+  return '<div class="card rosa24"><div class="row"><h2>' + ico('vento') + ' ' + esc(titulo) + '</h2><span class="muted">' + r.total + ' leituras</span></div>' +
     '<div class="rosa24-corpo">' + s + '<div class="rosa24-info">' +
     (pred ? '<p>Predominante: <b>' + esc(pred) + '</b> (' + pct(r.setores[r.predominante].n) + '% do tempo, média ' + r.setores[r.predominante].mediaKmh + ' km/h)</p>' : '') +
     '<p>Calmaria (&lt; 3 km/h): <b>' + pct(r.calmaria) + '%</b> do tempo</p>' +
     '<div class="legenda" style="margin-top:6px">' + FAIXAS_VENTO.map((f) => '<span style="--c:' + f[1] + '">' + f[0] + '</span>').join('') + '</div>' +
-    '<p class="muted">Cada fatia aponta de onde o vento veio; quanto mais comprida, mais vezes veio dali. Serve pra saber pra que lado a deriva vai e de onde a chuva costuma chegar.</p></div></div></div>';
+    '<p class="muted">Cada fatia aponta de onde o vento veio; quanto mais comprida, mais vezes veio dali. Serve pra saber pra que lado a deriva vai e de onde a chuva costuma chegar.</p></div></div>' + filtro + '</div>';
+}
+async function rosaPeriodo(de, ate) {
+  if (!de || !ate) return toast('Escolha as duas datas.', true);
+  if (ate < de) return toast('A data final vem antes da inicial.', true);
+  const btn = $('[data-act="rosa-periodo"]'); if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
+  try {
+    const r = await chamar('GET', { acao: 'rosa', de, ate });
+    if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
+    ROSA = { de, ate, dados: r.rosa }; route({ manterRolagem: true });
+  } catch (e) { toast(e.message, true); if (btn) { btn.disabled = false; btn.textContent = 'Ver período'; } }
 }
 
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
@@ -1068,6 +1083,8 @@ document.addEventListener('click', async (ev) => {
   if (act === 'tipo') { tipoLanc = a.dataset.tipo; route({ manterRolagem: true }); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
+  else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);
+  else if (act === 'rosa-24h') { ROSA = null; route({ manterRolagem: true }); }
   else if (act === 'recalcular') {
     a.disabled = true; a.textContent = 'Recalculando…';
     try { const r = await chamar('POST', null, { __recalcular: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); if (r.aviso) toast(r.aviso, true); else toast('Recalculado.'); await puxar(true); }
