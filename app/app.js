@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-5';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -224,6 +224,58 @@ $$('[data-ico]').forEach((el) => { el.innerHTML = ico(el.dataset.ico); });
 const DIRECOES = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
 const pontoCardeal = (g) => DIRECOES[Math.round(((g % 360) + 360) % 360 / 45) % 8];
 function faixaUv(u) { return u < 3 ? ['Baixo', '#2e7d32'] : u < 6 ? ['Moderado', '#f0b429'] : u < 8 ? ['Alto', '#ef6c00'] : u < 11 ? ['Muito alto', '#c62828'] : ['Extremo', '#6a1b9a']; }
+/** Temperatura de bulbo úmido (°C) a partir de T e UR — fórmula de Stull (2011), boa de 5 a 99 % de UR. */
+function bulboUmido(t, ur) {
+  return t * Math.atan(0.151977 * Math.sqrt(ur + 8.313659)) + Math.atan(t + ur) - Math.atan(ur - 1.676331) +
+    0.00391838 * Math.pow(ur, 1.5) * Math.atan(0.023101 * ur) - 4.686035;
+}
+/**
+ * Condições para pulverização (terrestre e aérea) com a última leitura. Critérios usuais (Embrapa/ANDEF):
+ * Delta T 2–8 °C ideal (até 10 com gota grossa), vento 3–10 km/h terrestre e 3–12 km/h aérea, UR > 55 %,
+ * temperatura < 30 °C, sem chuva. Devolve o pior nível de cada modalidade e os motivos.
+ */
+function condicoesAplicacao(u, x) {
+  if (u.tempC == null || u.urPct == null) return null;
+  const deltaT = u.tempC - bulboUmido(u.tempC, u.urPct);
+  const ventoKmh = u.ventoMs != null ? u.ventoMs * 3.6 : null;
+  const rajadaKmh = x['wind.wind_gust'] != null ? x['wind.wind_gust'] * 3.6 : null;
+  const chovendo = (x['rainfall.rain_rate'] || x['rainfall_piezo.rain_rate'] || 0) > 0;
+  const NIVEL = { bom: 0, atencao: 1, ruim: 2 };
+  const avaliar = (modal) => {
+    const motivos = []; let pior = 'bom';
+    const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (NIVEL[nivel] > NIVEL[pior]) pior = nivel; };
+    if (deltaT < 2) marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: abaixo de 2 — gota não seca, risco de inversão térmica');
+    else if (deltaT <= 8) marca('bom', 'Delta T ' + br(deltaT, 1) + ' °C: ideal (2 a 8)');
+    else if (deltaT <= 10) marca('atencao', 'Delta T ' + br(deltaT, 1) + ' °C: alto — só com gota grossa');
+    else marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: acima de 10 — a gota evapora antes de chegar');
+    if (ventoKmh != null) {
+      const max = modal === 'aerea' ? [12, 15] : [10, 12];
+      if (ventoKmh < 3) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: calmaria — deriva imprevisível, inversão');
+      else if (ventoKmh <= max[0]) marca('bom', 'Vento ' + br(ventoKmh, 0) + ' km/h: ideal (3 a ' + max[0] + ')');
+      else if (ventoKmh <= max[1]) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: no limite (' + max[0] + ' a ' + max[1] + ')');
+      else marca('ruim', 'Vento ' + br(ventoKmh, 0) + ' km/h: acima de ' + max[1] + ' — deriva');
+      if (rajadaKmh != null && rajadaKmh > max[1] && ventoKmh <= max[1]) marca('atencao', 'Rajadas de ' + br(rajadaKmh, 0) + ' km/h');
+    }
+    if (u.urPct < 50) marca('ruim', 'UR ' + br(u.urPct, 0) + '%: abaixo de 50');
+    else if (u.urPct < 55) marca('atencao', 'UR ' + br(u.urPct, 0) + '%: entre 50 e 55');
+    if (u.tempC > 35) marca('ruim', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 35');
+    else if (u.tempC > 30) marca('atencao', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 30');
+    if (chovendo) marca('ruim', 'Chovendo agora — lava o produto');
+    return { nivel: pior, motivos };
+  };
+  return { deltaT, terrestre: avaliar('terrestre'), aerea: avaliar('aerea') };
+}
+const APLIC_ROTULO = { bom: 'Boa', atencao: 'Atenção', ruim: 'Ruim' };
+function blocoAplicacao(u, x) {
+  const c = condicoesAplicacao(u, x); if (!c) return '';
+  const nivelDT = c.deltaT < 2 || c.deltaT > 10 ? 'ruim' : c.deltaT > 8 ? 'atencao' : 'bom';
+  const modal = (nome, r) => '<div class="aplic-modal sem-' + r.nivel + '"><div class="aplic-cab"><b>' + nome + '</b><span class="badge aplic-' + r.nivel + '">' + SEM_ICONE[r.nivel] + ' ' + APLIC_ROTULO[r.nivel] + '</span></div>' +
+    '<ul>' + r.motivos.filter((m) => m[0] !== 'bom').map((m) => '<li class="m-' + m[0] + '">' + esc(m[1]) + '</li>').join('') + (r.motivos.every((m) => m[0] === 'bom') ? '<li class="m-bom">Delta T, vento, UR e temperatura dentro da faixa.</li>' : '') + '</ul></div>';
+  return '<div class="aplic"><div class="aplic-top"><div class="est-rotulo">' + ico('gota') + ' Pulverização agora</div><div class="deltat sem-' + nivelDT + '"><small>Delta T</small><b>' + br(c.deltaT, 1) + '<span> °C</span></b><em>' + (nivelDT === 'bom' ? 'ideal 2–8' : nivelDT === 'atencao' ? 'alto (8–10)' : c.deltaT < 2 ? 'abaixo de 2' : 'acima de 10') + '</em></div></div>' +
+    '<div class="aplic-grid">' + modal('Terrestre', c.terrestre) + modal('Aérea', c.aerea) + '</div>' +
+    '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h terrestre e 3–12 aérea, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
+}
+
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
 function cardEstacao() {
   const u = DADOS.ultimaLeitura; if (!u || !u.quando) return '';
@@ -250,7 +302,8 @@ function cardEstacao() {
     (pres != null ? stat('gauge', 'Pressão', String(Math.round(pres)) + ' hPa', u.pressaoTendencia3h != null ? (u.pressaoTendencia3h > 0.5 ? '↑ subindo' : u.pressaoTendencia3h < -0.5 ? '↓ caindo (chuva?)' : '→ estável') + ' ' + br(u.pressaoTendencia3h, 1) : '') : '') +
     (raios != null ? stat('raio', 'Raios (hora)', br(raios, 0), raioKm != null ? br(raioKm, 0) + ' km' : '') : '') +
     sensoresSolo(x) + '</div>' +
-    (avisos.length ? '<ul class="alertas">' + avisos.map((a) => '<li>' + ico(a[0] === 'chuva' ? 'chuva' : a[0] === 'vento' ? 'vento' : a[0] === 'raio' ? 'raio' : 'alerta') + ' ' + esc(a[1]) + '</li>').join('') + '</ul>' : '') + '</div>';
+    (avisos.length ? '<ul class="alertas">' + avisos.map((a) => '<li>' + ico(a[0] === 'chuva' ? 'chuva' : a[0] === 'vento' ? 'vento' : a[0] === 'raio' ? 'raio' : 'alerta') + ' ' + esc(a[1]) + '</li>').join('') + '</ul>' : '') +
+    blocoAplicacao(u, x) + '</div>';
 }
 function sensoresSolo(x) {
   return Object.keys(x).filter((k) => /^soil_ch\d+\.soilmoisture$/.test(k)).sort().map((k) => {

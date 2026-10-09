@@ -124,6 +124,23 @@ h1,h2,h3{letter-spacing:-.01em}
 .est-stat em{display:block;font-style:normal;font-size:11px;opacity:.85}
 .est-stat i{font-style:normal;background:#fff;border-radius:6px;padding:0 5px;font-weight:700;font-size:10.5px}
 .estacao .alertas li{background:rgba(255,255,255,.92);color:#5a3d00}
+/* pulverização */
+.aplic{margin-top:14px;border-top:1px solid rgba(255,255,255,.2);padding-top:12px}
+.aplic-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.deltat{text-align:right;border-right:4px solid var(--c);padding-right:10px}
+.deltat small{display:block;font-size:11px;opacity:.85;font-weight:600}
+.deltat b{font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}.deltat b span{font-size:13px;font-weight:600}
+.deltat em{display:block;font-style:normal;font-size:11px;opacity:.9}
+.deltat.sem-bom{--c:#7bd389}.deltat.sem-atencao{--c:#f0c25a}.deltat.sem-ruim{--c:#ff8a80}
+.aplic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.aplic-modal{background:rgba(255,255,255,.92);color:#33474f;border-radius:12px;padding:8px 10px;border-left:4px solid var(--c)}
+.aplic-modal.sem-bom{--c:var(--sem-bom)}.aplic-modal.sem-atencao{--c:var(--sem-atencao)}.aplic-modal.sem-ruim{--c:var(--sem-ruim)}
+.aplic-cab{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.aplic-modal ul{list-style:none;margin-top:4px;font-size:12px;line-height:1.35}
+.aplic-modal li{padding:2px 0}.aplic-modal li.m-ruim{color:#b00020}.aplic-modal li.m-atencao{color:#9a6b00}.aplic-modal li.m-bom{color:#2e7d32}
+.badge.aplic-bom{background:var(--green-soft);color:var(--green)}.badge.aplic-atencao{background:var(--amber-soft);color:#7a5200}.badge.aplic-ruim{background:var(--red-soft);color:var(--red)}
+.estacao .aplic .muted{color:#d6e6ea;font-size:11.5px;margin-top:8px}
+@media(max-width:640px){.aplic-grid{grid-template-columns:minmax(0,1fr)}}
 
 /* Resumo do dia (tela Hoje) */
 .resumo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
