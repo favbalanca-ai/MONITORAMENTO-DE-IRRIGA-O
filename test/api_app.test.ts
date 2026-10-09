@@ -249,10 +249,10 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   for (let h = 0; h < 48; h++) { time.push("2026-02-0" + (h < 24 ? 8 : 9) + "T" + String(h % 24).padStart(2, "0") + ":00"); temperature_2m.push(h % 24 < 8 ? 22 : 31); relative_humidity_2m.push(h % 24 < 8 ? 75 : 45); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5); }
   const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
   amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
-  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[]; horas: { quando: string; terrestre: string }[] };
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[]; horas: { quando: string; nivel: string }[] };
   assert.equal(p.horas.length, 48);
-  assert.equal(p.horas[3]!.terrestre, "bom");
-  assert.equal(p.horas[12]!.terrestre, "ruim");
+  assert.equal(p.horas[3]!.nivel, "bom");
+  assert.equal(p.horas[12]!.nivel, "ruim");
   assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
   assert.ok(amb.urls.some((u) => /open-meteo.*latitude=-14\.74&longitude=-46\.24/.test(u)));
   assert.ok(amb.urls.some((u) => u.endsWith("/previsao/3126208")));

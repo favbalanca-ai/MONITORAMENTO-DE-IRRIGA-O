@@ -61,13 +61,12 @@ test("pulverização: Delta T, semáforo por instante e janelas boas nas horas p
   assert.ok(Math.abs(deltaT(27.4, 61) - 5.6) < 0.05);
   assert.ok(Math.abs(deltaT(31.5, 27) - 12.7) < 0.05);
   const c = condicoesAplicacao({ tempC: 27.4, urPct: 61, ventoMs: 3.1, rajadaMs: 6.5, chovendo: true });
-  assert.equal(c.terrestre.nivel, "ruim");
-  assert.ok(c.terrestre.motivos.some((m) => /Vento 11 km\/h: no limite \(10 a 12\)/.test(m[1])));
-  assert.ok(c.aerea.motivos.some((m) => /Vento 11 km\/h: ideal \(3 a 12\)/.test(m[1])));
+  assert.equal(c.nivel, "ruim");
+  assert.ok(c.motivos.some((m) => /Vento 11 km\/h: no limite \(10 a 15\)/.test(m[1])));
+  assert.ok(c.motivos.some((m) => /Rajadas de 23 km\/h/.test(m[1])));
   const bom = condicoesAplicacao({ tempC: 24, urPct: 70, ventoMs: 1.5 });
-  assert.equal(bom.terrestre.nivel, "bom");
-  assert.equal(bom.aerea.nivel, "bom");
-  assert.equal(condicoesAplicacao({ tempC: 33, urPct: 40, ventoMs: 1.5 }).terrestre.nivel, "ruim");
+  assert.equal(bom.nivel, "bom");
+  assert.equal(condicoesAplicacao({ tempC: 33, urPct: 40, ventoMs: 1.5 }).nivel, "ruim");
   assert.match(urlOpenMeteoHoras(-14.9, -46.25, "America/Sao_Paulo"), /hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability&wind_speed_unit=ms/);
   // 24 h: madrugada boa (6 h), manhã quente/seca, tarde ventosa, noite chove
   const time = [], temperature_2m = [], relative_humidity_2m = [], wind_speed_10m = [], wind_gusts_10m = [], precipitation = [], precipitation_probability = [];
@@ -80,16 +79,16 @@ test("pulverização: Delta T, semáforo por instante e janelas boas nas horas p
   const horas = lerOpenMeteoHoras({ hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } });
   assert.equal(horas.length, 24);
   const ap = aplicacaoPorHora(horas);
-  assert.equal(ap[3]!.terrestre, "bom");
-  assert.equal(ap[14]!.terrestre, "ruim"); // 33 °C e UR 35 → Delta T alto
-  assert.equal(ap[21]!.aerea, "ruim");     // chuva
-  const j = janelasBoas(ap, "terrestre", "2026-02-09T01:00");
+  assert.equal(ap[3]!.nivel, "bom");
+  assert.equal(ap[14]!.nivel, "ruim"); // 33 °C e UR 35 → Delta T alto
+  assert.equal(ap[21]!.nivel, "ruim"); // chuva
+  const j = janelasBoas(ap, "2026-02-09T01:00");
   // 27 °C / UR 60 / calmo de manhã também é bom: a janela vai de 1h a 11h direto; à noite 18h–19h antes da chuva
   assert.deepEqual(j, [{ inicio: "2026-02-09T01:00", fim: "2026-02-09T11:00", horas: 11 }, { inicio: "2026-02-09T18:00", fim: "2026-02-09T19:00", horas: 2 }]);
   // seca: UR 40 o dia todo → nada bom; "atenção" também não (UR < 50 é ruim); menos ruim = menor Delta T sem chuva
   const seca = aplicacaoPorHora(horas.map((h) => ({ ...h, urPct: 40, tempC: h.quando < "2026-02-09T06:00" ? 20 : 30 })));
   const { horaMenosRuim } = await import("../src/motor/previsao.ts");
-  assert.equal(janelasBoas(seca, "terrestre", "2026-02-09T00:00", 2, 4, "atencao").length, 0);
+  assert.equal(janelasBoas(seca, "2026-02-09T00:00", 2, 4, "atencao").length, 0);
   const m = horaMenosRuim(seca, "2026-02-09T00:00")!;
   assert.equal(m.quando.slice(11), "00:00"); // 20 °C e UR 40: o menor Delta T do dia
   assert.equal(m.urPct, 40);

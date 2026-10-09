@@ -159,8 +159,7 @@ h1,h2,h3{letter-spacing:-.01em}
 .deltat b{font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}.deltat b span{font-size:13px;font-weight:600}
 .deltat em{display:block;font-style:normal;font-size:11px;opacity:.9}
 .deltat.sem-bom{--c:#7bd389}.deltat.sem-atencao{--c:#f0c25a}.deltat.sem-ruim{--c:#ff8a80}
-.aplic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
-.aplic-modal{background:rgba(255,255,255,.92);color:#33474f;border-radius:12px;padding:8px 10px;border-left:4px solid var(--c)}
+.aplic-modal{margin-top:10px;background:rgba(255,255,255,.92);color:#33474f;border-radius:12px;padding:8px 10px;border-left:4px solid var(--c)}
 .aplic-modal.sem-bom{--c:var(--sem-bom)}.aplic-modal.sem-atencao{--c:var(--sem-atencao)}.aplic-modal.sem-ruim{--c:var(--sem-ruim)}
 .aplic-cab{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .aplic-modal ul{list-style:none;margin-top:4px;font-size:12px;line-height:1.35}
@@ -168,13 +167,12 @@ h1,h2,h3{letter-spacing:-.01em}
 .badge.aplic-bom{background:var(--green-soft);color:var(--green)}.badge.aplic-atencao{background:var(--amber-soft);color:#7a5200}.badge.aplic-ruim{background:var(--red-soft);color:var(--red)}
 .estacao .aplic .muted{color:#d6e6ea;font-size:11.5px;margin-top:8px}
 .faixa48{display:flex;align-items:center;gap:8px;margin-top:6px}
-.faixa48 small{width:62px;font-size:11px;font-weight:700;opacity:.9}
 .horas48{flex:1;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:1px;height:16px;border-radius:6px;overflow:hidden}
 .horas48 i{display:block}
 .horas48 .h-bom{background:#7bd389}.horas48 .h-atencao{background:#f0c25a}.horas48 .h-ruim{background:#ff8a80}
-.horas48-rotulos{display:flex;justify-content:space-between;font-size:10px;opacity:.8;margin:2px 0 0 70px}
+.horas48-rotulos{display:flex;justify-content:space-between;font-size:10px;opacity:.8;margin:2px 0 0}
 .j48-txt{font-size:13px;margin-top:8px;background:rgba(255,255,255,.12);border-radius:10px;padding:8px 10px}
-@media(max-width:640px){.aplic-grid{grid-template-columns:minmax(0,1fr)}}
+
 
 /* rosa dos ventos 24 h */
 .rosa24-corpo{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:center;margin-top:8px}

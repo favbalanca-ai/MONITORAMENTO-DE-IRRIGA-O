@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-11';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-12';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -230,9 +230,8 @@ function bulboUmido(t, ur) {
     0.00391838 * Math.pow(ur, 1.5) * Math.atan(0.023101 * ur) - 4.686035;
 }
 /**
- * Condições para pulverização (terrestre e aérea) com a última leitura. Critérios usuais (Embrapa/ANDEF):
- * Delta T 2–8 °C ideal (até 10 com gota grossa), vento 3–10 km/h terrestre e 3–12 km/h aérea, UR > 55 %,
- * temperatura < 30 °C, sem chuva. Devolve o pior nível de cada modalidade e os motivos.
+ * Condições para pulverização com a última leitura — critérios usuais (Embrapa/ANDEF): Delta T 2–8 °C ideal
+ * (até 10 com gota grossa), vento 3–10 km/h, UR > 55 %, temperatura < 30 °C, sem chuva. Pior item manda.
  */
 function condicoesAplicacao(u, x) {
   if (u.tempC == null || u.urPct == null) return null;
@@ -241,48 +240,44 @@ function condicoesAplicacao(u, x) {
   const rajadaKmh = x['wind.wind_gust'] != null ? x['wind.wind_gust'] * 3.6 : null;
   const chovendo = (x['rainfall.rain_rate'] || x['rainfall_piezo.rain_rate'] || 0) > 0;
   const NIVEL = { bom: 0, atencao: 1, ruim: 2 };
-  const avaliar = (modal) => {
-    const motivos = []; let pior = 'bom';
-    const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (NIVEL[nivel] > NIVEL[pior]) pior = nivel; };
-    if (deltaT < 2) marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: abaixo de 2 — gota não seca, risco de inversão térmica');
-    else if (deltaT <= 8) marca('bom', 'Delta T ' + br(deltaT, 1) + ' °C: ideal (2 a 8)');
-    else if (deltaT <= 10) marca('atencao', 'Delta T ' + br(deltaT, 1) + ' °C: alto — só com gota grossa');
-    else marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: acima de 10 — a gota evapora antes de chegar');
-    if (ventoKmh != null) {
-      const max = modal === 'aerea' ? [12, 15] : [10, 12];
-      if (ventoKmh < 3) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: calmaria — deriva imprevisível, inversão');
-      else if (ventoKmh <= max[0]) marca('bom', 'Vento ' + br(ventoKmh, 0) + ' km/h: ideal (3 a ' + max[0] + ')');
-      else if (ventoKmh <= max[1]) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: no limite (' + max[0] + ' a ' + max[1] + ')');
-      else marca('ruim', 'Vento ' + br(ventoKmh, 0) + ' km/h: acima de ' + max[1] + ' — deriva');
-      if (rajadaKmh != null && rajadaKmh > max[1] && ventoKmh <= max[1]) marca('atencao', 'Rajadas de ' + br(rajadaKmh, 0) + ' km/h');
-    }
-    if (u.urPct < 50) marca('ruim', 'UR ' + br(u.urPct, 0) + '%: abaixo de 50');
-    else if (u.urPct < 55) marca('atencao', 'UR ' + br(u.urPct, 0) + '%: entre 50 e 55');
-    if (u.tempC > 35) marca('ruim', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 35');
-    else if (u.tempC > 30) marca('atencao', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 30');
-    if (chovendo) marca('ruim', 'Chovendo agora — lava o produto');
-    return { nivel: pior, motivos };
-  };
-  return { deltaT, terrestre: avaliar('terrestre'), aerea: avaliar('aerea') };
+  const motivos = []; let pior = 'bom';
+  const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (NIVEL[nivel] > NIVEL[pior]) pior = nivel; };
+  if (deltaT < 2) marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: abaixo de 2 — gota não seca, risco de inversão térmica');
+  else if (deltaT <= 8) marca('bom', 'Delta T ' + br(deltaT, 1) + ' °C: ideal (2 a 8)');
+  else if (deltaT <= 10) marca('atencao', 'Delta T ' + br(deltaT, 1) + ' °C: alto — só com gota grossa');
+  else marca('ruim', 'Delta T ' + br(deltaT, 1) + ' °C: acima de 10 — a gota evapora antes de chegar');
+  if (ventoKmh != null) {
+    if (ventoKmh < 3) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: calmaria — deriva imprevisível, inversão');
+    else if (ventoKmh <= 10) marca('bom', 'Vento ' + br(ventoKmh, 0) + ' km/h: ideal (3 a 10)');
+    else if (ventoKmh <= 15) marca('atencao', 'Vento ' + br(ventoKmh, 0) + ' km/h: no limite (10 a 15)');
+    else marca('ruim', 'Vento ' + br(ventoKmh, 0) + ' km/h: acima de 15 — deriva');
+    if (rajadaKmh != null && rajadaKmh > 15 && ventoKmh <= 15) marca('atencao', 'Rajadas de ' + br(rajadaKmh, 0) + ' km/h');
+  }
+  if (u.urPct < 50) marca('ruim', 'UR ' + br(u.urPct, 0) + '%: abaixo de 50');
+  else if (u.urPct < 55) marca('atencao', 'UR ' + br(u.urPct, 0) + '%: entre 50 e 55');
+  if (u.tempC > 35) marca('ruim', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 35');
+  else if (u.tempC > 30) marca('atencao', 'Temperatura ' + br(u.tempC, 0) + ' °C: acima de 30');
+  if (chovendo) marca('ruim', 'Chovendo agora — lava o produto');
+  return { deltaT, nivel: pior, motivos };
 }
 const APLIC_ROTULO = { bom: 'Boa', atencao: 'Atenção', ruim: 'Ruim' };
 function blocoAplicacao(u, x) {
   const c = condicoesAplicacao(u, x); if (!c) return '';
   const nivelDT = c.deltaT < 2 || c.deltaT > 10 ? 'ruim' : c.deltaT > 8 ? 'atencao' : 'bom';
-  const modal = (nome, r) => '<div class="aplic-modal sem-' + r.nivel + '"><div class="aplic-cab"><b>' + nome + '</b><span class="badge aplic-' + r.nivel + '">' + SEM_ICONE[r.nivel] + ' ' + APLIC_ROTULO[r.nivel] + '</span></div>' +
-    '<ul>' + r.motivos.filter((m) => m[0] !== 'bom').map((m) => '<li class="m-' + m[0] + '">' + esc(m[1]) + '</li>').join('') + (r.motivos.every((m) => m[0] === 'bom') ? '<li class="m-bom">Delta T, vento, UR e temperatura dentro da faixa.</li>' : '') + '</ul></div>';
   const pv = DADOS.previsao, horas = pv && pv.horas ? pv.horas : [];
+  const ruins = c.motivos.filter((m) => m[0] !== 'bom');
   return '<div class="aplic"><div class="aplic-top"><div class="est-rotulo">' + ico('gota') + ' Pulverização agora</div><div class="deltat sem-' + nivelDT + '"><small>Delta T</small><b>' + br(c.deltaT, 1) + '<span> °C</span></b><em>' + (nivelDT === 'bom' ? 'ideal 2–8' : nivelDT === 'atencao' ? 'alto (8–10)' : c.deltaT < 2 ? 'abaixo de 2' : 'acima de 10') + '</em></div></div>' +
-    '<div class="aplic-grid">' + modal('Terrestre', c.terrestre) + modal('Aérea', c.aerea) + '</div>' +
+    '<div class="aplic-modal sem-' + c.nivel + '"><div class="aplic-cab"><b>Condição pra aplicar</b><span class="badge aplic-' + c.nivel + '">' + SEM_ICONE[c.nivel] + ' ' + APLIC_ROTULO[c.nivel] + '</span></div>' +
+    '<ul>' + (ruins.length ? ruins.map((m) => '<li class="m-' + m[0] + '">' + esc(m[1]) + '</li>').join('') : '<li class="m-bom">Delta T, vento, UR e temperatura dentro da faixa.</li>') + '</ul></div>' +
     janelas48h(horas) +
-    '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h terrestre e 3–12 aérea, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
+    '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
 }
 /** Próximas 48 h hora a hora (previsão Open-Meteo) e as melhores janelas de cada modalidade. */
-function janelasBoas(horas, modal, apartirDe, minHoras, max, ateNivel) {
+function janelasBoas(horas, apartirDe, minHoras, max, ateNivel) {
   const ORDEM = { bom: 0, atencao: 1, ruim: 2 }, lim = ORDEM[ateNivel || 'bom'];
   const out = []; let ini = null, n = 0, ult = '';
   const fecha = () => { if (ini && n >= minHoras) out.push({ inicio: ini, fim: ult, horas: n }); ini = null; n = 0; };
-  for (const h of horas) { if (h.quando < apartirDe) continue; if (ORDEM[h[modal]] <= lim) { if (!ini) ini = h.quando; n++; ult = h.quando; } else fecha(); }
+  for (const h of horas) { if (h.quando < apartirDe) continue; if (ORDEM[h.nivel] <= lim) { if (!ini) ini = h.quando; n++; ult = h.quando; } else fecha(); }
   fecha(); return out.slice(0, max);
 }
 function horaMenosRuim(horas, apartirDe) {
@@ -299,18 +294,18 @@ function janelas48h(horas) {
   const hh = (q) => q.slice(11, 13) + 'h', dd = (q) => q.slice(8, 10) + '/' + q.slice(5, 7);
   const quando = (q) => (q.slice(0, 10) === ini.slice(0, 10) ? 'hoje' : q.slice(0, 10) === prox[prox.length - 1].quando.slice(0, 10) && prox[prox.length - 1].quando.slice(0, 10) !== ini.slice(0, 10) ? dd(q) : 'amanhã');
   const lista = (js) => js.map((j) => quando(j.inicio) + ' ' + hh(j.inicio) + '–' + String(Number(j.fim.slice(11, 13)) + 1).padStart(2, '0') + 'h (' + j.horas + ' h)').join(' · ');
-  const texto = (modal) => {
-    const boas = janelasBoas(prox, modal, ini, 2, 3);
+  const texto = () => {
+    const boas = janelasBoas(prox, ini, 2, 3);
     if (boas.length) return lista(boas);
-    const atencao = janelasBoas(prox, modal, ini, 2, 3, 'atencao');
+    const atencao = janelasBoas(prox, ini, 2, 3, 'atencao');
     if (atencao.length) return 'nenhuma janela boa; com atenção (gota grossa, adjuvante): ' + lista(atencao);
     const m = horaMenosRuim(prox, ini);
     return m ? 'nenhuma janela boa nas 48 h. Menos ruim: ' + quando(m.quando) + ' ' + hh(m.quando) + ' (Delta T ' + br(m.deltaT, 1) + ', UR ' + br(m.urPct, 0) + '%' + (m.ventoKmh != null ? ', vento ' + m.ventoKmh + ' km/h' : '') + ') — converse com o agrônomo' : 'nenhuma janela: chuva o tempo todo';
   };
-  const faixa = (modal) => '<div class="faixa48"><small>' + (modal === 'terrestre' ? 'Terrestre' : 'Aérea') + '</small><div class="horas48">' + prox.map((h) => '<i class="h-' + h[modal] + '" title="' + esc(dd(h.quando) + ' ' + hh(h.quando) + ' · Delta T ' + br(h.deltaT, 1) + (h.ventoKmh != null ? ' · vento ' + h.ventoKmh + ' km/h' : '') + (h.chuvaMm ? ' · chuva ' + br(h.chuvaMm, 1) + ' mm' : '')) + '"></i>').join('') + '</div></div>';
-  return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)</div>' + faixa('terrestre') + faixa('aerea') +
+  const faixa = () => '<div class="faixa48"><div class="horas48">' + prox.map((h) => '<i class="h-' + h.nivel + '" title="' + esc(dd(h.quando) + ' ' + hh(h.quando) + ' · Delta T ' + br(h.deltaT, 1) + (h.ventoKmh != null ? ' · vento ' + h.ventoKmh + ' km/h' : '') + (h.chuvaMm ? ' · chuva ' + br(h.chuvaMm, 1) + ' mm' : '')) + '"></i>').join('') + '</div></div>';
+  return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)</div>' + faixa() +
     '<div class="horas48-rotulos">' + prox.filter((h, i) => i % 6 === 0).map((h) => '<span>' + hh(h.quando) + '</span>').join('') + '</div>' +
-    '<p class="j48-txt"><b>Terrestre:</b> ' + esc(texto('terrestre')) + '<br><b>Aérea:</b> ' + esc(texto('aerea')) + '</p></div>';
+    '<p class="j48-txt"><b>Melhor hora pra aplicar:</b> ' + esc(texto()) + '</p></div>';
 }
 
 /**

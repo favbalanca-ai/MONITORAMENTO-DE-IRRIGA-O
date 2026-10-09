@@ -377,14 +377,13 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(est, /de SE \(135°\) · rajada 23/);
   // pulverização: T 27,4 / UR 61 → Delta T 5,6 (ideal); vento 11 km/h = atenção terrestre, bom aérea; chovendo = ruim nos dois
   assert.match(est, /Delta T\s+5,6\s*°C\s+ideal 2–8/);
-  assert.match(est, /Terrestre[\s\S]*Ruim[\s\S]*Vento 11 km\/h: no limite \(10 a 12\)[\s\S]*Chovendo agora/);
-  assert.match(est, /Aérea[\s\S]*Ruim[\s\S]*Chovendo agora/);
-  assert.doesNotMatch(est.split("Aérea")[1]!, /Vento 11 km\/h: no limite/);
+  assert.match(est, /Condição pra aplicar[\s\S]*Ruim[\s\S]*Vento 11 km\/h: no limite \(10 a 15\)[\s\S]*Rajadas de 23 km\/h[\s\S]*Chovendo agora/);
+  assert.equal(await page.getByText("Aérea").count(), 0);
   await page.locator(".j48").waitFor();
   const j48 = await page.locator(".j48").innerText();
   assert.match(j48, /Próximas 48 h \(previsão\)/i);
-  assert.equal(await page.locator(".horas48 i").count(), 96); // 48 h × 2 modalidades
-  assert.match(j48, /Terrestre: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
+  assert.equal(await page.locator(".horas48 i").count(), 48);
+  assert.match(j48, /Melhor hora pra aplicar: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
   // rosa dos ventos 24 h: uma leitura ao vivo vinda de 135° (SE) a 11 km/h

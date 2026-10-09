@@ -973,18 +973,18 @@ var Motor = (function () {
           0.00391838 * Math.pow(urPct, 1.5) * Math.atan(0.023101 * urPct) - 4.686035;
   }
   const deltaT = (tempC, urPct) => tempC - bulboUmido(tempC, urPct);
-  /** Faixas usuais (Embrapa/ANDEF). Vento em km/h: [bom até, atenção até]. */
+  /** Faixas usuais (Embrapa/ANDEF), uma só para qualquer pulverização. Vento em km/h: [bom até, atenção até]. */
   const FAIXAS_APLICACAO = {
       deltaT: { minimo: 2, idealAte: 8, atencaoAte: 10 },
-      ventoKmh: { minimo: 3, terrestre: [10, 12], aerea: [12, 15] },
+      ventoKmh: { minimo: 3, bomAte: 10, atencaoAte: 15 },
       ur: { atencaoAbaixo: 55, ruimAbaixo: 50 },
       temp: { atencaoAcima: 30, ruimAcima: 35 },
   };
   const dec1 = (x) => x.toFixed(1).replace(".", ",");
   const int0 = (x) => String(Math.round(x));
   /**
-   * Condições de pulverização terrestre e aérea para um instante (leitura da estação ou hora prevista).
-   * O nível de cada modalidade é o pior item; os motivos explicam.
+   * Condições de pulverização para um instante (leitura da estação ou hora prevista).
+   * O nível é o pior item; os motivos explicam.
    */
   function condicoesAplicacao(x) {
       const F = FAIXAS_APLICACAO;
@@ -992,45 +992,41 @@ var Motor = (function () {
       const ventoKmh = x.ventoMs == null ? null : x.ventoMs * 3.6;
       const rajadaKmh = x.rajadaMs == null ? null : x.rajadaMs * 3.6;
       const ORDEM = { bom: 0, atencao: 1, ruim: 2 };
-      const avaliar = (modal) => {
-          const motivos = [];
-          let pior = "bom";
-          const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (ORDEM[nivel] > ORDEM[pior])
-              pior = nivel; };
-          if (dt < F.deltaT.minimo)
-              marca("ruim", `Delta T ${dec1(dt)} °C: abaixo de ${F.deltaT.minimo} — gota não seca, risco de inversão térmica`);
-          else if (dt <= F.deltaT.idealAte)
-              marca("bom", `Delta T ${dec1(dt)} °C: ideal (${F.deltaT.minimo} a ${F.deltaT.idealAte})`);
-          else if (dt <= F.deltaT.atencaoAte)
-              marca("atencao", `Delta T ${dec1(dt)} °C: alto — só com gota grossa`);
+      const motivos = [];
+      let pior = "bom";
+      const marca = (nivel, texto) => { motivos.push([nivel, texto]); if (ORDEM[nivel] > ORDEM[pior])
+          pior = nivel; };
+      if (dt < F.deltaT.minimo)
+          marca("ruim", `Delta T ${dec1(dt)} °C: abaixo de ${F.deltaT.minimo} — gota não seca, risco de inversão térmica`);
+      else if (dt <= F.deltaT.idealAte)
+          marca("bom", `Delta T ${dec1(dt)} °C: ideal (${F.deltaT.minimo} a ${F.deltaT.idealAte})`);
+      else if (dt <= F.deltaT.atencaoAte)
+          marca("atencao", `Delta T ${dec1(dt)} °C: alto — só com gota grossa`);
+      else
+          marca("ruim", `Delta T ${dec1(dt)} °C: acima de ${F.deltaT.atencaoAte} — a gota evapora antes de chegar`);
+      if (ventoKmh !== null) {
+          if (ventoKmh < F.ventoKmh.minimo)
+              marca("atencao", `Vento ${int0(ventoKmh)} km/h: calmaria — deriva imprevisível, inversão`);
+          else if (ventoKmh <= F.ventoKmh.bomAte)
+              marca("bom", `Vento ${int0(ventoKmh)} km/h: ideal (${F.ventoKmh.minimo} a ${F.ventoKmh.bomAte})`);
+          else if (ventoKmh <= F.ventoKmh.atencaoAte)
+              marca("atencao", `Vento ${int0(ventoKmh)} km/h: no limite (${F.ventoKmh.bomAte} a ${F.ventoKmh.atencaoAte})`);
           else
-              marca("ruim", `Delta T ${dec1(dt)} °C: acima de ${F.deltaT.atencaoAte} — a gota evapora antes de chegar`);
-          if (ventoKmh !== null) {
-              const [bomAte, atencaoAte] = F.ventoKmh[modal];
-              if (ventoKmh < F.ventoKmh.minimo)
-                  marca("atencao", `Vento ${int0(ventoKmh)} km/h: calmaria — deriva imprevisível, inversão`);
-              else if (ventoKmh <= bomAte)
-                  marca("bom", `Vento ${int0(ventoKmh)} km/h: ideal (${F.ventoKmh.minimo} a ${bomAte})`);
-              else if (ventoKmh <= atencaoAte)
-                  marca("atencao", `Vento ${int0(ventoKmh)} km/h: no limite (${bomAte} a ${atencaoAte})`);
-              else
-                  marca("ruim", `Vento ${int0(ventoKmh)} km/h: acima de ${atencaoAte} — deriva`);
-              if (rajadaKmh !== null && rajadaKmh > atencaoAte && ventoKmh <= atencaoAte)
-                  marca("atencao", `Rajadas de ${int0(rajadaKmh)} km/h`);
-          }
-          if (x.urPct < F.ur.ruimAbaixo)
-              marca("ruim", `UR ${int0(x.urPct)}%: abaixo de ${F.ur.ruimAbaixo}`);
-          else if (x.urPct < F.ur.atencaoAbaixo)
-              marca("atencao", `UR ${int0(x.urPct)}%: entre ${F.ur.ruimAbaixo} e ${F.ur.atencaoAbaixo}`);
-          if (x.tempC > F.temp.ruimAcima)
-              marca("ruim", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.ruimAcima}`);
-          else if (x.tempC > F.temp.atencaoAcima)
-              marca("atencao", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.atencaoAcima}`);
-          if (x.chovendo)
-              marca("ruim", "Chovendo — lava o produto");
-          return { nivel: pior, motivos };
-      };
-      return { deltaT: dt, terrestre: avaliar("terrestre"), aerea: avaliar("aerea") };
+              marca("ruim", `Vento ${int0(ventoKmh)} km/h: acima de ${F.ventoKmh.atencaoAte} — deriva`);
+          if (rajadaKmh !== null && rajadaKmh > F.ventoKmh.atencaoAte && ventoKmh <= F.ventoKmh.atencaoAte)
+              marca("atencao", `Rajadas de ${int0(rajadaKmh)} km/h`);
+      }
+      if (x.urPct < F.ur.ruimAbaixo)
+          marca("ruim", `UR ${int0(x.urPct)}%: abaixo de ${F.ur.ruimAbaixo}`);
+      else if (x.urPct < F.ur.atencaoAbaixo)
+          marca("atencao", `UR ${int0(x.urPct)}%: entre ${F.ur.ruimAbaixo} e ${F.ur.atencaoAbaixo}`);
+      if (x.tempC > F.temp.ruimAcima)
+          marca("ruim", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.ruimAcima}`);
+      else if (x.tempC > F.temp.atencaoAcima)
+          marca("atencao", `Temperatura ${int0(x.tempC)} °C: acima de ${F.temp.atencaoAcima}`);
+      if (x.chovendo)
+          marca("ruim", "Chovendo — lava o produto");
+      return { deltaT: dt, nivel: pior, motivos };
   }
   /** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
   function aplicacaoPorHora(horas) {
@@ -1040,12 +1036,12 @@ var Motor = (function () {
           if (h.tempC === null || h.urPct === null)
               continue;
           const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2 || ((_b = h.probPct) !== null && _b !== void 0 ? _b : 0) >= 60 });
-          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, terrestre: c.terrestre.nivel, aerea: c.aerea.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
+          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
       }
       return out;
   }
   /** Janelas de horas seguidas no nível pedido ou melhor (mínimo `minHoras`), depois de `apartirDe`. */
-  function janelasBoas(horas, modal, apartirDe, minHoras = 2, max = 4, ateNivel = "bom") {
+  function janelasBoas(horas, apartirDe, minHoras = 2, max = 4, ateNivel = "bom") {
       const ORDEM = { bom: 0, atencao: 1, ruim: 2 };
       const janelas = [];
       let ini = null, n = 0, ultima = "";
@@ -1054,7 +1050,7 @@ var Motor = (function () {
       for (const h of horas) {
           if (h.quando < apartirDe)
               continue;
-          if (ORDEM[h[modal]] <= ORDEM[ateNivel]) {
+          if (ORDEM[h.nivel] <= ORDEM[ateNivel]) {
               if (!ini)
                   ini = h.quando;
               n++;

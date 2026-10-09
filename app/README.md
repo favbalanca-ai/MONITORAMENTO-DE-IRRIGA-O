@@ -24,10 +24,10 @@ feitos sem internet.
   pra quem vai ligar o pivô: chovendo agora, vento forte (≥ 4 m/s, deriva), raios, estação sem leitura nova.
   Cartão **Vento nas últimas 24 h**: rosa dos ventos com 16 setores (de onde o vento veio, por faixa de
   velocidade), direção predominante e % de calmaria. Filtro por período (datas) — sem escolher, últimas 24 h.
-  Bloco **Pulverização agora**: Delta T (bulbo seco − bulbo úmido, fórmula de Stull) e semáforo de aplicação
-  terrestre e aérea com os motivos — faixas usuais Embrapa/ANDEF: Delta T 2–8 °C, vento 3–10 km/h (terrestre)
-  e 3–12 km/h (aérea), UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora
-  (previsão horária do Open-Meteo) e as melhores janelas de cada modalidade.
+  Bloco **Pulverização agora**: Delta T (bulbo seco − bulbo úmido, fórmula de Stull) e um semáforo único de
+  aplicação com os motivos — faixas usuais Embrapa/ANDEF: Delta T 2–8 °C, vento 3–10 km/h (até 15 com atenção),
+  UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora (previsão horária do
+  Open-Meteo) e a melhor hora pra aplicar (janelas boas; senão as de atenção; senão a hora menos ruim).
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede).
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê.
