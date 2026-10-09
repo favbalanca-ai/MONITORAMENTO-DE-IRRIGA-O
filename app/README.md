@@ -9,8 +9,12 @@ feitos sem internet.
 - **Hoje** — a decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
   tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**. Cartão **Próximos dias**
   com a previsão de chuva (mm e % do Open-Meteo, texto do INMET) e aviso quando a chuva prevista cobre o
-  déficit. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar · cinza sem dados.
-- **Lançar** — irrigação (mm aplicados) ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
+  déficit. Resumo no topo (quantos pivôs em cada estado), e em cada pivô: **próxima irrigação prevista** (com a
+  ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
+  a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
+  cinza sem dados. Modo escuro segue o ajuste do aparelho; no computador os pivôs ficam em duas colunas.
+- **Lançar** — irrigação pelo **percentímetro usado** (a lâmina sai do equipamento cadastrado) ou pela lâmina em mm,
+  ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — gráfico de déficit, AFD, lâmina mínima, chuva e irrigação (15 a 120 dias) e tabela.

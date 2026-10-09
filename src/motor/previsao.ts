@@ -13,6 +13,8 @@ export interface DiaPrevisao {
   probPct: number | null;
   tmin: number | null;
   tmax: number | null;
+  /** ET₀ FAO prevista (mm), do Open-Meteo. */
+  et0Mm?: number | null;
   /** Texto do INMET por turno ("manhã: sol; tarde: pancadas de chuva…"). */
   resumo?: string;
 }
@@ -27,11 +29,12 @@ export interface Previsao {
 
 export const INMET_URL = "https://apiprevmet3.inmet.gov.br/previsao/";
 
-export function urlOpenMeteo(latitude: number, longitude: number, fuso: string, dias = 7): string {
+/** Pede também os 7 dias passados: a ET₀ deles tapa dias em que a estação ficou sem leituras. */
+export function urlOpenMeteo(latitude: number, longitude: number, fuso: string, dias = 7, passados = 7): string {
   return (
     "https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
-    "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min" +
-    "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias
+    "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration" +
+    "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados
   );
 }
 
@@ -50,6 +53,7 @@ export function lerOpenMeteo(json: unknown): DiaPrevisao[] {
     probPct: num(d["precipitation_probability_max"]?.[i]),
     tmax: num(d["temperature_2m_max"]?.[i]),
     tmin: num(d["temperature_2m_min"]?.[i]),
+    et0Mm: num(d["et0_fao_evapotranspiration"]?.[i]),
   }));
 }
 
@@ -93,7 +97,7 @@ export function juntarPrevisao(openMeteo: DiaPrevisao[], inmet: DiaPrevisao[]): 
   for (const d of inmet) {
     const x = porData.get(d.data);
     if (x) {
-      x.resumo = d.resumo;
+      if (d.resumo) x.resumo = d.resumo;
       if (x.tmax === null) x.tmax = d.tmax;
       if (x.tmin === null) x.tmin = d.tmin;
     } else porData.set(d.data, { ...d });

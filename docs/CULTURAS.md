@@ -47,3 +47,8 @@ Fontes:
   https://www.embrapa.br/en/web/agencia-de-informacao-tecnologica/cultivos/feijao/producao/manejo-de-irrigacao
 - Trigo BRS 394: Embrapa Cerrados — https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1162347/1/AA-CPAC-27022024-p-2086-2091.pdf
 - Algodão: Embrapa Algodão — https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1173334/1/CoeficientesCultivoAlgodoeiroHerbaceo2009.pdf
+
+**Graus-dia (soma térmica):** a coluna opcional **Graus-dia do ciclo** na aba PIVOS recebe o total de graus-dia da
+cultivar até a maturação (o fornecedor da semente informa). Preenchida, o estádio anda por `GD acumulado / GD do ciclo`
+em vez de dias corridos, usando a temperatura-base de cada cultura: soja 10 °C, milho 10, sorgo 10, feijão 3, trigo 0,
+algodão 15 (valores usuais na literatura; confirmar com o agrônomo). GD do dia = máx(0, Tmédia − Tbase).

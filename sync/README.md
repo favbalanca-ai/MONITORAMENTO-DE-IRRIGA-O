@@ -20,6 +20,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
      Na coluna **Cultura** vale `soja`, `milho`, `sorgo`, `feijao`, `feijao pd`, `trigo` ou `algodao` (ver `docs/CULTURAS.md`).
      A coluna **Ciclo (dias, vazio = padrão)** é opcional: preenchida, estica/encurta a curva de Kc para a cultivar plantada.
+   - Ainda na ESTACAO: **Chuva mínima que conta** (padrão 2 mm — chuva menor fica na folha) e o **horário de ponta**
+     da energia (padrão 18–21 h), usado no custo e na hora sugerida de ligar o pivô.
+   - Colunas opcionais da PIVOS: **Tarifa na ponta** (R$/kWh; preenchida, o app mostra "ligar às 21:00" e o custo nas
+     duas tarifas) e **Graus-dia do ciclo** da cultivar (preenchido, o estádio anda pela soma térmica, não por dias).
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
      mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
      só avisa — não entra no balanço.

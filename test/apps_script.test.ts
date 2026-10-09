@@ -20,6 +20,9 @@ function instalado(): Ambiente {
 
 function comLeiturasPivo2(): Ambiente {
   const amb = instalado();
+  // a seção 7 foi feita contando toda chuva: zera a chuva mínima para reproduzir a tabela
+  const est = amb.aba("ESTACAO");
+  est.set(est.dados.findIndex((l) => String(l[0]).startsWith("Chuva mínima")) + 1, 2, 0);
   const n = amb.chamar<number>("gravarLeituras_", leiturasMeteoCorrigido());
   assert.equal(n, 2834);
   return amb;

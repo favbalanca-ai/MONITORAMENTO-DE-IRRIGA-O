@@ -33,6 +33,8 @@ export interface DiaClima {
   rad: number;
   /** Chuva na janela (mm). */
   chuva: number;
+  /** ET₀ de fora (Open-Meteo) para o dia em que a estação não teve leituras suficientes (mm). */
+  et0Externa?: number;
   /** Leituras na janela, em equivalentes de 10 min (144 = dia completo). */
   n: number;
   /** Campos que faltaram na janela e foram preenchidos com o dia válido mais próximo. */
@@ -75,6 +77,8 @@ export interface Cultura {
   cicloPadraoDias?: number;
   /** Valores que a Embrapa sugere para solo/decisão; o app oferece ao escolher a cultura. */
   sugestao?: SugestaoCultura;
+  /** Temperatura-base (°C) para soma térmica; com `grausDiaCiclo` no pivô, o estádio anda por graus-dia. */
+  tBaseC?: number;
 }
 
 /** Sugestões por cultura para o cadastro do pivô (o agrônomo confirma). */
@@ -112,6 +116,8 @@ export interface Equipamento {
   eficienciaPct: number;
   potenciaKw: number;
   tarifaRsKwh: number;
+  /** Tarifa no horário de ponta (R$/kWh). Vazio = tarifa única. */
+  tarifaPontaRsKwh?: number | null;
 }
 
 export interface Pivo {
@@ -129,6 +135,8 @@ export interface Pivo {
   /** Tensão a partir da qual o tensiômetro indica irrigar (kPa, negativo). */
   tensaoIrrigarKpa: number;
   equipamento?: Equipamento;
+  /** Graus-dia da cultivar até a maturação (da semente). Vazio = estádio por dias corridos. */
+  grausDiaCiclo?: number | null;
 }
 
 export interface Irrigacao {

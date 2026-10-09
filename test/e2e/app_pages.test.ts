@@ -112,9 +112,10 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   await page.getByText("🚿 IRRIGAR").waitFor();
   const card = await page.locator(".card").nth(1).innerText();
   assert.match(card, /Pivô 2/);
-  assert.match(card, /Soja · R3 · 75 DAS/);
-  assert.match(card, /Déficit 24,\d mm/);
+  assert.match(card, /Soja\s+R3\s+75 DAS/);
+  assert.match(card, /Déficit 2\d,\d mm/);
   assert.match(card, /PERCENTÍMETRO\s+\d+%/i);
+  assert.match(await page.locator(".resumo").innerText(), /1 pivô pra irrigar/);
   assert.match(await page.locator("#user-chip").innerText(), /Fabiana/);
   assert.match(await page.locator("#sync-status").innerText(), /Sincronizado/);
   await page.screenshot({ path: PRINTS + "2_hoje.png", fullPage: true });
@@ -128,6 +129,7 @@ test("operador lança irrigação, a decisão muda e a planilha recebe com o nom
   await configurarEEntrar(page, "jose", "4321");
   await page.getByRole("link", { name: /Lançar/ }).click();
   assert.equal(await page.locator("#l-data").inputValue(), "2026-02-08");
+  await page.getByRole("button", { name: "Pela lâmina (mm)" }).click();
   await page.fill("#l-mm", "25");
   await page.fill("#l-obs", "percentímetro 30%");
   await page.locator("#f-lanc button[type=submit]").click();
@@ -145,6 +147,17 @@ test("operador lança irrigação, a decisão muda e a planilha recebe com o nom
   await page.getByRole("button", { name: "Apagar" }).click();
   await page.getByText("Nada lançado ainda.").waitFor();
   assert.equal(amb.aba("IRRIGACOES").getLastRow(), 1);
+
+  // pelo percentímetro: o app mostra a lâmina estimada e a planilha grava a lâmina líquida do equipamento
+  await page.getByRole("button", { name: "Pelo percentímetro" }).click();
+  await page.fill("#l-pct", "40");
+  await page.getByText(/≈ 11,8 mm líquidos \(13,9 brutos\)/).waitFor();
+  await page.locator("#f-lanc button[type=submit]").click();
+  await page.waitForFunction(() => !document.querySelector(".badge.pend"));
+  const l2 = amb.aba("IRRIGACOES").objetos();
+  assert.equal(l2.length, 1);
+  assert.equal(l2[0]!["Lâmina líquida aplicada (mm)"], 11.8);
+  assert.match(String(l2[0]!["Obs."]), /percentímetro 40%/);
   await ctx.close();
 });
 
@@ -270,6 +283,7 @@ test("pivôs: culturas com nome, sugestão da Embrapa preenche o solo e a curva 
   const amb = planilha();
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "fabiana", "1234");
+  await page.getByText("Detalhes").first().click();
   await page.getByText("Curva de Kc do ciclo").first().click();
   await page.locator("svg[aria-label='Curva de Kc']").first().waitFor();
   await page.getByRole("link", { name: /Pivôs/ }).click();
@@ -324,8 +338,19 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByText("🌧 Próximos dias").waitFor();
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
-  await page.getByText(/Previsão de 20,5 mm de chuva até 10\/02/).waitFor();
+  // com a chuva mínima de 2 mm o déficit sobe a ~27,6 mm e os 20,5 mm previstos não cobrem: sem aviso de adiar
+  assert.equal(await page.getByText(/avalie adiar a irrigação/).count(), 0);
+  await page.getByText(/Ao fim da volta o déficit chega a ≈/).waitFor();
+  await page.getByText(/🌧 prev. 2 dias/).waitFor();
   assert.equal(await page.locator(".card.sem-ruim").count(), 1);
+  // irrigando bastante hoje, a decisão vira NÃO IRRIGAR e aparece a próxima irrigação prevista
+  amb.post({ __login: { login: "jose", pin: "4321" } });
+  const s = amb.post({ __login: { login: "jose", pin: "4321" } }).token;
+  amb.post({ s, __lancamento: { id: "E2e1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "27" } });
+  await page.getByRole("button", { name: "↻ Recalcular" }).click();
+  await page.getByText(/Próxima irrigação prevista: \d\d\/\d\d \(em \d+ dias?, sem chuva\)/).waitFor();
+  await page.getByText("Detalhes").first().click();
+  await page.getByText(/Déficit previsto \(sem chuva\):/).waitFor();
   await page.screenshot({ path: PRINTS + "10_previsao.png", fullPage: true });
   await ctx.close();
 });

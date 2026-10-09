@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+// chuvaMinimaMm: 0 — a planilha original (seção 7) não descontava chuva pequena
 import { simularBalanco } from "../src/motor/index.ts";
 import { DIAS_PIVO2, ESTACAO_EXEMPLO, JSON_PIVO2, PIVO2_EXEMPLO } from "./pivo2_exemplo.ts";
 
@@ -31,7 +32,7 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
 test("Pivô 2 de exemplo reproduz a tabela da seção 7, dia a dia", () => {
-  const linhas = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2 });
+  const linhas = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2, chuvaMinimaMm: 0 });
   assert.equal(linhas.length, REFERENCIA.length);
   linhas.forEach((l, i) => {
     const [data, pm, hs, planilha, deficit, decisao] = REFERENCIA[i]!;
@@ -45,7 +46,7 @@ test("Pivô 2 de exemplo reproduz a tabela da seção 7, dia a dia", () => {
 });
 
 test("Pivô 2 de exemplo fica em R3 (Kc 1,15) com raiz máxima em todo o período", () => {
-  const linhas = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2 });
+  const linhas = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2, chuvaMinimaMm: 0 });
   for (const l of linhas) {
     assert.equal(l.estadio, "R3");
     assert.equal(l.kc, 1.15);
@@ -56,7 +57,7 @@ test("Pivô 2 de exemplo fica em R3 (Kc 1,15) com raiz máxima em todo o períod
 });
 
 test("alertas do exemplo: radiação suspeita e divergência da Hargreaves em 20/01", () => {
-  const [primeiro] = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2 });
+  const [primeiro] = simularBalanco({ pivo: PIVO2_EXEMPLO, estacao: ESTACAO_EXEMPLO, dias: DIAS_PIVO2, chuvaMinimaMm: 0 });
   assert.ok(primeiro!.alertas.some((a) => a.includes("Radiação")));
   assert.ok(primeiro!.alertas.some((a) => a.includes("Hargreaves")));
 });

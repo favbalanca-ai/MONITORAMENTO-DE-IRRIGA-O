@@ -257,6 +257,7 @@ var Motor = (function () {
       ],
       fonte: "Aba KC da planilha original da fazenda.",
       sugestao: { raizMaxCm: 50, diasRaiz: 55, tensaoIrrigarKpa: -70, porque: "Raiz de 50 cm aos 55 dias e tensão de −70 kPa, como no exemplo da fazenda." },
+      tBaseC: 10,
   };
   /** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
   function porDias(ciclo, linhas) {
@@ -278,6 +279,7 @@ var Motor = (function () {
       ],
       fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 47 (2002) e Circular Técnica 10 / planilha de manejo de irrigação; Kc final FAO-56.",
       sugestao: { raizMaxCm: 40, diasRaiz: 54, tensaoIrrigarKpa: -60, porque: "Embrapa Milho e Sorgo usa 40 cm de raiz efetiva, atingida no fim da fase vegetativo." },
+      tBaseC: 10,
   };
   /**
    * Sorgo granífero, ciclo de 120 dias. Fases de 24, 42, 30 e 24 dias (Embrapa, Comunicado Técnico 254,
@@ -294,6 +296,7 @@ var Motor = (function () {
       ]),
       fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 254 (2021), planilha para obtenção do coeficiente de cultura; Kc FAO-56.",
       sugestao: { raizMaxCm: 40, diasRaiz: 66, tensaoIrrigarKpa: -60, porque: "Mesma raiz efetiva do milho (40 cm), atingida no fim da fase vegetativa." },
+      tBaseC: 10,
   };
   /**
    * Feijão comum, sistema convencional. Tabela de Kc por dias após a emergência (DAE) da Agência de
@@ -316,6 +319,7 @@ var Motor = (function () {
       ]),
       fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (Kc por DAE, sistema convencional).",
       sugestao: { raizMaxCm: 30, diasRaiz: 45, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
+      tBaseC: 3,
   };
   /**
    * Feijão em plantio direto (medido na cv. Aporé): germinação até início da floração 35 dias (Kc 0,69),
@@ -333,6 +337,7 @@ var Motor = (function () {
       ]),
       fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (plantio direto, cv. Aporé).",
       sugestao: { raizMaxCm: 30, diasRaiz: 42, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
+      tBaseC: 3,
   };
   /**
    * Trigo irrigado no Cerrado (BRS 394, Embrapa Cerrados): Kc = −0,000268·DAE² + 0,032979·DAE + 0,392945.
@@ -353,6 +358,7 @@ var Motor = (function () {
       ],
       fonte: "Embrapa Cerrados — Coeficientes de cultura do trigo BRS 394 irrigado no Cerrado (2024).",
       sugestao: { raizMaxCm: 40, diasRaiz: 50, fatorDeplecaoFixo: 0.4, tensaoIrrigarKpa: -50, porque: "Embrapa Cerrados: raiz de 40 cm e irrigar quando 40% da CAD foi consumida (fator fixo 0,4)." },
+      tBaseC: 0,
   };
   /**
    * Algodão herbáceo: Kc = −0,00006·DAE² + 0,009·DAE + 0,632 (Embrapa Algodão, BRS 200 Marrom).
@@ -371,6 +377,7 @@ var Motor = (function () {
       ],
       fonte: "Embrapa Algodão — Coeficientes de cultivo do algodoeiro herbáceo (2009).",
       sugestao: { raizMaxCm: 60, diasRaiz: 75, tensaoIrrigarKpa: -60, porque: "Raiz profunda (~60 cm) atingida na floração; conferir para o Cerrado." },
+      tBaseC: 15,
   };
   /** Dias após a semeadura. */
   function das(data, plantio) {
@@ -405,39 +412,52 @@ var Motor = (function () {
       var _a;
       return Math.max(0, diasAposSemeadura - ((_a = cultura.emergenciaDias) !== null && _a !== void 0 ? _a : 0));
   }
+  /**
+   * Fração do ciclo já percorrida. Por dias corridos (DAE/ciclo) ou, quando o pivô tem os graus-dia da
+   * cultivar e a cultura tem temperatura-base, pela soma térmica acumulada (GD/GD do ciclo).
+   */
+  function fracaoCiclo(cultura, diasAposSemeadura, grausDia) {
+      if (grausDia && grausDia.ciclo > 0)
+          return Math.max(0, grausDia.acumulado) / grausDia.ciclo;
+      return dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+  }
+  /** Graus-dia de um dia: temperatura média acima da base (nunca negativo). */
+  function grausDiaDoDia(cultura, tmed) {
+      return cultura.tBaseC === undefined || !Number.isFinite(tmed) ? 0 : Math.max(0, tmed - cultura.tBaseC);
+  }
   /** Estádio pela fração do ciclo. Depois do fim do ciclo, fica no último estádio. */
-  function estadioPorDas(cultura, diasAposSemeadura) {
+  function estadioPorDas(cultura, diasAposSemeadura, fracao) {
       var _a;
-      const f = dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+      const f = fracao !== null && fracao !== void 0 ? fracao : dae(cultura, diasAposSemeadura) / cultura.cicloDias;
       const e = (_a = cultura.estadios.find((x) => f <= x.ateFracao)) !== null && _a !== void 0 ? _a : cultura.estadios[cultura.estadios.length - 1];
       if (!e)
           throw new Error(`Cultura ${cultura.nome} sem estádios cadastrados.`);
       return e;
   }
   /** Kc sem a correção da palhada: equação, reta dentro do estádio ou degrau. */
-  function kcBase(cultura, estadio, diasAposSemeadura) {
+  function kcBase(cultura, estadio, diasAposSemeadura, fracao) {
       var _a;
-      const d = dae(cultura, diasAposSemeadura);
+      const f = fracao !== null && fracao !== void 0 ? fracao : dae(cultura, diasAposSemeadura) / cultura.cicloDias;
       if (cultura.kcEquacao) {
           const [a, b, c] = cultura.kcEquacao;
           const padrao = (_a = cultura.cicloPadraoDias) !== null && _a !== void 0 ? _a : cultura.cicloDias;
-          const x = Math.min(d, cultura.cicloDias) * (padrao / cultura.cicloDias); // ciclo diferente: estica a equação
+          const x = Math.min(1, f) * padrao; // "dia equivalente" no ciclo padrão da equação
           return a * x * x + b * x + c;
       }
       if (estadio.kcFim === undefined)
           return estadio.kc;
       const i = cultura.estadios.indexOf(estadio);
       const ini = i > 0 ? cultura.estadios[i - 1].ateFracao : 0;
-      const t = Math.min(1, Math.max(0, (d / cultura.cicloDias - ini) / (estadio.ateFracao - ini)));
+      const t = Math.min(1, Math.max(0, (f - ini) / (estadio.ateFracao - ini)));
       return estadio.kc + (estadio.kcFim - estadio.kc) * t;
   }
   /**
    * Kc do dia. Em plantio direto sobre palhada, o Kc do primeiro estádio cai pela metade
    * (Embrapa Milho e Sorgo; aplicado à soja por analogia).
    */
-  function kcDoDia(cultura, diasAposSemeadura, palhada) {
-      const estadio = estadioPorDas(cultura, diasAposSemeadura);
-      const kc = kcBase(cultura, estadio, diasAposSemeadura);
+  function kcDoDia(cultura, diasAposSemeadura, palhada, fracao) {
+      const estadio = estadioPorDas(cultura, diasAposSemeadura, fracao);
+      const kc = kcBase(cultura, estadio, diasAposSemeadura, fracao);
       const primeiro = estadio === cultura.estadios[0];
       return { estadio, kc: palhada && primeiro && !cultura.kcJaComPalhada ? kc * 0.5 : kc };
   }
@@ -484,15 +504,34 @@ var Motor = (function () {
       const laminaMaxMm = lamina100Mm / (eq.percentimetroMinPct / 100);
       return { areaHa, t100h, lamina100Mm, laminaMaxMm };
   }
+  const PONTA_PADRAO = { inicioH: 18, fimH: 21 };
+  /** Horas dentro da ponta numa volta que começa em `inicioH` (hora decimal do dia) e dura `duracaoH`. */
+  function horasNaPonta(inicioH, duracaoH, ponta = PONTA_PADRAO) {
+      let total = 0;
+      for (let dia = 0; dia * 24 < inicioH + duracaoH + 24; dia++) {
+          const a = Math.max(inicioH, dia * 24 + ponta.inicioH);
+          const b = Math.min(inicioH + duracaoH, dia * 24 + ponta.fimH);
+          if (b > a)
+              total += b - a;
+      }
+      return total;
+  }
+  const hhmm = (h) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+  /** Lâmina líquida (mm) aplicada numa volta com o percentímetro em `pct` %. */
+  function laminaDoPercentimetro(eq, pct) {
+      const cap = capacidade(eq);
+      const brutaMm = cap.lamina100Mm / (pct / 100);
+      return { brutaMm, liquidaMm: brutaMm * (eq.eficienciaPct / 100) };
+  }
   /** Ajuste do pivô para repor o déficit líquido (mm) em uma volta. */
-  function recomendar(eq, deficitMm) {
+  function recomendar(eq, deficitMm, ponta = PONTA_PADRAO) {
       const cap = capacidade(eq);
       const necessaria = deficitMm / (eq.eficienciaPct / 100);
       const laminaBrutaMm = Math.min(cap.laminaMaxMm, Math.max(cap.lamina100Mm, necessaria));
       const percentimetroPct = (cap.lamina100Mm / laminaBrutaMm) * 100;
       const tempoVoltaH = cap.t100h / (percentimetroPct / 100);
       const energiaKwh = eq.potenciaKw * tempoVoltaH;
-      return {
+      const r = {
           ...cap,
           laminaBrutaMm,
           percentimetroPct,
@@ -501,14 +540,30 @@ var Motor = (function () {
           custoRs: energiaKwh * eq.tarifaRsKwh,
           limitadoPelaLaminaMax: necessaria > cap.laminaMaxMm,
       };
+      const tarifaPonta = eq.tarifaPontaRsKwh;
+      if (tarifaPonta != null && tarifaPonta > 0) {
+          const custo = (inicioH) => {
+              const hp = horasNaPonta(inicioH, tempoVoltaH, ponta);
+              return eq.potenciaKw * ((tempoVoltaH - hp) * eq.tarifaRsKwh + hp * tarifaPonta);
+          };
+          r.custoRs = custo(ponta.fimH);
+          r.ponta = { inicioSugerido: hhmm(ponta.fimH), horasNaPonta: horasNaPonta(ponta.fimH, tempoVoltaH, ponta), custoPiorRs: custo(ponta.inicioH) };
+      }
+      return r;
   }
   // ---- src/motor/balanco.ts ----
+  /** Chuva abaixo disso fica na folha e evapora: não entra no balanço (Embrapa). Configurável na estação. */
+  const CHUVA_MINIMA_EFETIVA_MM = 2;
   /** Abaixo disso a janela não tem dados suficientes para decidir. */
   const MIN_LEITURAS = 100;
   /** Radiação diária abaixo disso (MJ/m²) é suspeita de falha do sensor. */
   const RAD_SUSPEITA_MJ = 1;
   /** Sem medição de umidade há mais que isso, o balanço começa a derivar. */
   const DIAS_MEDICAO_VELHA = 15;
+  /** Chuva efetiva: abaixo do mínimo não molha o solo. */
+  function chuvaEfetiva(chuvaMm, minimoMm) {
+      return chuvaMm < minimoMm ? 0 : chuvaMm;
+  }
   const somaPorData = (itens) => {
       var _a;
       const m = new Map();
@@ -525,7 +580,7 @@ var Motor = (function () {
    *
    * O balanço continua andando em dias SEM DADOS (com o clima que houver), mas a decisão fica bloqueada.
    */
-  function simularBalanco({ pivo, estacao, dias, irrigacoes = [], ajustes = [] }) {
+  function simularBalanco({ pivo, estacao, dias, irrigacoes = [], ajustes = [], chuvaMinimaMm = CHUVA_MINIMA_EFETIVA_MM, ponta = PONTA_PADRAO, previsao = [] }) {
       var _a, _b;
       const { solo, cultura } = pivo;
       const irrigPorDia = somaPorData(irrigacoes);
@@ -533,34 +588,51 @@ var Motor = (function () {
       const linhas = [];
       let ultimaMedicao = null;
       let anterior = null;
+      // soma térmica: antes do primeiro dia com clima, assume o ritmo médio da cultivar (GD do ciclo / dias do ciclo)
+      const usaGrausDia = !!pivo.grausDiaCiclo && cultura.tBaseC !== undefined && dias.length > 0;
+      let gdAcum = usaGrausDia ? (das(dias[0].data, pivo.plantio) * pivo.grausDiaCiclo) / fimDoCicloDas(cultura) : 0;
+      const fracaoDoDia = (tmed, d) => {
+          if (!usaGrausDia)
+              return undefined;
+          gdAcum += grausDiaDoDia(cultura, tmed);
+          return fracaoCiclo(cultura, d, { acumulado: gdAcum, ciclo: pivo.grausDiaCiclo });
+      };
       for (const dia of dias) {
           const d = das(dia.data, pivo.plantio);
-          const { estadio, kc } = kcDoDia(cultura, d, pivo.plantioDiretoPalhada);
+          const fracao = fracaoDoDia(dia.tmed, d);
+          const { estadio, kc } = kcDoDia(cultura, d, pivo.plantioDiretoPalhada, fracao);
           const raizCm = profundidadeRaiz(solo, d);
           const cadMm = cad(solo, raizCm);
-          const et0 = et0PenmanMonteith(dia, estacao);
+          const semLeituras = dia.n < MIN_LEITURAS;
+          const et0Externa = semLeituras && dia.et0Externa !== undefined && Number.isFinite(dia.et0Externa) ? dia.et0Externa : null;
+          const et0 = et0Externa !== null && et0Externa !== void 0 ? et0Externa : et0PenmanMonteith(dia, estacao);
           const hs = et0Hargreaves(dia, estacao);
           const f = fatorDeplecao(solo, et0);
           const afdMm = cadMm * f;
           const etc = et0 * kc;
           const irrigacao = (_a = irrigPorDia.get(dia.data)) !== null && _a !== void 0 ? _a : 0;
+          const chuva = chuvaEfetiva(dia.chuva, chuvaMinimaMm);
           const inicial = anterior !== null && anterior !== void 0 ? anterior : deficitDaUmidade(solo, pivo.umidadeInicialPct, raizCm);
-          let deficit = Math.max(0, inicial + etc - dia.chuva - irrigacao);
+          let deficit = Math.max(0, inicial + etc - chuva - irrigacao);
           const ajuste = ajustePorDia.get(dia.data);
           if (ajuste) {
               deficit = deficitDaUmidade(solo, ajuste.umidadeRaizPct, raizCm);
               ultimaMedicao = dia.data;
           }
           anterior = deficit;
-          const decisao = dia.n < MIN_LEITURAS ? "SEM DADOS" : deficit >= pivo.laminaMinimaMm ? "IRRIGAR" : "NÃO IRRIGAR";
+          const decisao = semLeituras && et0Externa === null ? "SEM DADOS" : deficit >= pivo.laminaMinimaMm ? "IRRIGAR" : "NÃO IRRIGAR";
           const alertas = [];
-          if ((_b = dia.estimados) === null || _b === void 0 ? void 0 : _b.length)
+          if (et0Externa !== null)
+              alertas.push(`Estação com só ${dia.n} leituras: ET₀ do dia veio do Open-Meteo (${et0Externa.toFixed(2)} mm).`);
+          else if ((_b = dia.estimados) === null || _b === void 0 ? void 0 : _b.length)
               alertas.push(`Clima estimado pelo dia vizinho (sem leitura de: ${dia.estimados.join(", ")}).`);
-          if (dia.n < MIN_LEITURAS)
+          if (semLeituras && et0Externa === null)
               alertas.push(`Só ${dia.n} leituras na janela (mínimo ${MIN_LEITURAS}).`);
-          if (dia.rad < RAD_SUSPEITA_MJ)
+          if (dia.chuva > 0 && chuva === 0)
+              alertas.push(`Chuva de ${dia.chuva.toFixed(1)} mm abaixo de ${chuvaMinimaMm} mm: não conta (fica na folha).`);
+          if (et0Externa === null && dia.rad < RAD_SUSPEITA_MJ)
               alertas.push(`Radiação de ${dia.rad.toFixed(2)} MJ/m² — suspeita de falha do sensor.`);
-          if (divergenciaHargreaves(et0, hs) > LIMITE_DIVERGENCIA_HS)
+          if (et0Externa === null && divergenciaHargreaves(et0, hs) > LIMITE_DIVERGENCIA_HS)
               alertas.push(`ET₀ Penman-Monteith (${et0.toFixed(2)}) diverge mais de 35% da Hargreaves (${hs.toFixed(2)}).`);
           if (deficit >= afdMm)
               alertas.push(`Déficit de ${deficit.toFixed(1)} mm passou da AFD (${afdMm.toFixed(1)} mm): risco de estresse.`);
@@ -581,7 +653,7 @@ var Motor = (function () {
               alertas.push(`Ciclo da cultura encerrado há ${passouCiclo} dia(s): confira o plantio ou desative o pivô.`);
           let recomendacao;
           if (pivo.equipamento) {
-              recomendacao = recomendar(pivo.equipamento, deficit);
+              recomendacao = recomendar(pivo.equipamento, deficit, ponta);
               if (pivo.laminaMinimaMm < recomendacao.lamina100Mm * (pivo.equipamento.eficienciaPct / 100))
                   alertas.push(`Lâmina mínima (${pivo.laminaMinimaMm} mm) é menor do que o pivô aplica a 100% ` +
                       `(${recomendacao.lamina100Mm.toFixed(1)} mm brutos).`);
@@ -596,7 +668,7 @@ var Motor = (function () {
               et0,
               et0Hargreaves: hs,
               etc,
-              chuva: dia.chuva,
+              chuva,
               irrigacao,
               raizCm,
               cadMm,
@@ -610,7 +682,45 @@ var Motor = (function () {
               alertas,
           });
       }
+      const ultima = linhas[linhas.length - 1];
+      if (ultima && previsao.length) {
+          ultima.projecao = projetar(pivo, ultima, previsao, usaGrausDia ? { acumulado: gdAcum, ciclo: pivo.grausDiaCiclo } : null, ultima.decisao === "IRRIGAR" ? recomendarSeHouver(pivo, ultima.deficit, ponta) : undefined);
+      }
       return linhas;
+  }
+  function recomendarSeHouver(pivo, deficit, ponta) {
+      return pivo.equipamento ? recomendar(pivo.equipamento, deficit, ponta) : undefined;
+  }
+  /**
+   * Projeta o déficit dia a dia com a ET₀ prevista (Open-Meteo), SEM contar chuva (chuva prevista vira
+   * aviso, não desconto). Diz quando o déficit passa da lâmina mínima e quanto estará ao fim da volta.
+   */
+  function projetar(pivo, hoje, previsao, grausDia, rec) {
+      const { cultura } = pivo;
+      const prox = previsao.filter((p) => p.data > hoje.data && p.et0Mm !== null && p.et0Mm !== undefined).slice(0, 7);
+      let deficit = hoje.deficit;
+      let gd = grausDia ? grausDia.acumulado : 0;
+      const dias = [];
+      let proxima = hoje.decisao === "IRRIGAR" ? hoje.data : null;
+      for (const p of prox) {
+          const d = das(p.data, pivo.plantio);
+          let fracao;
+          if (grausDia) {
+              const tmed = p.tmax !== null && p.tmin !== null ? (p.tmax + p.tmin) / 2 : NaN;
+              gd += grausDiaDoDia(cultura, tmed);
+              fracao = fracaoCiclo(cultura, d, { acumulado: gd, ciclo: grausDia.ciclo });
+          }
+          const { kc } = kcDoDia(cultura, d, pivo.plantioDiretoPalhada, fracao);
+          const et0 = p.et0Mm;
+          deficit = Math.max(0, deficit + et0 * kc);
+          dias.push({ data: p.data, deficit: Math.round(deficit * 10) / 10, et0, kc });
+          if (proxima === null && deficit >= pivo.laminaMinimaMm)
+              proxima = p.data;
+      }
+      const emDias = proxima === null ? null : das(proxima, hoje.data);
+      const primeiro = dias[0];
+      const deficitFimVoltaMm = rec && primeiro ? Math.round((hoje.deficit + (primeiro.et0 * primeiro.kc * rec.tempoVoltaH) / 24) * 10) / 10 : undefined;
+      return { proximaIrrigacao: proxima, emDias, deficitFimVoltaMm, dias, horizonte: dias.length };
   }
   // ---- src/motor/cadastro.ts ----
   /** Cadastro da fazenda (estação e pivôs) e sua validação — usado pelo banco e pela planilha. */
@@ -651,6 +761,8 @@ var Motor = (function () {
               erros.push(`${o}: cultura "${p.cultura}" não cadastrada (há: ${Object.keys(CULTURAS).join(", ")})`);
           if (p.cicloDias != null)
               num(p.cicloDias, `${o}.cicloDias`, 30, 400);
+          if (p.grausDiaCiclo != null)
+              num(p.grausDiaCiclo, `${o}.grausDiaCiclo`, 200, 6000);
           if (!DATA.test((_a = p.plantio) !== null && _a !== void 0 ? _a : ""))
               erros.push(`${o}: plantio deve ser AAAA-MM-DD`);
           if (p.inicioBalanco !== undefined && !DATA.test(p.inicioBalanco))
@@ -683,16 +795,19 @@ var Motor = (function () {
               num(e.eficienciaPct, `${o}.equipamento.eficienciaPct`, 1, 100);
               num(e.potenciaKw, `${o}.equipamento.potenciaKw`, 0);
               num(e.tarifaRsKwh, `${o}.equipamento.tarifaRsKwh`, 0);
+              if (e.tarifaPontaRsKwh != null)
+                  num(e.tarifaPontaRsKwh, `${o}.equipamento.tarifaPontaRsKwh`, 0);
           }
       });
       return erros;
   }
   // ---- src/motor/previsao.ts ----
   const INMET_URL = "https://apiprevmet3.inmet.gov.br/previsao/";
-  function urlOpenMeteo(latitude, longitude, fuso, dias = 7) {
+  /** Pede também os 7 dias passados: a ET₀ deles tapa dias em que a estação ficou sem leituras. */
+  function urlOpenMeteo(latitude, longitude, fuso, dias = 7, passados = 7) {
       return ("https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
-          "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min" +
-          "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
+          "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration" +
+          "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados);
   }
   const num = (v) => {
       const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.replace(",", ".")) : NaN;
@@ -704,13 +819,14 @@ var Motor = (function () {
       if (!d || !Array.isArray(d["time"]))
           throw new Error("Open-Meteo: resposta sem a série diária.");
       return d["time"].map((t, i) => {
-          var _a, _b, _c, _d;
+          var _a, _b, _c, _d, _e;
           return ({
               data: String(t).slice(0, 10),
               chuvaMm: num((_a = d["precipitation_sum"]) === null || _a === void 0 ? void 0 : _a[i]),
               probPct: num((_b = d["precipitation_probability_max"]) === null || _b === void 0 ? void 0 : _b[i]),
               tmax: num((_c = d["temperature_2m_max"]) === null || _c === void 0 ? void 0 : _c[i]),
               tmin: num((_d = d["temperature_2m_min"]) === null || _d === void 0 ? void 0 : _d[i]),
+              et0Mm: num((_e = d["et0_fao_evapotranspiration"]) === null || _e === void 0 ? void 0 : _e[i]),
           });
       });
   }
@@ -757,7 +873,8 @@ var Motor = (function () {
       for (const d of inmet) {
           const x = porData.get(d.data);
           if (x) {
-              x.resumo = d.resumo;
+              if (d.resumo)
+                  x.resumo = d.resumo;
               if (x.tmax === null)
                   x.tmax = d.tmax;
               if (x.tmin === null)
@@ -995,7 +1112,7 @@ var Motor = (function () {
   }
   /** Texto do relatório do dia — curto para caber no WhatsApp, com *negrito* no estilo do WhatsApp. */
   function montarMensagem(data, clima, itens, previsao = []) {
-      var _a, _b, _c;
+      var _a, _b, _c, _d;
       const irrigar = itens.filter((i) => { var _a; return ((_a = i.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; }).length;
       const assunto = `Manejo ${br(data)}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
       const l = [
@@ -1030,7 +1147,12 @@ var Motor = (function () {
               const r = x.recomendacao;
               if (r) {
                   l.push(`   Percentímetro *${n0(r.percentimetroPct)}%* · volta ${horas(r.tempoVoltaH)} · ${n1(r.laminaBrutaMm)} mm brutos`);
-                  l.push(`   Energia ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
+                  if (r.ponta)
+                      l.push(`   Ligar às *${r.ponta.inicioSugerido}* (fora da ponta): ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)} — no começo da ponta sairia R$ ${n2(r.ponta.custoPiorRs)}`);
+                  else
+                      l.push(`   Energia ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
+                  if (((_d = x.projecao) === null || _d === void 0 ? void 0 : _d.deficitFimVoltaMm) !== undefined)
+                      l.push(`   Déficit ao fim da volta ≈ ${n1(x.projecao.deficitFimVoltaMm)} mm`);
               }
               else {
                   l.push("   (cadastre o equipamento para ter percentímetro, tempo e custo)");
@@ -1041,6 +1163,12 @@ var Motor = (function () {
           }
           else {
               l.push(`✅ NÃO IRRIGAR — déficit ${n1(x.deficit)} mm`);
+              const pj = x.projecao;
+              if (pj && pj.horizonte > 0) {
+                  l.push(pj.proximaIrrigacao
+                      ? `   Próxima irrigação prevista: ${br(pj.proximaIrrigacao)} (em ${pj.emDias} dia${pj.emDias === 1 ? "" : "s"}, sem chuva)`
+                      : `   Sem irrigação prevista nos próximos ${pj.horizonte} dias (sem chuva)`);
+              }
           }
           l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · AFD ${n1(x.afdMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}`);
           for (const a of x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado")))
@@ -1058,5 +1186,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

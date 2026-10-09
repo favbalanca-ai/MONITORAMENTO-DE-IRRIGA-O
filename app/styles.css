@@ -7,6 +7,34 @@
   --chuva:#64b5f6; --irrig:#26a69a; --deficit:#e65100; --afd:#8e24aa;
   --shadow:0 1px 3px rgba(20,50,60,.08),0 1px 2px rgba(20,50,60,.06);
   --radius:12px;
+  --sem-bom:#2e7d32; --sem-atencao:#f0b429; --sem-ruim:#c62828; --sem-sem:#9e9e9e;
+  --tag:#eef3f5; --tag-text:#3f5862;
+  color-scheme:light;
+}
+/* Modo escuro: segue o ajuste do celular (à noite no campo a tela clara incomoda) */
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#dbe9ec; --ink2:#7cc4d0; --teal:#3e9aaa; --teal-soft:#15323a;
+    --bg:#0f1a1e; --card:#17262c; --line:#24383f; --muted:#8fa6ad; --text:#d5e1e5;
+    --green:#7bd389; --green-soft:#16301b; --amber:#f0c25a; --amber-soft:#3a2d10;
+    --red:#ff8a80; --red-soft:#3d1c1c; --blue:#8ab4f8; --blue-soft:#182a40;
+    --chuva:#5aa7e8; --irrig:#3fbfae; --deficit:#ff9a52; --afd:#c78cf0;
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+    --tag:#1f3238; --tag-text:#b7cbd1;
+    color-scheme:dark;
+  }
+  .sidebar{background:linear-gradient(180deg,#0b1619,#10232a)}
+  .topbar{background:var(--card)}
+  input,select{background:#10202a;color:var(--text)}
+  .seg button.on{background:#25404a;color:var(--ink)}
+  .btn-outline{background:#10202a}
+  .kpis div{background:#182a40}
+  .alertas li{background:#3a2d10;color:#f0d08a}
+  .fila-bar{background:#3a2d10;color:#f0d08a;border-color:#5a4718}
+  .bar{background:#223238}
+  .rotulo-pivo{background:rgba(219,233,236,.9);color:#16404d}
+  .toast{background:#dbe9ec;color:#16404d}
+  .sem-chip{background:#10202a}
 }
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none!important}
@@ -44,7 +72,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .sync-status.ok .dot{background:var(--green)} .sync-status.busy .dot{background:var(--amber)}
 .sync-status.err .dot{background:var(--red)}
 .user-chip{font-size:12px;font-weight:700;color:var(--ink2);background:var(--teal-soft);border-radius:20px;padding:5px 10px;text-decoration:none;white-space:nowrap}
-.content{padding:20px 26px 40px;max-width:900px;width:100%}
+.content{padding:20px 26px 40px;max-width:1100px;width:100%}
+/* computador: cartões dos pivôs em duas colunas */
+.cards{display:grid;grid-template-columns:minmax(0,1fr);gap:0 14px}
+@media(min-width:960px){.cards{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .loading{color:var(--muted);padding:30px 0}
 .fila-bar{background:var(--amber-soft);color:#7a5200;font-size:13px;padding:8px 26px;border-bottom:1px solid #f0dca0}
 
@@ -66,6 +97,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .bar{position:relative;height:10px;background:#eef2f4;border-radius:6px;margin:12px 0 4px;overflow:hidden}
 .bar>span{position:absolute;left:0;top:0;bottom:0;background:var(--deficit);border-radius:6px}
 .bar>i{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
+/* Resumo do dia (tela Hoje) */
+.resumo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.resumo-dia{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.resumo h2{font-size:20px;margin-top:2px}
+.semaforos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.sem-chip{display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 4px;border-top:4px solid var(--c)}
+.sem-chip b{font-size:20px;line-height:1.1;color:var(--ink)}
+.sem-chip small{font-size:11px;color:var(--muted);font-weight:600}
+.sem-chip .ico{font-size:15px}
+.sem-chip.vazio{opacity:.45}
+.sem-chip.sem-bom{--c:var(--sem-bom)} .sem-chip.sem-atencao{--c:var(--sem-atencao)} .sem-chip.sem-ruim{--c:var(--sem-ruim)} .sem-chip.sem-sem{--c:var(--sem-sem)}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag{background:var(--tag);color:var(--tag-text);font-size:11.5px;font-weight:600;border-radius:6px;padding:2px 7px}
+.tag-erro{background:var(--red-soft);color:var(--red)}
+.bar-rotulos{position:relative;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding-top:2px;min-height:18px}
+.bar-rotulos b{color:var(--ink)}
+.bar-rotulos .marca{position:absolute;top:2px;transform:translateX(-50%);font-size:10.5px;color:var(--ink);opacity:.7;white-space:nowrap}
+.prox{margin-top:10px;font-size:13.5px;background:var(--teal-soft);color:var(--ink);border-radius:8px;padding:8px 10px}
+.det{margin-top:10px}.det>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink2)}
+.mini-mapa{display:block;position:relative;padding:0;overflow:hidden;text-decoration:none;color:inherit}
+#mini-mapa{height:150px;background:#dfe7ea;pointer-events:none}
+.mini-rotulo{position:absolute;left:10px;bottom:8px;background:rgba(22,64,77,.85);color:#fff;font-size:12px;font-weight:700;padding:3px 9px;border-radius:8px}
+.seg-sub{margin-top:0;margin-bottom:8px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 .kpis div{background:var(--blue-soft);border-radius:10px;padding:8px 10px;min-width:0}
 .kpis small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
@@ -116,8 +170,8 @@ svg text{fill:var(--muted);font-size:13px}
 .log div{padding:2px 0;border-top:1px dashed var(--line)} .log div:first-child{border-top:0}
 .log .e{color:var(--red)}
 
-.card.sem-bom{border-left:5px solid #2e7d32}.card.sem-atencao{border-left:5px solid #f0b429}
-.card.sem-ruim{border-left:5px solid #c62828}.card.sem-sem{border-left:5px solid #9e9e9e}
+.card.sem-bom{border-left:5px solid var(--sem-bom)}.card.sem-atencao{border-left:5px solid var(--sem-atencao)}
+.card.sem-ruim{border-left:5px solid var(--sem-ruim)}.card.sem-sem{border-left:5px solid var(--sem-sem)}
 .prev{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
 .prev-dia{background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center;font-size:12px;color:var(--muted);min-width:0}
 .prev-dia.chuva{background:var(--blue-soft)}
@@ -155,6 +209,8 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   .content{padding:14px 16px calc(90px + env(safe-area-inset-bottom,0px))}
   .fila-bar{padding:8px 16px}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .semaforos{gap:6px}
+  .resumo h2{font-size:18px}
   input,select{font-size:16px}   /* iPhone: menos de 16px dá zoom sozinho ao tocar */
   .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   .user-chip{max-width:110px;overflow:hidden;text-overflow:ellipsis}

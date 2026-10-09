@@ -69,7 +69,9 @@ export function montarMensagem(
       const r = x.recomendacao;
       if (r) {
         l.push(`   Percentímetro *${n0(r.percentimetroPct)}%* · volta ${horas(r.tempoVoltaH)} · ${n1(r.laminaBrutaMm)} mm brutos`);
-        l.push(`   Energia ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
+        if (r.ponta) l.push(`   Ligar às *${r.ponta.inicioSugerido}* (fora da ponta): ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)} — no começo da ponta sairia R$ ${n2(r.ponta.custoPiorRs)}`);
+        else l.push(`   Energia ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
+        if (x.projecao?.deficitFimVoltaMm !== undefined) l.push(`   Déficit ao fim da volta ≈ ${n1(x.projecao.deficitFimVoltaMm)} mm`);
       } else {
         l.push("   (cadastre o equipamento para ter percentímetro, tempo e custo)");
       }
@@ -77,6 +79,12 @@ export function montarMensagem(
       l.push(`⛔ *SEM DADOS* — estação com poucas leituras; déficit estimado ${n1(x.deficit)} mm`);
     } else {
       l.push(`✅ NÃO IRRIGAR — déficit ${n1(x.deficit)} mm`);
+      const pj = x.projecao;
+      if (pj && pj.horizonte > 0) {
+        l.push(pj.proximaIrrigacao
+          ? `   Próxima irrigação prevista: ${br(pj.proximaIrrigacao)} (em ${pj.emDias} dia${pj.emDias === 1 ? "" : "s"}, sem chuva)`
+          : `   Sem irrigação prevista nos próximos ${pj.horizonte} dias (sem chuva)`);
+      }
     }
     l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · AFD ${n1(x.afdMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}`);
     for (const a of x.alertas.filter((a) => !a.startsWith("Só ") && !a.startsWith("Clima estimado"))) l.push(`   ⚠️ ${a}`);

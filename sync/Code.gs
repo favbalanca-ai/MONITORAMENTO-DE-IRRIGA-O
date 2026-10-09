@@ -40,6 +40,9 @@ var CAMPOS_ESTACAO = [
   ["grupoChuva", "Pluviômetro", "rainfall", "rainfall (báscula) ou rainfall_piezo (WS90)."],
   ["emails", "E-mails do relatório (separe por vírgula)", "", "Quem recebe o relatório das 18h."],
   ["ibge", "Município (código IBGE) p/ previsão do INMET", 3126208, "Formoso-MG = 3126208. Vazio = sem a previsão do INMET."],
+  ["chuvaMinima", "Chuva mínima que conta no balanço (mm)", 2, "Chuva menor que isso fica na folha e evapora (Embrapa). 0 = conta tudo."],
+  ["pontaInicio", "Horário de ponta — início (hora)", 18, "Da sua distribuidora. Usado no custo e na hora sugerida de ligar."],
+  ["pontaFim", "Horário de ponta — fim (hora)", 21, ""],
 ];
 
 var COLUNAS_PIVOS = [
@@ -71,6 +74,8 @@ var COLUNAS_PIVOS = [
   ["latitude", "Latitude (centro)", true],
   ["longitude", "Longitude (centro)", true],
   ["contorno", "Contorno (do KMZ)", true],
+  ["tarifaPontaRsKwh", "Tarifa na ponta (R$/kWh, vazio = única)", true],
+  ["grausDiaCiclo", "Graus-dia do ciclo (vazio = dias corridos)", true],
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
@@ -244,7 +249,9 @@ function lerEstacao_() {
       for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === c[1] && vals[i][1] !== "") cfg[c[0]] = vals[i][1];
     });
   }
-  ["latitude", "longitude", "altitude", "alturaAnemometro", "ibge"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
+  ["latitude", "longitude", "altitude", "alturaAnemometro", "ibge", "chuvaMinima", "pontaInicio", "pontaFim"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
+  if (cfg.chuvaMinima === null) cfg.chuvaMinima = Motor.CHUVA_MINIMA_EFETIVA_MM;
+  cfg.ponta = { inicioH: cfg.pontaInicio === null ? 18 : cfg.pontaInicio, fimH: cfg.pontaFim === null ? 21 : cfg.pontaFim };
   cfg.fuso = String(cfg.fuso).trim();
   cfg.grupoChuva = String(cfg.grupoChuva).trim() || "rainfall";
   cfg.emails = String(cfg.emails || "").split(/[,;\s]+/).filter(function (e) { return e.indexOf("@") > 0; });
@@ -326,7 +333,9 @@ function lerPivos_(cfg) {
         raioM: n(l, "raioM"), anguloGraus: n(l, "anguloGraus"), vazaoM3h: n(l, "vazaoM3h"),
         velocidadeUltimaTorreMMin: n(l, "velocidadeUltimaTorreMMin"), percentimetroMinPct: n(l, "percentimetroMinPct"),
         eficienciaPct: n(l, "eficienciaPct"), potenciaKw: n(l, "potenciaKw"), tarifaRsKwh: n(l, "tarifaRsKwh"),
+        tarifaPontaRsKwh: n(l, "tarifaPontaRsKwh"),
       } : undefined,
+      grausDiaCiclo: n(l, "grausDiaCiclo"),
     };
   });
 }
@@ -655,6 +664,14 @@ function calcular_(dia) {
   var leituras = lerLeituras_(Motor.diaAnterior(iniGeral) + "T" + Motor.HORA_FECHAMENTO, dia + "T" + Motor.HORA_FECHAMENTO);
   var clima = Motor.climaCompleto(leituras, iniGeral, dia);
   if (!clima.length) throw new Error("Nenhuma leitura da estação entre " + iniGeral + " e " + dia + ".");
+  var previsao = lerPrevisao_();
+  var diasPrev = previsao ? previsao.dias : [];
+  // dia em que a estação ficou sem leituras: a ET₀ do Open-Meteo (dias passados) segura a decisão
+  clima.forEach(function (d) {
+    if (d.n >= Motor.MIN_LEITURAS) return;
+    var p = diasPrev.filter(function (x) { return x.data === d.data && x.et0Mm !== null && x.et0Mm !== undefined; })[0];
+    if (p) d.et0Externa = p.et0Mm;
+  });
 
   escreverTabela_(ABA.CLIMA, CABECALHOS.CLIMA, clima.map(function (d) {
     return [d.data, d.tmax, d.tmin, d.tmed, d.ur, d.vento, d.rad, d.chuva, d.n, (d.estimados || []).join(", "),
@@ -682,6 +699,9 @@ function calcular_(dia) {
           fonte: x.l[5] ? String(x.l[5]) : undefined,
         };
       }),
+      chuvaMinimaMm: cfg.chuvaMinima,
+      ponta: cfg.ponta,
+      previsao: diasPrev,
     });
     linhas.forEach(function (l) {
       linhasBalanco.push([pivo.nome, l.data, l.das, l.estadio, l.kc, l.et0, l.etc, l.chuva, l.irrigacao, l.raizCm, l.cadMm,
@@ -693,9 +713,8 @@ function calcular_(dia) {
   escreverTabela_(ABA.BALANCO, CABECALHOS.BALANCO, linhasBalanco);
 
   var climaDia = clima[clima.length - 1];
-  var et0Dia = Motor.et0PenmanMonteith(climaDia, estacao);
-  var previsao = lerPrevisao_();
-  var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens, previsao ? previsao.dias : []);
+  var et0Dia = climaDia.et0Externa !== undefined ? climaDia.et0Externa : Motor.et0PenmanMonteith(climaDia, estacao);
+  var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens, diasPrev);
   escreverPainel_(dia, climaDia, et0Dia, itens, msg);
   salvarResumo_(dia, cfg, climaDia, et0Dia, itens, previsao);
   return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, itens: itens };
@@ -738,6 +757,12 @@ function salvarResumo_(dia, cfg, clima, et0, itens, previsao) {
       if (r) p.rec = {
         laminaBrutaMm: r2(r.laminaBrutaMm), percentimetroPct: Math.round(r.percentimetroPct), tempoVoltaH: r2(r.tempoVoltaH),
         energiaKwh: Math.round(r.energiaKwh), custoRs: r2(r.custoRs), limitado: r.limitadoPelaLaminaMax,
+        ponta: r.ponta ? { inicioSugerido: r.ponta.inicioSugerido, horasNaPonta: r2(r.ponta.horasNaPonta), custoPiorRs: r2(r.ponta.custoPiorRs) } : null,
+      };
+      if (l.projecao) p.projecao = {
+        proximaIrrigacao: l.projecao.proximaIrrigacao, emDias: l.projecao.emDias,
+        deficitFimVoltaMm: l.projecao.deficitFimVoltaMm === undefined ? null : r2(l.projecao.deficitFimVoltaMm),
+        dias: l.projecao.dias.map(function (x) { return { data: x.data, deficit: r2(x.deficit) }; }),
       };
       return p;
     }),
@@ -1095,7 +1120,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-1";
+var VERSAO_SERVIDOR = "2026.10.09-2";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1363,7 +1388,16 @@ function gravarLancamento_(d, u) {
 
   var valores;
   if (tipo === "irrigacao") {
-    valores = [numeroEntre_(d.mm, "A lâmina", 0.1, 100), T_(d.obs)];
+    var mm = d.mm, obs = String(d.obs || "");
+    if ((mm === "" || mm == null) && d.percentimetro !== "" && d.percentimetro != null) {
+      // lançado pelo percentímetro: a lâmina líquida sai do equipamento cadastrado
+      if (!p.equipamento) throw new Error("Para lançar pelo percentímetro, cadastre o equipamento do " + p.nome + ".");
+      var pct = numeroEntre_(d.percentimetro, "O percentímetro", p.equipamento.percentimetroMinPct, 100);
+      var lam = Motor.laminaDoPercentimetro(p.equipamento, pct);
+      mm = Math.round(lam.liquidaMm * 10) / 10;
+      obs = ("percentímetro " + Math.round(pct) + "% (" + (Math.round(lam.brutaMm * 10) / 10) + " mm brutos)" + (obs ? " · " + obs : "")).slice(0, 200);
+    }
+    valores = [numeroEntre_(mm, "A lâmina", 0.1, 100), T_(obs)];
   } else {
     var opc = function (v, nome, min, max) { return v === "" || v == null ? "" : numeroEntre_(v, nome, min, max); };
     valores = [numeroEntre_(d.umidadeRaiz, "A umidade na raiz", 0, 100), opc(d.umidadeProfunda, "A umidade profunda", 0, 100),

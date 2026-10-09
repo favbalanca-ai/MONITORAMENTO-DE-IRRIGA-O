@@ -65,15 +65,15 @@ test("operador lança irrigação; reenviar o mesmo id não duplica; apagar desf
   const amb = pronto();
   const s = entrar(amb, "jose", "4321").token;
   amb.get({ acao: "dados", s });
-  const lanc = { id: "Lk7a1", tipo: "irrigacao", pivo: "pivô 2", data: "2026-02-08", mm: "20,5", obs: "=SOMA(A1)" };
+  const lanc = { id: "Lk7a1", tipo: "irrigacao", pivo: "pivô 2", data: "2026-02-08", mm: "25,5", obs: "=SOMA(A1)" };
   const r1 = amb.post({ s, __lancamento: lanc });
   assert.equal(r1.ok, true);
   assert.equal(r1.resumo.pivos[0].decisao, "NÃO IRRIGAR");
-  const r2 = amb.post({ s, __lancamento: { ...lanc, mm: "22" } });
+  const r2 = amb.post({ s, __lancamento: { ...lanc, mm: "27" } });
   assert.equal(r2.ok, true);
   const linhas = amb.aba("IRRIGACOES").objetos();
   assert.equal(linhas.length, 1);
-  assert.equal(linhas[0]!["Lâmina líquida aplicada (mm)"], 22);
+  assert.equal(linhas[0]!["Lâmina líquida aplicada (mm)"], 27);
   assert.equal(linhas[0]!["Obs."], "'=SOMA(A1)", "texto do usuário não vira fórmula");
   assert.equal(linhas[0]!["Por"], "José");
   assert.equal(linhas[0]!["ID"], "Lk7a1");
@@ -250,14 +250,23 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
   assert.ok(amb.urls.some((u) => /open-meteo.*latitude=-14\.74&longitude=-46\.24/.test(u)));
   assert.ok(amb.urls.some((u) => u.endsWith("/previsao/3126208")));
-  assert.equal(p.dias[1]!.chuvaMm, 12.4);
-  assert.match(p.dias[1]!.resumo!, /pancadas/);
-  assert.equal(amb.aba("PREVISAO").objetos().length, 7);
+  assert.equal(p.dias[8]!.chuvaMm, 12.4);
+  assert.match(p.dias[8]!.resumo!, /pancadas/);
+  assert.equal(amb.aba("PREVISAO").objetos().length, 14);
 
   const adm = entrar(amb, "fabiana", "1234").token;
   const d = amb.get({ acao: "dados", s: adm });
-  assert.equal(d.previsao.dias.length, 7);
-  assert.match(d.resumo.pivos[0].avisoChuva, /20,5 mm/);
+  assert.equal(d.previsao.dias.length, 14);
+  const pv = d.resumo.pivos[0];
+  assert.equal(pv.avisoChuva, null, "20,5 mm previstos não cobrem 80% do déficit de " + pv.deficit);
+  assert.equal(pv.projecao.dias.length, 6, "projeção com a ET₀ prevista de 09/02 a 14/02");
+  assert.equal(pv.projecao.emDias, 0);
+  assert.ok(pv.projecao.deficitFimVoltaMm > pv.deficit);
+  amb.aba("PIVOS").set(2, 15, 40); // lâmina mínima alta: hoje não irriga, projeção aponta o dia
+  const pv2 = amb.chamar<{ itens: { linha: { decisao: string; projecao: { proximaIrrigacao: string | null; emDias: number | null } } }[] }>("calcular_", "2026-02-08").itens[0]!.linha;
+  assert.equal(pv2.decisao, "NÃO IRRIGAR");
+  assert.ok(pv2.projecao.emDias !== null && pv2.projecao.emDias >= 1, JSON.stringify(pv2.projecao));
+  amb.aba("PIVOS").set(2, 15, 5);
   assert.match(amb.chamar<{ texto: string }>("calcular_", "2026-02-08").texto, /🌧 Previsão: 09\/02 12,4 mm/);
 
   // INMET fora do ar: continua com o Open-Meteo e registra no LOG
@@ -280,4 +289,33 @@ test("pivô com latitude/longitude e contorno vai para o resumo; latitude sem lo
   assert.deepEqual(p.contorno, contorno);
   assert.equal(p.raioM, 400);
   assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "" }, original: "Pivô 2" } }).erro, /precisam vir juntas/);
+});
+
+test("lançar pelo percentímetro: a lâmina líquida sai do equipamento e a observação registra", () => {
+  const amb = pronto();
+  const s = entrar(amb, "jose", "4321").token;
+  const r = amb.post({ s, __lancamento: { id: "Pc1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "", percentimetro: "50", obs: "noite" } });
+  assert.equal(r.ok, true);
+  const l = amb.aba("IRRIGACOES").objetos()[0]!;
+  assert.equal(l["Lâmina líquida aplicada (mm)"], 9.4); // 5,56 mm a 100% → 11,1 brutos a 50% × 85%
+  assert.match(String(l["Obs."]), /percentímetro 50% \(11\.1 mm brutos\) · noite/);
+  assert.match(amb.post({ s, __lancamento: { id: "Pc2", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "", percentimetro: "5" } }).erro, /percentímetro/);
+});
+
+test("ESTACAO: chuva mínima e horário de ponta entram no cálculo; tarifa de ponta dá a hora de ligar", () => {
+  const amb = pronto();
+  const cab = amb.aba("PIVOS").getRange(1, 1, 1, amb.aba("PIVOS").getLastColumn()).getValues()[0]!;
+  amb.aba("PIVOS").set(2, cab.indexOf("Tarifa na ponta (R$/kWh, vazio = única)") + 1, 2.5);
+  const it = amb.chamar<{ itens: { linha: { recomendacao: { ponta: { inicioSugerido: string; custoPiorRs: number }; custoRs: number }; chuva: number; alertas: string[] } }[]; texto: string }>("calcular_", "2026-02-08");
+  const l = it.itens[0]!.linha;
+  assert.equal(l.recomendacao.ponta.inicioSugerido, "21:00");
+  assert.ok(l.recomendacao.ponta.custoPiorRs > l.recomendacao.custoRs);
+  assert.match(it.texto, /Ligar às \*21:00\* \(fora da ponta\)/);
+  // chuva de 4,3 mm no dia conta (≥ 2); muda o mínimo para 5 e ela deixa de contar
+  assert.equal(Math.round(l.chuva * 10) / 10, 4.3);
+  const est = amb.aba("ESTACAO");
+  est.set(est.dados.findIndex((x) => String(x[0]).startsWith("Chuva mínima")) + 1, 2, 5);
+  const l2 = amb.chamar<{ itens: { linha: { chuva: number; alertas: string[] } }[] }>("calcular_", "2026-02-08").itens[0]!.linha;
+  assert.equal(l2.chuva, 0);
+  assert.ok(l2.alertas.some((a) => /abaixo de 5 mm/.test(a)));
 });

@@ -26,6 +26,8 @@ export interface PivoCadastro {
   longitude?: number | null;
   /** Contorno do pivô [[lat, lon], …] vindo do KMZ. */
   contorno?: [number, number][];
+  /** Graus-dia da cultivar até a maturação. Vazio = estádio por dias corridos. */
+  grausDiaCiclo?: number | null;
 }
 
 export interface CadastroFazenda {
@@ -62,6 +64,7 @@ export function validarCadastro(c: CadastroFazenda, fusoValido: (fuso: string) =
     nomes.add(p.nome);
     if (!CULTURAS[p.cultura]) erros.push(`${o}: cultura "${p.cultura}" não cadastrada (há: ${Object.keys(CULTURAS).join(", ")})`);
     if (p.cicloDias != null) num(p.cicloDias, `${o}.cicloDias`, 30, 400);
+    if (p.grausDiaCiclo != null) num(p.grausDiaCiclo, `${o}.grausDiaCiclo`, 200, 6000);
     if (!DATA.test(p.plantio ?? "")) erros.push(`${o}: plantio deve ser AAAA-MM-DD`);
     if (p.inicioBalanco !== undefined && !DATA.test(p.inicioBalanco)) erros.push(`${o}: inicioBalanco deve ser AAAA-MM-DD`);
     num(p.umidadeInicialPct, `${o}.umidadeInicialPct`, 0, 100);
@@ -87,6 +90,7 @@ export function validarCadastro(c: CadastroFazenda, fusoValido: (fuso: string) =
       num(e.eficienciaPct, `${o}.equipamento.eficienciaPct`, 1, 100);
       num(e.potenciaKw, `${o}.equipamento.potenciaKw`, 0);
       num(e.tarifaRsKwh, `${o}.equipamento.tarifaRsKwh`, 0);
+      if (e.tarifaPontaRsKwh != null) num(e.tarifaPontaRsKwh, `${o}.equipamento.tarifaPontaRsKwh`, 0);
     }
   });
   return erros;

@@ -17,6 +17,7 @@ export const SOJA: Cultura = {
   ],
   fonte: "Aba KC da planilha original da fazenda.",
   sugestao: { raizMaxCm: 50, diasRaiz: 55, tensaoIrrigarKpa: -70, porque: "Raiz de 50 cm aos 55 dias e tensão de −70 kPa, como no exemplo da fazenda." },
+  tBaseC: 10,
 };
 
 /** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
@@ -40,6 +41,7 @@ export const MILHO: Cultura = {
   ],
   fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 47 (2002) e Circular Técnica 10 / planilha de manejo de irrigação; Kc final FAO-56.",
   sugestao: { raizMaxCm: 40, diasRaiz: 54, tensaoIrrigarKpa: -60, porque: "Embrapa Milho e Sorgo usa 40 cm de raiz efetiva, atingida no fim da fase vegetativo." },
+  tBaseC: 10,
 };
 
 /**
@@ -57,6 +59,7 @@ export const SORGO: Cultura = {
   ]),
   fonte: "Embrapa Milho e Sorgo — Comunicado Técnico 254 (2021), planilha para obtenção do coeficiente de cultura; Kc FAO-56.",
   sugestao: { raizMaxCm: 40, diasRaiz: 66, tensaoIrrigarKpa: -60, porque: "Mesma raiz efetiva do milho (40 cm), atingida no fim da fase vegetativa." },
+  tBaseC: 10,
 };
 
 /**
@@ -80,6 +83,7 @@ export const FEIJAO: Cultura = {
   ]),
   fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (Kc por DAE, sistema convencional).",
   sugestao: { raizMaxCm: 30, diasRaiz: 45, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
+  tBaseC: 3,
 };
 
 /**
@@ -98,6 +102,7 @@ export const FEIJAO_PD: Cultura = {
   ]),
   fonte: "Embrapa Arroz e Feijão — Agência de Informação Embrapa, Feijão: manejo de irrigação (plantio direto, cv. Aporé).",
   sugestao: { raizMaxCm: 30, diasRaiz: 42, tensaoIrrigarKpa: -35, porque: "Embrapa: tensiômetro a 15 cm, irrigar entre 30 e 40 kPa; raiz efetiva rasa (~30 cm)." },
+  tBaseC: 3,
 };
 
 /**
@@ -119,6 +124,7 @@ export const TRIGO: Cultura = {
   ],
   fonte: "Embrapa Cerrados — Coeficientes de cultura do trigo BRS 394 irrigado no Cerrado (2024).",
   sugestao: { raizMaxCm: 40, diasRaiz: 50, fatorDeplecaoFixo: 0.4, tensaoIrrigarKpa: -50, porque: "Embrapa Cerrados: raiz de 40 cm e irrigar quando 40% da CAD foi consumida (fator fixo 0,4)." },
+  tBaseC: 0,
 };
 
 /**
@@ -138,6 +144,7 @@ export const ALGODAO: Cultura = {
   ],
   fonte: "Embrapa Algodão — Coeficientes de cultivo do algodoeiro herbáceo (2009).",
   sugestao: { raizMaxCm: 60, diasRaiz: 75, tensaoIrrigarKpa: -60, porque: "Raiz profunda (~60 cm) atingida na floração; conferir para o Cerrado." },
+  tBaseC: 15,
 };
 
 /** Dias após a semeadura. */
@@ -173,27 +180,41 @@ export function dae(cultura: Cultura, diasAposSemeadura: number): number {
   return Math.max(0, diasAposSemeadura - (cultura.emergenciaDias ?? 0));
 }
 
+/**
+ * Fração do ciclo já percorrida. Por dias corridos (DAE/ciclo) ou, quando o pivô tem os graus-dia da
+ * cultivar e a cultura tem temperatura-base, pela soma térmica acumulada (GD/GD do ciclo).
+ */
+export function fracaoCiclo(cultura: Cultura, diasAposSemeadura: number, grausDia?: { acumulado: number; ciclo: number } | null): number {
+  if (grausDia && grausDia.ciclo > 0) return Math.max(0, grausDia.acumulado) / grausDia.ciclo;
+  return dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+}
+
+/** Graus-dia de um dia: temperatura média acima da base (nunca negativo). */
+export function grausDiaDoDia(cultura: Cultura, tmed: number): number {
+  return cultura.tBaseC === undefined || !Number.isFinite(tmed) ? 0 : Math.max(0, tmed - cultura.tBaseC);
+}
+
 /** Estádio pela fração do ciclo. Depois do fim do ciclo, fica no último estádio. */
-export function estadioPorDas(cultura: Cultura, diasAposSemeadura: number): Estadio {
-  const f = dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+export function estadioPorDas(cultura: Cultura, diasAposSemeadura: number, fracao?: number): Estadio {
+  const f = fracao ?? dae(cultura, diasAposSemeadura) / cultura.cicloDias;
   const e = cultura.estadios.find((x) => f <= x.ateFracao) ?? cultura.estadios[cultura.estadios.length - 1];
   if (!e) throw new Error(`Cultura ${cultura.nome} sem estádios cadastrados.`);
   return e;
 }
 
 /** Kc sem a correção da palhada: equação, reta dentro do estádio ou degrau. */
-function kcBase(cultura: Cultura, estadio: Estadio, diasAposSemeadura: number): number {
-  const d = dae(cultura, diasAposSemeadura);
+function kcBase(cultura: Cultura, estadio: Estadio, diasAposSemeadura: number, fracao?: number): number {
+  const f = fracao ?? dae(cultura, diasAposSemeadura) / cultura.cicloDias;
   if (cultura.kcEquacao) {
     const [a, b, c] = cultura.kcEquacao;
     const padrao = cultura.cicloPadraoDias ?? cultura.cicloDias;
-    const x = Math.min(d, cultura.cicloDias) * (padrao / cultura.cicloDias); // ciclo diferente: estica a equação
+    const x = Math.min(1, f) * padrao; // "dia equivalente" no ciclo padrão da equação
     return a * x * x + b * x + c;
   }
   if (estadio.kcFim === undefined) return estadio.kc;
   const i = cultura.estadios.indexOf(estadio);
   const ini = i > 0 ? cultura.estadios[i - 1]!.ateFracao : 0;
-  const t = Math.min(1, Math.max(0, (d / cultura.cicloDias - ini) / (estadio.ateFracao - ini)));
+  const t = Math.min(1, Math.max(0, (f - ini) / (estadio.ateFracao - ini)));
   return estadio.kc + (estadio.kcFim - estadio.kc) * t;
 }
 
@@ -201,9 +222,9 @@ function kcBase(cultura: Cultura, estadio: Estadio, diasAposSemeadura: number): 
  * Kc do dia. Em plantio direto sobre palhada, o Kc do primeiro estádio cai pela metade
  * (Embrapa Milho e Sorgo; aplicado à soja por analogia).
  */
-export function kcDoDia(cultura: Cultura, diasAposSemeadura: number, palhada: boolean): { estadio: Estadio; kc: number } {
-  const estadio = estadioPorDas(cultura, diasAposSemeadura);
-  const kc = kcBase(cultura, estadio, diasAposSemeadura);
+export function kcDoDia(cultura: Cultura, diasAposSemeadura: number, palhada: boolean, fracao?: number): { estadio: Estadio; kc: number } {
+  const estadio = estadioPorDas(cultura, diasAposSemeadura, fracao);
+  const kc = kcBase(cultura, estadio, diasAposSemeadura, fracao);
   const primeiro = estadio === cultura.estadios[0];
   return { estadio, kc: palhada && primeiro && !cultura.kcJaComPalhada ? kc * 0.5 : kc };
 }

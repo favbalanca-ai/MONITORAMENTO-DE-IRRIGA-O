@@ -59,7 +59,8 @@ export async function rodarDiario(db: Banco, { data, agoraMs = Date.now(), notif
     const ini = inicioDe(pivo);
     if (ini > dia) return { pivo, aviso: `balanço começa em ${ini}` };
     const dias = clima.filter((d) => d.data >= ini);
-    const linhas = simularBalanco({ pivo, estacao, dias, irrigacoes: irrigacoesDoPivo(db, pivo.id), ajustes: ajustesDoPivo(db, pivo.id) });
+    // chuvaMinimaMm: 0 — versão antiga (não usada) mantém o comportamento da planilha original
+    const linhas = simularBalanco({ pivo, estacao, dias, irrigacoes: irrigacoesDoPivo(db, pivo.id), ajustes: ajustesDoPivo(db, pivo.id), chuvaMinimaMm: 0 });
     salvarBalanco(db, pivo.id, linhas, calculadoEm);
     const diasIncertos = dias.filter((d) => d.estimados?.length || d.n < MIN_LEITURAS).length;
     return { pivo, linha: linhas.at(-1), diasIncertos };

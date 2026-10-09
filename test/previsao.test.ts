@@ -9,10 +9,10 @@ const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", 
 
 test("Open-Meteo: um item por dia com mm, %, tmin e tmax", () => {
   const d = lerOpenMeteo(om);
-  assert.equal(d.length, 7);
-  assert.deepEqual(d[1], { data: "2026-02-09", chuvaMm: 12.4, probPct: 80, tmax: 28.4, tmin: 18.5 });
+  assert.equal(d.length, 14); // 7 passados + 7 à frente
+  assert.deepEqual(d[8], { data: "2026-02-09", chuvaMm: 12.4, probPct: 80, tmax: 28.4, tmin: 18.5, et0Mm: 4.1 });
   assert.throws(() => lerOpenMeteo({}), /série diária/);
-  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /latitude=-14\.9&longitude=-46\.25.*timezone=America%2FSao_Paulo&forecast_days=7/);
+  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /latitude=-14\.9&longitude=-46\.25.*et0_fao_evapotranspiration.*timezone=America%2FSao_Paulo&forecast_days=7&past_days=7/);
 });
 
 test("INMET: data brasileira vira ISO, turnos viram resumo, dias inteiros também entram", () => {
@@ -28,10 +28,10 @@ test("INMET: data brasileira vira ISO, turnos viram resumo, dias inteiros també
 
 test("juntar: números do Open-Meteo + texto do INMET; aviso de chuva só quando cobre o déficit", () => {
   const j = juntarPrevisao(lerOpenMeteo(om), lerInmet(inmet));
-  assert.equal(j.length, 7);
-  assert.equal(j[1]!.chuvaMm, 12.4);
-  assert.match(j[1]!.resumo!, /pancadas de chuva/);
-  assert.equal(j[6]!.resumo, undefined);
+  assert.equal(j.length, 14);
+  assert.equal(j[8]!.chuvaMm, 12.4);
+  assert.match(j[8]!.resumo!, /pancadas de chuva/);
+  assert.equal(j[13]!.resumo, undefined);
   assert.deepEqual(chuvaPrevista(j, "2026-02-08"), { mm: 20.5, probPct: 80, ate: "2026-02-10" });
   assert.match(avisoChuva(24.5, j, "2026-02-08")!, /20,5 mm de chuva até 10\/02 \(80% de chance\)/);
   assert.equal(avisoChuva(40, j, "2026-02-08"), null); // 20,5 < 80% de 40
