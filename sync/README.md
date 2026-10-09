@@ -27,6 +27,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
    - **LEITURAS** ganhou a coluna **Extras (JSON)**: tudo o mais que a estação manda em cada coleta (UV, rajada, direção,
      pressão, orvalho, sensores de solo, raios…), já em unidades SI. Coluna opcional da PIVOS **Sensor de solo da
      estação (canal 1-8)** liga um sensor WH51 ao pivô: aparece no cartão (só informativo, não entra no balanço).
+   - O **relatório das 18h** vai por e-mail em texto (cabe no WhatsApp) e em HTML (cores do semáforo, tabelinha por
+     pivô): resumo do dia (pivôs em cada estado, água em m³, energia e custo), clima da janela, previsão, e por pivô
+     déficit × AFD × lâmina mínima, ajuste do pivô, hora de ligar, próxima irrigação, última irrigação/medição e
+     o déficit dos últimos 7 dias.
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
      mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
      só avisa — não entra no balanço.

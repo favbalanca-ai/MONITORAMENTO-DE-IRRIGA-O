@@ -717,16 +717,27 @@ function calcular_(dia) {
         l.fatorDeplecao, l.afdMm, l.deficit, l.ajustado ? "SIM" : "", l.decisao, l.alertas.join(" | ")]);
     });
     var incertos = dias.filter(function (d) { return (d.estimados && d.estimados.length) || d.n < Motor.MIN_LEITURAS; }).length;
-    return { pivo: pivo, linha: linhas[linhas.length - 1], diasIncertos: incertos };
+    var irrigDoPivo = irrig.filter(function (x) { return x.pivo === chave && x.data <= dia; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+    var umidDoPivo = umid.filter(function (x) { return x.pivo === chave && x.data <= dia && Motor.numero(x.l[2]) !== null; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+    var ui = irrigDoPivo[irrigDoPivo.length - 1], um = umidDoPivo[umidDoPivo.length - 1];
+    return {
+      pivo: pivo, linha: linhas[linhas.length - 1], diasIncertos: incertos,
+      historico: linhas.slice(-7),
+      ultimaIrrigacao: ui ? { data: ui.data, mm: Motor.numero(ui.l[2]) || 0 } : null,
+      ultimaMedicao: um ? { data: um.data, umidadeRaizPct: Motor.numero(um.l[2]) } : null,
+      fimCicloDas: Motor.fimDoCicloDas(pivo.cultura),
+    };
   });
   escreverTabela_(ABA.BALANCO, CABECALHOS.BALANCO, linhasBalanco);
 
   var climaDia = clima[clima.length - 1];
   var et0Dia = climaDia.et0Externa !== undefined ? climaDia.et0Externa : Motor.et0PenmanMonteith(climaDia, estacao);
-  var msg = Motor.montarMensagem(dia, Object.assign({}, climaDia, { et0: et0Dia }), itens, diasPrev);
+  var climaMsg = Object.assign({}, climaDia, { et0: et0Dia });
+  var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev);
+  var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL);
   escreverPainel_(dia, climaDia, et0Dia, itens, msg);
   salvarResumo_(dia, cfg, climaDia, et0Dia, itens, previsao);
-  return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, itens: itens };
+  return { dia: dia, cfg: cfg, assunto: msg.assunto, texto: msg.texto, html: html, itens: itens };
 }
 
 /** Resumo do último cálculo para o app abrir rápido (aba oculta CACHE, célula A1). */
@@ -958,7 +969,7 @@ function calcularEEnviar_(dia, forcar) {
     log_("e-mail", "já enviado", "", r.dia);
   } else {
     try {
-      MailApp.sendEmail({ to: r.cfg.emails.join(","), subject: r.assunto, body: r.texto.replace(/\*/g, "") });
+      MailApp.sendEmail({ to: r.cfg.emails.join(","), subject: r.assunto, body: r.texto.replace(/\*/g, ""), htmlBody: r.html });
       log_("e-mail", "enviado", r.cfg.emails.join(", "), r.dia);
     } catch (e) {
       log_("e-mail", "erro", e.message, r.dia);
@@ -1138,7 +1149,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-8";
+var VERSAO_SERVIDOR = "2026.10.09-9";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

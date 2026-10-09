@@ -71,8 +71,14 @@ test("relatório na planilha reproduz a seção 7 e manda e-mail uma vez só", (
   assert.equal(amb.emails.length, 1);
   assert.equal(amb.emails[0]!.to, EMAIL);
   assert.match(amb.emails[0]!.subject, /Manejo 08\/02: irrigar 1 pivô/);
-  assert.match(amb.emails[0]!.body, /IRRIGAR — repor 24,\d mm/);
+  assert.match(amb.emails[0]!.body, /IRRIGAR — repor 24,\d mm \(\d+% da AFD de 42,0 mm\)/);
+  assert.match(amb.emails[0]!.body, /🔴 1 irrigar · 🟡 0 atenção · 🟢 0 ok/);
+  assert.match(amb.emails[0]!.body, /Déficit \(mm\) nos últimos dias: 02\/02 \d+ · 03\/02 \d+ · 04\/02 \d+ · 05\/02 \d+ · 06\/02 \d+ · 07\/02 \d+ · 08\/02 \d+/);
   assert.doesNotMatch(amb.emails[0]!.body, /\*/);
+  const html = (amb.emails[0] as unknown as { htmlBody: string }).htmlBody;
+  assert.match(html, /<h2[^>]*>💧 Manejo de irrigação — 08\/02<\/h2>/);
+  assert.match(html, /border-left:5px solid #c62828/);
+  assert.match(html, /Abrir o app/);
   const rel = amb.pastaApp.pastas.find((p) => p.nome === "RELATORIOS")!;
   assert.equal(rel.getFilesByName("2026-02-08.txt").hasNext(), true);
 
