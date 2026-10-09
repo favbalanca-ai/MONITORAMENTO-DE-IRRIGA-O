@@ -331,7 +331,7 @@ function cardRosa24h() {
   const pt = (ang, rad) => [c + rad * Math.sin((ang * Math.PI) / 180), c - rad * Math.cos((ang * Math.PI) / 180)];
   const fatia = (i, r0, r1) => { const a0 = i * 22.5 - 10.5, a1 = i * 22.5 + 10.5; const [x0, y0] = pt(a0, r1), [x1, y1] = pt(a1, r1), [x2, y2] = pt(a1, r0), [x3, y3] = pt(a0, r0);
     return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) + ' A' + r1 + ' ' + r1 + ' 0 0 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' L' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' A' + r0 + ' ' + r0 + ' 0 0 0 ' + x3.toFixed(1) + ' ' + y3.toFixed(1) + ' Z'; };
-  let s = '<svg viewBox="0 0 220 220" role="img" aria-label="Rosa dos ventos das últimas 24 horas">';
+  let s = '<svg class="rosa24-svg" viewBox="0 0 220 220" role="img" aria-label="Rosa dos ventos das últimas 24 horas">';
   [0.25, 0.5, 0.75, 1].forEach((f) => { s += '<circle cx="' + c + '" cy="' + c + '" r="' + (R * f).toFixed(1) + '" fill="none" stroke="var(--line)"/>'; });
   for (let a = 0; a < 360; a += 45) { const [x, y] = pt(a, R); s += '<line x1="' + c + '" y1="' + c + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="var(--line)"/>'; }
   r.setores.forEach((st, i) => {
