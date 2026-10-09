@@ -226,7 +226,7 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 /* Celular: menu vira barra embaixo */
 @media(max-width:640px){
   #app{display:block}
-  .sidebar{width:100%;height:auto;position:fixed;bottom:0;left:0;top:auto;z-index:20;flex-direction:row;
+  .sidebar{width:100%;height:auto;position:fixed;bottom:0;left:0;top:auto;z-index:20;flex-direction:row;transform:translateZ(0);
     background:#16404d;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.15)}
   .brand,.sidebar-foot{display:none}
   #nav{flex-direction:row;padding:4px 2px;gap:0}
