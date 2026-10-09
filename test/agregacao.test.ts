@@ -12,7 +12,9 @@ test("leituras brutas do METEO corrigido reproduzem o JSON agregado", () => {
   for (const j of JSON_PIVO2) {
     const a = agregarDia(ls, j.d);
     assert.ok(a, j.d);
-    assert.equal(a.n, j.n, `${j.d} leituras`);
+    // a planilha original somava as leituras brutas (repetidas inclusive); aqui n é o tempo coberto em 10 min
+    assert.ok(a.n <= Math.min(144, j.n) && a.n >= 0.6 * Math.min(144, j.n), `${j.d} leituras: ${a.n} vs ${j.n}`);
+    assert.equal(a.n >= 100, j.n >= 100, `${j.d}: mínimo de leituras para decidir`);
     assert.equal(a.tmax, j.tmax, `${j.d} tmax`);
     assert.equal(a.tmin, j.tmin, `${j.d} tmin`);
     assert.ok(Math.abs(a.tmed - j.t) <= 0.05, `${j.d} tmed`);
@@ -59,4 +61,29 @@ test("valores inválidos são ignorados e janela sem temperatura devolve null", 
   assert.equal(a.tmed, 22);
   assert.equal(a.ur, 80);
   assert.equal(agregarDia([leitura("2026-01-10T10:00:00", { tempC: null })], "2026-01-10"), null);
+});
+
+test("leitura ao vivo e do histórico na mesma fatia de 10 min contam uma vez só", () => {
+  const base = { chuvaAcumDia: 0, tempC: 25, urPct: 60, radWm2: 300, ventoMs: 1 };
+  const ls = [];
+  // dia inteiro ao vivo (144 leituras em :02, :12, :22…)
+  for (let i = 0; i < 144; i++) {
+    const t = new Date(Date.parse("2026-02-07T18:02:00Z") + i * 600_000).toISOString().slice(0, 19);
+    ls.push({ ...base, quando: t, intervaloMin: 10, fonte: "ecowitt" });
+  }
+  // recuperação do histórico de 5 min no mesmo período da manhã (08:00–09:00)
+  for (let i = 0; i <= 12; i++) {
+    const t = new Date(Date.parse("2026-02-08T08:00:00Z") + i * 300_000).toISOString().slice(0, 19);
+    ls.push({ ...base, tempC: 40, quando: t, intervaloMin: 5, fonte: "ecowitt-historico-5min" });
+  }
+  const d = agregarDia(ls, "2026-02-08")!;
+  assert.equal(d.n, 144);
+  assert.equal(d.tmax, 40);
+  // só histórico de 30 min: 48 leituras valem o dia inteiro
+  const h = [];
+  for (let i = 0; i < 48; i++) {
+    const t = new Date(Date.parse("2026-02-07T18:00:00Z") + i * 1_800_000).toISOString().slice(0, 19);
+    h.push({ ...base, quando: t, intervaloMin: 30 });
+  }
+  assert.equal(agregarDia(h, "2026-02-08")!.n, 144);
 });

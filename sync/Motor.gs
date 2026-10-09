@@ -112,8 +112,29 @@ var Motor = (function () {
           vento: ventos.length ? media(ventos) : NaN,
           rad: rads.length ? wm2ParaMJDia(media(rads)) : NaN,
           chuva: chuvaNoite + chuvaDia,
-          n: Math.round(janela.reduce((soma, l) => { var _a; return soma + ((_a = l.intervaloMin) !== null && _a !== void 0 ? _a : 10) / 10; }, 0)),
+          n: fatiasCobertas(janela, ini, fim),
       };
+  }
+  /**
+   * Quanto da janela tem leitura, em equivalentes de 10 min (máximo 144). Cada leitura "vale" o tempo do seu
+   * intervalo a partir dela (10 min ao vivo, 30 min no histórico), cortado no fim da janela; o que se sobrepõe
+   * conta uma vez só. Assim a coleta ao vivo às 08:32 e a recuperação do histórico às 08:30, ou duas leituras
+   * segundos uma da outra, não somam — antes `n` passava de 144. As médias continuam usando todas as leituras
+   * (repetidas têm o mesmo valor; é o que a planilha original fazia).
+   */
+  function fatiasCobertas(janela, ini, fim) {
+      const tFim = Date.parse(fim + "Z");
+      const tramos = janela
+          .map((l) => { var _a; const a = Date.parse(l.quando + "Z"); return [a, Math.min(tFim, a + ((_a = l.intervaloMin) !== null && _a !== void 0 ? _a : 10) * 60000)]; })
+          .sort((a, b) => a[0] - b[0]);
+      let coberto = 0, ate = Date.parse(ini + "Z");
+      for (const [a, b] of tramos) {
+          if (b <= ate)
+              continue;
+          coberto += b - Math.max(a, ate);
+          ate = b;
+      }
+      return Math.min(144, Math.ceil(coberto / 600000 - 1e-9));
   }
   // ---- src/motor/completar.ts ----
   const CAMPOS = ["tmax", "tmin", "tmed", "ur", "vento", "rad"];
@@ -1037,5 +1058,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, recomendar, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, simularBalanco, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, montarMensagem };
 })();

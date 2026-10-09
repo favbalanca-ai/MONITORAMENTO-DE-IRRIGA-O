@@ -55,6 +55,27 @@ export function agregarDia(leituras: Leitura[], data: DataISO): DiaClima | null 
     vento: ventos.length ? media(ventos) : NaN,
     rad: rads.length ? wm2ParaMJDia(media(rads)) : NaN,
     chuva: chuvaNoite + chuvaDia,
-    n: Math.round(janela.reduce((soma, l) => soma + (l.intervaloMin ?? 10) / 10, 0)),
+    n: fatiasCobertas(janela, ini, fim),
   };
+}
+
+/**
+ * Quanto da janela tem leitura, em equivalentes de 10 min (máximo 144). Cada leitura "vale" o tempo do seu
+ * intervalo a partir dela (10 min ao vivo, 30 min no histórico), cortado no fim da janela; o que se sobrepõe
+ * conta uma vez só. Assim a coleta ao vivo às 08:32 e a recuperação do histórico às 08:30, ou duas leituras
+ * segundos uma da outra, não somam — antes `n` passava de 144. As médias continuam usando todas as leituras
+ * (repetidas têm o mesmo valor; é o que a planilha original fazia).
+ */
+export function fatiasCobertas(janela: Leitura[], ini: string, fim: string): number {
+  const tFim = Date.parse(fim + "Z");
+  const tramos = janela
+    .map((l) => { const a = Date.parse(l.quando + "Z"); return [a, Math.min(tFim, a + (l.intervaloMin ?? 10) * 60_000)] as [number, number]; })
+    .sort((a, b) => a[0] - b[0]);
+  let coberto = 0, ate = Date.parse(ini + "Z");
+  for (const [a, b] of tramos) {
+    if (b <= ate) continue;
+    coberto += b - Math.max(a, ate);
+    ate = b;
+  }
+  return Math.min(144, Math.ceil(coberto / 600_000 - 1e-9));
 }
