@@ -374,7 +374,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(est, /Solo 2 · Pivô 2\s+33%/);
   assert.match(est, /Chovendo agora \(3,2 mm\/h\)/);
   assert.match(est, /Vento forte \(6,5 m\/s\)/);
-  assert.match(est, /SE/);
+  assert.match(est, /de SE \(135°\) · rajada 23/);
   // pulverização: T 27,4 / UR 61 → Delta T 5,6 (ideal); vento 11 km/h = atenção terrestre, bom aérea; chovendo = ruim nos dois
   assert.match(est, /Delta T\s+5,6\s*°C\s+ideal 2–8/);
   assert.match(est, /Terrestre[\s\S]*Ruim[\s\S]*Vento 11 km\/h: no limite \(10 a 12\)[\s\S]*Chovendo agora/);

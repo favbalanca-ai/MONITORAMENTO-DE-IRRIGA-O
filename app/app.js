@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-7';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-8';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -299,6 +299,29 @@ function janelas48h(horas) {
     '<p class="j48-txt"><b>Terrestre:</b> ' + esc(texto('terrestre')) + '<br><b>Aérea:</b> ' + esc(texto('aerea')) + '</p></div>';
 }
 
+/**
+ * Rosa dos ventos: 8 pontos, marcas a cada 10°, seta no sentido em que o vento SOPRA (sai da direção de
+ * origem e atravessa o centro — convenção dos mapas de vento) e, no centro, a velocidade e de onde vem.
+ */
+function rosaDosVentos(dirGraus, ventoMs, rajadaMs) {
+  const d = ((dirGraus % 360) + 360) % 360, R = 60, c = 70;
+  const pt = (ang, r) => [c + r * Math.sin((ang * Math.PI) / 180), c - r * Math.cos((ang * Math.PI) / 180)];
+  let s = '<svg viewBox="0 0 140 140" role="img" aria-label="Vento de ' + esc(pontoCardeal(d)) + ', ' + d + ' graus">';
+  s += '<circle cx="' + c + '" cy="' + c + '" r="' + R + '" fill="rgba(255,255,255,.12)" stroke="currentColor" stroke-opacity=".5"/>';
+  for (let a = 0; a < 360; a += 10) { const g = a % 90 === 0 ? 9 : a % 45 === 0 ? 7 : 4; const [x1, y1] = pt(a, R), [x2, y2] = pt(a, R - g); s += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="currentColor" stroke-opacity="' + (a % 45 === 0 ? '.9' : '.4') + '" stroke-width="' + (a % 90 === 0 ? 2 : 1) + '"/>'; }
+  DIRECOES.forEach((n, i) => { const [x, y] = pt(i * 45, R - 17); s += '<text x="' + x.toFixed(1) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="middle" class="' + (i % 2 ? 'sec' : 'pri') + '">' + n + '</text>'; });
+  // seta: nasce na borda, na direção de ORIGEM, e aponta para onde o vento vai
+  const [ox, oy] = pt(d, R - 2), [fx, fy] = pt(d + 180, R - 22), [hx, hy] = pt(d + 180, R - 12);
+  const [l1x, l1y] = pt(d + 180 - 14, R - 30), [l2x, l2y] = pt(d + 180 + 14, R - 30);
+  s += '<line x1="' + ox.toFixed(1) + '" y1="' + oy.toFixed(1) + '" x2="' + fx.toFixed(1) + '" y2="' + fy.toFixed(1) + '" stroke="#ffd166" stroke-width="3" stroke-linecap="round"/>';
+  s += '<path d="M' + hx.toFixed(1) + ' ' + hy.toFixed(1) + ' L' + l1x.toFixed(1) + ' ' + l1y.toFixed(1) + ' L' + l2x.toFixed(1) + ' ' + l2y.toFixed(1) + ' Z" fill="#ffd166"/>';
+  s += '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="4" fill="#ffd166"/>';
+  s += '<circle cx="' + c + '" cy="' + c + '" r="22" fill="rgba(0,0,0,.28)"/>';
+  s += '<text x="' + c + '" y="' + (c - 1) + '" text-anchor="middle" class="vel">' + (ventoMs != null ? br(ventoMs * 3.6, 0) : '—') + '</text>';
+  s += '<text x="' + c + '" y="' + (c + 10) + '" text-anchor="middle" class="uni">km/h</text></svg>';
+  return '<div class="rosa">' + s + '<small>de <b>' + esc(pontoCardeal(d)) + '</b> (' + Math.round(d) + '°)' + (rajadaMs != null ? ' · rajada ' + br(rajadaMs * 3.6, 0) : '') + '</small></div>';
+}
+
 /** Cartão "Estação agora": o que a estação mediu por último, com avisos pra quem vai ligar o pivô. */
 function cardEstacao() {
   const u = DADOS.ultimaLeitura; if (!u || !u.quando) return '';
@@ -317,7 +340,7 @@ function cardEstacao() {
   return '<div class="card estacao' + (velha ? ' velha' : '') + '"><div class="est-top"><div><div class="est-rotulo">' + ico('termo') + ' Estação agora · ' + esc(dataBr(u.quando)) + ' ' + esc(u.quando.slice(11, 16)) + '</div>' +
     '<div class="est-temp">' + (u.tempC != null ? br(u.tempC, 1) + '<span>°C</span>' : '—') + '</div>' +
     '<div class="est-sub">' + (sens != null ? 'sensação ' + br(sens, 0) + '° · ' : '') + (u.urPct != null ? 'UR ' + br(u.urPct, 0) + '%' : '') + (orv != null ? ' · orvalho ' + br(orv, 0) + '°' : '') + '</div></div>' +
-    (dir != null ? '<div class="bussola" title="Vento de ' + esc(pontoCardeal(dir)) + '"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-opacity=".35"/><text x="24" y="9" text-anchor="middle">N</text><g transform="rotate(' + (dir + 180) + ' 24 24)"><path d="M24 8 L29 26 L24 22 L19 26 Z" fill="currentColor"/></g></svg><small>' + esc(pontoCardeal(dir)) + '</small></div>' : '') + '</div>' +
+    (dir != null ? rosaDosVentos(dir, u.ventoMs, rajada) : '') + '</div>' +
     '<div class="est-grid">' +
     stat('vento', 'Vento', u.ventoMs != null ? br(u.ventoMs, 1) + ' m/s' : '—', rajada != null ? 'rajada ' + br(rajada, 1) : '') +
     stat('sol', 'Radiação', u.radWm2 != null ? br(u.radWm2, 0) + ' W/m²' : '—', uv != null ? '<i style="color:' + faixaUv(uv)[1] + '">UV ' + br(uv, 0) + ' · ' + faixaUv(uv)[0] + '</i>' : '') +
