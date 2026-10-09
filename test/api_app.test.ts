@@ -297,6 +297,19 @@ test("pivô com latitude/longitude e contorno vai para o resumo; latitude sem lo
   assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "" }, original: "Pivô 2" } }).erro, /precisam vir juntas/);
 });
 
+test("relatório em PDF pelo GET (base64) e pelo menu", () => {
+  const amb = pronto();
+  const s = entrar(amb, "jose", "4321").token;
+  const r = amb.get({ acao: "pdf", s });
+  assert.equal(r.ok, true);
+  assert.equal(r.nome, "2026-02-08.pdf");
+  assert.match(r.url, /drive\.google\.com/);
+  assert.match(Buffer.from(r.base64, "base64").toString("utf8"), /^%PDF-FAKE[\s\S]*Manejo de irrigação — 08\/02/);
+  amb.alertas.length = 0;
+  amb.chamar("menuPdf");
+  assert.match(amb.alertas[0]!, /PDF salvo na pasta RELATORIOS:\n2026-02-08\.pdf/);
+});
+
 test("rosa dos ventos por período pelo GET", () => {
   const amb = pronto();
   const s = entrar(amb, "jose", "4321").token;

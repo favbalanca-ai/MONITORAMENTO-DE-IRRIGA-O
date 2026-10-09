@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.09-13';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.09-14';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -448,7 +448,7 @@ V.hoje = function () {
   const proximas = pivos.filter((p) => p.projecao && p.projecao.proximaIrrigacao && p.decisao !== 'IRRIGAR').map((p) => p.projecao.emDias);
   const frase = cont.ruim ? cont.ruim + (cont.ruim === 1 ? ' pivô pra irrigar' : ' pivôs pra irrigar') : proximas.length ? (function (n) { return n === 0 ? 'Irrigação prevista para hoje' : 'Próxima irrigação em ' + n + (n === 1 ? ' dia' : ' dias'); })(Math.min.apply(null, proximas)) : pivos.length ? 'Nenhum pivô pra irrigar' : 'Nenhum pivô ativo';
   let h = '<div class="resumo card"><div class="resumo-top"><div><div class="resumo-dia">' + esc(dataBr(r.dia)) + ' · até 18h</div><h2>' + esc(frase) + '</h2></div>' +
-    '<button class="btn btn-outline btn-sm" data-act="recalcular">' + ico('refresh') + ' Recalcular</button></div>' +
+    '<div class="toolbar" style="margin:0;gap:6px"><button class="btn btn-outline btn-sm" data-act="pdf" title="Relatório do dia em PDF">' + ico('hoje') + ' PDF</button><button class="btn btn-outline btn-sm" data-act="recalcular">' + ico('refresh') + ' Recalcular</button></div></div>' +
     '<div class="semaforos">' + ['ruim', 'atencao', 'bom', 'sem'].map((k) => '<div class="sem-chip sem-' + k + (cont[k] ? '' : ' vazio') + '"><span class="ico">' + SEM_ICONE[k] + '</span><b>' + cont[k] + '</b><small>' + SEM_ROTULO[k] + '</small></div>').join('') + '</div>' +
     '<div class="chips"><span class="chip">ET₀ <b>' + br(c.et0, 1) + '</b> mm</span><span class="chip">Chuva <b>' + br(c.chuva, 1) + '</b> mm</span>' +
     (prox2.length ? '<a class="chip" href="#/clima">' + ico('chuva') + ' prev. 2 dias <b>' + br(chuva2, 1) + '</b> mm</a>' : '') +
@@ -1134,6 +1134,18 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);
   else if (act === 'rosa-24h') { ROSA = null; route({ manterRolagem: true }); }
   else if (act === 'hist-csv') { if (HIST) csvHist(HIST); }
+  else if (act === 'pdf') {
+    a.disabled = true; const antes = a.innerHTML; a.textContent = 'Gerando…';
+    try {
+      const r = await chamar('GET', { acao: 'pdf' });
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
+      const bin = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0)), blob = new Blob([bin], { type: 'application/pdf' }), url = URL.createObjectURL(blob);
+      const l = document.createElement('a'); l.href = url; l.download = r.nome; document.body.appendChild(l); l.click();
+      setTimeout(() => { URL.revokeObjectURL(url); l.remove(); }, 2000);
+      toast('📄 ' + r.nome + ' pronto. Também está na pasta RELATORIOS do Drive.');
+    } catch (e) { toast(e.message, true); }
+    a.disabled = false; a.innerHTML = antes;
+  }
   else if (act === 'hist-cols') { colsHist = !colsHist; if (HIST) { $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); } }
   else if (act === 'recalcular') {
     a.disabled = true; a.textContent = 'Recalculando…';

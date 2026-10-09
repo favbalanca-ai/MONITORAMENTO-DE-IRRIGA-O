@@ -30,7 +30,8 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
    - O **relatório das 18h** vai por e-mail em texto (cabe no WhatsApp) e em HTML (cores do semáforo, tabelinha por
      pivô): resumo do dia (pivôs em cada estado, água em m³, energia e custo), clima da janela, previsão, e por pivô
      déficit × AFD × lâmina mínima, ajuste do pivô, hora de ligar, próxima irrigação, última irrigação/medição e
-     o déficit dos últimos 7 dias.
+     o déficit dos últimos 7 dias. O mesmo relatório vai em **PDF** anexo ao e-mail e fica em `RELATORIOS/AAAA-MM-DD.pdf`
+     (também pelo menu **📄 Relatório de hoje em PDF** e pelo botão PDF do app).
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
      mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
      só avisa — não entra no balanço.

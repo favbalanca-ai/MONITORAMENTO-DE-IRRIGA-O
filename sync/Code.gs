@@ -109,6 +109,7 @@ function onOpen() {
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
     .addItem("🌧 Atualizar previsão do tempo", "menuPrevisao")
+    .addItem("📄 Relatório de hoje em PDF", "menuPdf")
     .addSeparator()
     .addItem("📱 Endereço para o app", "menuLinkApp")
     .addItem("👤 Criar administrador do app", "menuCriarAdmin")
@@ -850,6 +851,16 @@ function lerPrevisao_() {
   try { return t ? JSON.parse(t) : null; } catch (e) { return null; }
 }
 
+function menuPdf() {
+  try {
+    var r = calcular_(null);
+    var pdf = relatorioPdf_(r);
+    aviso_("PDF salvo na pasta RELATORIOS:\n" + pdf.arquivo.getName() + "\n" + pdf.arquivo.getUrl());
+  } catch (e) {
+    aviso_("Não consegui gerar o PDF: " + e.message);
+  }
+}
+
 function menuPrevisao() {
   var p = atualizarPrevisao();
   if (!p) { aviso_("Não consegui buscar a previsão. Veja a aba LOG."); return; }
@@ -955,13 +966,56 @@ function jaEnviado_(dia, canal) {
 }
 
 /** Calcula e envia. Cada canal recebe uma vez por dia; `forcar` reenvia. */
+/** Substitui (ou cria) um arquivo na pasta pelo nome. */
+function salvarNaPasta_(pasta, nome, conteudoOuBlob) {
+  var antigos = pasta.getFilesByName(nome);
+  while (antigos.hasNext()) antigos.next().setTrashed(true);
+  return pasta.createFile(conteudoOuBlob && typeof conteudoOuBlob === "object" ? conteudoOuBlob.setName(nome) : nome, typeof conteudoOuBlob === "string" ? conteudoOuBlob : undefined);
+}
+
+/**
+ * Relatório do dia em PDF: o mesmo HTML do e-mail + o balanço dos últimos 30 dias de cada pivô,
+ * convertido pelo próprio Google (HTML → PDF). Fica em RELATORIOS/AAAA-MM-DD.pdf.
+ */
+function relatorioPdf_(r) {
+  var fuso = r.cfg.fuso;
+  var partes = ['<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Manejo de irrigação ' + r.dia + '</title>',
+    '<style>body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#33474f;margin:18px}table.bal{border-collapse:collapse;width:100%;font-size:10.5px;margin:6px 0 14px}',
+    'table.bal th,table.bal td{border:1px solid #dde3e6;padding:3px 5px;text-align:right}table.bal th{background:#eef3f5;color:#16404d}table.bal td:first-child,table.bal th:first-child{text-align:left}',
+    'tr.irr td{background:#e3effc}tr.est td{color:#b00020}h3{color:#16404d;margin:16px 0 4px;page-break-before:auto}.rodape{color:#64757d;font-size:10px;margin-top:16px}</style></head><body>',
+    r.html, '<h2 style="color:#16404d;margin-top:22px">Balanço dos últimos 30 dias</h2>'];
+  r.itens.forEach(function (it) {
+    var h = historico_(it.pivo.nome, 30);
+    if (!h.linhas.length) return;
+    partes.push('<h3>' + esc_(it.pivo.nome) + ' — ' + esc_(it.pivo.cultura.nome) + '</h3>');
+    partes.push('<table class="bal"><tr><th>Dia</th><th>DAS</th><th>Estádio</th><th>Kc</th><th>ET₀</th><th>ETc</th><th>Chuva</th><th>Irrig.</th><th>Raiz</th><th>CAD</th><th>AFD</th><th>Déficit</th><th>% AFD</th><th>Decisão</th></tr>');
+    h.linhas.forEach(function (l) {
+      var pct = l.afd > 0 ? Math.round((l.deficit / l.afd) * 100) : 0;
+      var cls = l.afd > 0 && l.deficit >= l.afd ? "est" : l.decisao === "IRRIGAR" ? "irr" : "";
+      var n1 = function (x) { return x === null || x === undefined ? "" : String(Math.round(x * 10) / 10).replace(".", ","); };
+      partes.push('<tr class="' + cls + '"><td>' + l.data.split("-").reverse().join("/") + (l.medicao ? " 🌱" : "") + '</td><td>' + (l.das === null ? "" : l.das) + '</td><td style="text-align:left">' + esc_(l.estadio) + '</td><td>' + (l.kc === null ? "" : String(l.kc).replace(".", ",")) + '</td><td>' + n1(l.et0) + '</td><td>' + n1(l.etc) + '</td><td>' + n1(l.chuva) + '</td><td>' + n1(l.irrigacao) + '</td><td>' + n1(l.raiz) + '</td><td>' + n1(l.cad) + '</td><td>' + n1(l.afd) + '</td><td><b>' + n1(l.deficit) + '</b></td><td>' + pct + '%</td><td>' + esc_(l.decisao) + '</td></tr>');
+    });
+    partes.push('</table>');
+  });
+  partes.push('<div class="rodape">Gerado em ' + Motor.paraLocal(Date.now(), fuso).replace("T", " ") + ' · Fazenda Água Viva · ' + APP_URL + '</div></body></html>');
+  var blob = Utilities.newBlob(partes.join("\n"), "text/html", r.dia + ".html").getAs("application/pdf");
+  var arquivo = salvarNaPasta_(pastaDoApp_(PASTA_RELATORIOS), r.dia + ".pdf", blob);
+  return { arquivo: arquivo, blob: blob };
+}
+
+function esc_(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
 function calcularEEnviar_(dia, forcar) {
   var r = calcular_(dia);
-  var nomeArquivo = r.dia + ".txt";
   var pasta = pastaDoApp_(PASTA_RELATORIOS);
-  var antigos = pasta.getFilesByName(nomeArquivo);
-  while (antigos.hasNext()) antigos.next().setTrashed(true);
-  pasta.createFile(nomeArquivo, r.assunto + "\n\n" + r.texto.replace(/\*/g, ""));
+  salvarNaPasta_(pasta, r.dia + ".txt", r.assunto + "\n\n" + r.texto.replace(/\*/g, ""));
+  var pdf = null;
+  try {
+    pdf = relatorioPdf_(r);
+  } catch (e) {
+    log_("pdf", "erro", e.message, r.dia);
+  }
+  r.pdfUrl = pdf ? pdf.arquivo.getUrl() : null;
 
   if (!r.cfg.emails.length) {
     log_("e-mail", "sem destinatário", "Preencha os e-mails na aba ESTACAO.", r.dia);
@@ -969,7 +1023,9 @@ function calcularEEnviar_(dia, forcar) {
     log_("e-mail", "já enviado", "", r.dia);
   } else {
     try {
-      MailApp.sendEmail({ to: r.cfg.emails.join(","), subject: r.assunto, body: r.texto.replace(/\*/g, ""), htmlBody: r.html });
+      var email = { to: r.cfg.emails.join(","), subject: r.assunto, body: r.texto.replace(/\*/g, ""), htmlBody: r.html };
+      if (pdf) email.attachments = [pdf.blob];
+      MailApp.sendEmail(email);
       log_("e-mail", "enviado", r.cfg.emails.join(", "), r.dia);
     } catch (e) {
       log_("e-mail", "erro", e.message, r.dia);
@@ -1149,7 +1205,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.09-10";
+var VERSAO_SERVIDOR = "2026.10.09-11";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1176,6 +1232,12 @@ function doGet_(p) {
   if (acao === "hash") return { ok: true, hash: hashDados_() };
   if (acao === "historico") return { ok: true, historico: historico_(p.pivo, Number(p.dias) || 30) };
   if (acao === "rosa") return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || "")) };
+  if (acao === "pdf") {
+    // relatório do último dia calculado (ou de um dia pedido) em PDF, em base64, para o app baixar
+    var r = calcular_(p.dia ? dataIso_(p.dia, lerEstacao_().fuso) : null);
+    var pdf = relatorioPdf_(r);
+    return { ok: true, nome: r.dia + ".pdf", url: pdf.arquivo.getUrl(), base64: Utilities.base64Encode(pdf.blob.getBytes()) };
+  }
   if (acao === "usuarios") {
     exigirAdmin_(u);
     return { ok: true, usuarios: listarUsuarios_() };

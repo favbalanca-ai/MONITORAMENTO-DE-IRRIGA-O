@@ -81,6 +81,18 @@ export class FakeSheet {
   }
 }
 
+/** Blob do Apps Script: texto ou "PDF" (aqui o PDF é só o HTML com um carimbo, para os testes). */
+export class FakeBlob {
+  dados: Buffer; mime: string; nome: string;
+  constructor(dados: Buffer | string, mime: string, nome: string) { this.dados = typeof dados === "string" ? Buffer.from(dados, "utf8") : dados; this.mime = mime; this.nome = nome; }
+  getBytes() { return assinados(this.dados); }
+  getDataAsString() { return this.dados.toString("utf8"); }
+  getContentType() { return this.mime; }
+  getName() { return this.nome; }
+  setName(n: string) { this.nome = n; return this; }
+  getAs(mime: string) { return new FakeBlob(Buffer.concat([Buffer.from("%PDF-FAKE\n"), this.dados]), mime, this.nome.replace(/\.html?$/, "") + ".pdf"); }
+}
+
 class FakeFile {
   nome: string;
   conteudo: string;
@@ -88,6 +100,7 @@ class FakeFile {
   readonly pai: FakeFolder;
   constructor(nome: string, conteudo: string, pai: FakeFolder) { this.nome = nome; this.conteudo = conteudo; this.pai = pai; }
   getName() { return this.nome; }
+  getUrl() { return "https://drive.google.com/file/d/FAKE_" + encodeURIComponent(this.nome); }
   setTrashed(v: boolean) { this.lixeira = v; }
   getParents() { return iterador([this.pai]); }
   makeCopy(nome: string, pasta: FakeFolder) { const f = new FakeFile(nome, this.conteudo, pasta); pasta.arquivos.push(f); return f; }
@@ -101,7 +114,10 @@ class FakeFolder {
   getName() { return this.nome; }
   getFoldersByName(n: string) { return iterador(this.pastas.filter((p) => p.nome === n)); }
   createFolder(n: string) { const p = new FakeFolder(n); this.pastas.push(p); return p; }
-  createFile(n: string, c: string) { const f = new FakeFile(n, c, this); this.arquivos.push(f); return f; }
+  createFile(n: string | FakeBlob, c?: string) {
+    const f = n instanceof FakeBlob ? new FakeFile(n.getName(), n.getDataAsString(), this) : new FakeFile(n, c ?? "", this);
+    this.arquivos.push(f); return f;
+  }
   getFilesByName(n: string) { return iterador(this.arquivos.filter((f) => f.nome === n && !f.lixeira)); }
   getFiles() { return iterador(this.arquivos.filter((f) => !f.lixeira)); }
 }
@@ -132,7 +148,7 @@ function encadeavel(ao: (chamadas: [string, unknown[]][]) => unknown = () => und
 export interface Ambiente {
   ctx: vm.Context;
   abas: Map<string, FakeSheet>;
-  emails: { to: string; subject: string; body: string }[];
+  emails: { to: string; subject: string; body: string; htmlBody?: string; attachments?: FakeBlob[] }[];
   props: Map<string, string>;
   gatilhos: { funcao: string; chamadas: [string, unknown[]][] }[];
   raiz: FakeFolder;
@@ -224,7 +240,8 @@ export function criarAmbiente(): Ambiente {
       base64Encode: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64"),
       base64EncodeWebSafe: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url") + "=".repeat((4 - (Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url").length % 4)) % 4),
       base64DecodeWebSafe: (t: string) => assinados(Buffer.from(t.replace(/=+$/, ""), "base64url")),
-      newBlob: (b: number[]) => ({ getDataAsString: () => Buffer.from(Uint8Array.from(b, (x) => x & 255)).toString("utf8") }),
+      newBlob: (b: number[] | string, mime = "application/octet-stream", nome = "blob") =>
+        new FakeBlob(typeof b === "string" ? b : Buffer.from(Uint8Array.from(b, (x) => x & 255)), mime, nome),
     },
     ContentService: {
       MimeType: { JSON: "application/json" },

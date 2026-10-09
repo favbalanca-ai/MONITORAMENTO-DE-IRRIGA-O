@@ -116,6 +116,9 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   assert.match(card, /Déficit 2\d,\d mm/);
   assert.match(card, /PERCENTÍMETRO\s+\d+%/i);
   assert.match(await page.locator(".resumo").innerText(), /1 pivô pra irrigar/);
+  const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /PDF/ }).click()]);
+  assert.equal(pdf.suggestedFilename(), "2026-02-08.pdf");
+  await page.getByText(/2026-02-08\.pdf pronto/).waitFor();
   assert.match(await page.locator("#user-chip").innerText(), /Fabiana/);
   assert.ok(await page.locator("#sync-status.ok").count() === 1, "estado sincronizado");
   await page.screenshot({ path: PRINTS + "2_hoje.png", fullPage: true });

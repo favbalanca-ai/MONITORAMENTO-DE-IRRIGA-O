@@ -75,18 +75,24 @@ test("relatório na planilha reproduz a seção 7 e manda e-mail uma vez só", (
   assert.match(amb.emails[0]!.body, /🔴 1 irrigar · 🟡 0 atenção · 🟢 0 ok/);
   assert.match(amb.emails[0]!.body, /Déficit \(mm\) nos últimos dias: 02\/02 \d+ · 03\/02 \d+ · 04\/02 \d+ · 05\/02 \d+ · 06\/02 \d+ · 07\/02 \d+ · 08\/02 \d+/);
   assert.doesNotMatch(amb.emails[0]!.body, /\*/);
-  const html = (amb.emails[0] as unknown as { htmlBody: string }).htmlBody;
+  const html = amb.emails[0]!.htmlBody!;
   assert.match(html, /<h2[^>]*>💧 Manejo de irrigação — 08\/02<\/h2>/);
+  // PDF: anexo no e-mail e arquivo na pasta RELATORIOS, com o balanço de 30 dias
+  const anexo = amb.emails[0]!.attachments![0]!;
+  assert.equal(anexo.getName(), "2026-02-08.pdf");
+  assert.equal(anexo.getContentType(), "application/pdf");
+  assert.match(anexo.getDataAsString(), /Balanço dos últimos 30 dias[\s\S]*Pivô 2 — Soja[\s\S]*08\/02/);
+  const rel = amb.pastaApp.pastas.find((p) => p.nome === "RELATORIOS")!;
+  assert.deepEqual(rel.arquivos.filter((f) => !f.lixeira).map((f) => f.nome).sort(), ["2026-02-08.pdf", "2026-02-08.txt"]);
   assert.match(html, /border-left:5px solid #c62828/);
   assert.match(html, /Abrir o app/);
-  const rel = amb.pastaApp.pastas.find((p) => p.nome === "RELATORIOS")!;
   assert.equal(rel.getFilesByName("2026-02-08.txt").hasNext(), true);
 
   amb.chamar("calcularEEnviar_", "2026-02-08", false);
   assert.equal(amb.emails.length, 1, "não reenvia");
   amb.chamar("calcularEEnviar_", "2026-02-08", true);
   assert.equal(amb.emails.length, 2, "forçado reenvia");
-  assert.equal(rel.arquivos.filter((f) => !f.lixeira).length, 1, "um arquivo por dia");
+  assert.equal(rel.arquivos.filter((f) => !f.lixeira).length, 2, "um .txt e um .pdf por dia, sem duplicar");
 });
 
 test("irrigação e medição lançadas nas abas (com data de célula) entram no balanço", () => {
