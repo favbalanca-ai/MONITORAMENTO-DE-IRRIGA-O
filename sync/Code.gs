@@ -1567,11 +1567,11 @@ function aviso_(texto) {
  * O endereço /exec vai na tela ⚙️ Sincronizar do app (nunca no GitHub).
  *
  * doGet  ?acao=dados | hash | historico&pivo=&dias= | usuarios     (&s=<sessão>)
- * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__pivo} {__usuario} {__trocarPin}
+ * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__pivo} {__reservatorio} {__usuario} {__trocarPin}
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.11-2";
+var VERSAO_SERVIDOR = "2026.10.11-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1649,6 +1649,11 @@ function doPost(e) {
     if (tipo === "__pivo") {
       exigirAdmin_(u);
       return json_({ ok: true, cadastro: salvarPivo_(d.dados || {}, d.original || null), recalculo: recalcularApp_() });
+    }
+    if (tipo === "__reservatorio") {
+      exigirAdmin_(u);
+      if (d.apagar) return json_({ ok: true, cadastro: apagarReservatorio_(d.nome, d.fazenda), recalculo: recalcularApp_() });
+      return json_({ ok: true, cadastro: salvarReservatorio_(d.dados || {}, d.original || null), recalculo: recalcularApp_() });
     }
     if (tipo === "__usuario") {
       exigirAdmin_(u);
@@ -2140,6 +2145,86 @@ function salvarPivo_(dados, nomeOriginal) {
     throw e;
   }
   log_("app", "pivô salvo", nome);
+  return cadastroPivos_();
+}
+
+/* ---------------------------------- reservatórios ---------------------------------- */
+
+function abaReservatorios_() {
+  var ss = SpreadsheetApp.getActive();
+  var aba = criarAbaSeFaltar_(ss, ABA.RESERVATORIOS, COLUNAS_RESERVATORIOS.map(function (c) { return c[1]; }));
+  var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(String) : [];
+  COLUNAS_RESERVATORIOS.forEach(function (c) {
+    if (cab.indexOf(c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
+  });
+  return { aba: aba, cab: cab };
+}
+
+/** Cria ou atualiza um piscinão (pelo nome original dentro da fazenda). */
+function salvarReservatorio_(dados, nomeOriginal) {
+  var r = abaReservatorios_();
+  var nome = String(dados.nome || "").trim();
+  if (!nome) throw new Error("Dê um nome ao piscinão.");
+  var fazendas = lerFazendas_();
+  var faz = dados.fazenda ? fazendaPorChave_(dados.fazenda) : fazendas[0];
+  if (!faz) throw new Error("Fazenda \"" + dados.fazenda + "\" não está na aba FAZENDAS.");
+  var volume = numeroEntre_(dados.volumeUtilM3, "O volume útil", 1, 1e9);
+  var bomba = dados.bombaM3h === "" || dados.bombaM3h == null ? 0 : numeroEntre_(dados.bombaM3h, "A vazão da bomba", 0, 1e6);
+  var horas = dados.horasBombaDia === "" || dados.horasBombaDia == null ? 0 : numeroEntre_(dados.horasBombaDia, "As horas de bomba por dia", 0, 24);
+  var reserva = dados.reservaMinM3 === "" || dados.reservaMinM3 == null ? 0 : numeroEntre_(dados.reservaMinM3, "A reserva mínima", 0, volume);
+  var n = r.aba.getLastRow();
+  var linhas = n >= 2 ? r.aba.getRange(2, 1, n - 1, r.cab.length).getValues() : [];
+  var cNome = r.cab.indexOf("Reservatório"), cFaz = r.cab.indexOf("Fazenda");
+  var chave = function (l) { return chaveFazenda_(cFaz >= 0 && l[cFaz] ? l[cFaz] : fazendas[0].nome) + "|" + chaveCultura_(l[cNome]); };
+  var chaves = linhas.map(chave);
+  var fazOrig = dados.fazendaOriginal ? chaveFazenda_(dados.fazendaOriginal) : faz.chave;
+  var idxOrig = nomeOriginal ? chaves.indexOf(fazOrig + "|" + chaveCultura_(nomeOriginal)) : -1;
+  var idxNome = chaves.indexOf(faz.chave + "|" + chaveCultura_(nome));
+  if (idxNome >= 0 && idxNome !== idxOrig) throw new Error("Já existe um piscinão chamado " + nome + " nessa fazenda.");
+  var valores = { fazenda: faz.nome, nome: T_(nome), volumeUtilM3: volume, bombaM3h: bomba, horasBombaDia: horas, reservaMinM3: reserva, obs: T_(String(dados.obs || "")) };
+  var linha = r.cab.map(function (h) {
+    var c = COLUNAS_RESERVATORIOS.filter(function (x) { return x[1] === h; })[0];
+    return c ? valores[c[0]] : "";
+  });
+  var nLinha = idxOrig >= 0 ? idxOrig + 2 : n + 1;
+  r.aba.getRange(nLinha, 1, 1, linha.length).setValues([linha]);
+  // pivôs que apontavam para o nome antigo seguem o novo
+  if (idxOrig >= 0 && nomeOriginal && chaveCultura_(nomeOriginal) !== chaveCultura_(nome)) renomearFonte_(fazOrig, nomeOriginal, nome);
+  log_("app", "piscinão salvo", nome);
+  return cadastroPivos_();
+}
+
+function renomearFonte_(chaveFazenda, de, para) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PIVOS);
+  if (!aba || aba.getLastRow() < 2) return;
+  var cab = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(String);
+  var cF = cab.indexOf("Fonte de água (vazio = direto)"), cZ = cab.indexOf("Fazenda");
+  if (cF < 0) return;
+  var fazendas = lerFazendas_();
+  var vals = aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues();
+  vals.forEach(function (l, i) {
+    var fz = chaveFazenda_(cZ >= 0 && l[cZ] ? l[cZ] : fazendas[0].nome);
+    if (fz === chaveFazenda && chaveCultura_(l[cF]) === chaveCultura_(de)) aba.getRange(i + 2, cF + 1).setValue(para);
+  });
+}
+
+/** Apaga um piscinão que nenhum pivô usa. */
+function apagarReservatorio_(nome, fazenda) {
+  var r = abaReservatorios_();
+  var faz = fazenda ? fazendaPorChave_(fazenda) : lerFazendas_()[0];
+  var alvo = reservatorioPorNome_(nome, faz ? faz.chave : "")[0];
+  if (!alvo) throw new Error("Piscinão \"" + nome + "\" não encontrado.");
+  var usam = lerPivos_(lerEstacao_()).filter(function (p) { return p.chaveFazenda === alvo.chaveFazenda && chaveCultura_(p.fonte) === alvo.chave; });
+  if (usam.length) throw new Error("Tire o piscinão dos pivôs " + usam.map(function (p) { return p.nome; }).join(", ") + " antes de apagar.");
+  var n = r.aba.getLastRow();
+  var linhas = r.aba.getRange(2, 1, n - 1, r.cab.length).getValues();
+  var cNome = r.cab.indexOf("Reservatório"), cFaz = r.cab.indexOf("Fazenda");
+  var fazendas = lerFazendas_();
+  for (var i = linhas.length - 1; i >= 0; i--) {
+    var fz = chaveFazenda_(cFaz >= 0 && linhas[i][cFaz] ? linhas[i][cFaz] : fazendas[0].nome);
+    if (fz === alvo.chaveFazenda && chaveCultura_(linhas[i][cNome]) === alvo.chave) r.aba.deleteRows(i + 2, 1);
+  }
+  log_("app", "piscinão apagado", alvo.nome);
   return cadastroPivos_();
 }
 

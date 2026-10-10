@@ -561,3 +561,31 @@ test("piscinão: cartão na tela Hoje, lançamento de nível e fonte de água no
   assert.deepEqual(await a.page.locator("#p_fonte option").allTextContents(), ["Abastecimento direto", "Piscinão 1 (piscinão)"]);
   await a.ctx.close();
 });
+
+test("piscinão: administrador cadastra pelo app e liga o pivô a ele", async () => {
+  const amb = planilha();
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "fabiana", "1234");
+  await page.goto(base + "#/pivos");
+  await page.getByText("Nenhum piscinão.").waitFor();
+  await page.getByRole("link", { name: "+ Novo piscinão" }).click();
+  await page.locator("#f-res").waitFor();
+  await page.fill("#r_nome", "Piscinão 1");
+  await page.fill("#r_volumeUtilM3", "20000");
+  await page.fill("#r_reservaMinM3", "2000");
+  await page.fill("#r_bombaM3h", "200");
+  await page.fill("#r_horasBombaDia", "10");
+  assert.match(await page.locator("#r-info").innerText(), /Entram 2\.000 m³ por dia · do vazio ao cheio em 10,0 dias/);
+  await page.getByRole("button", { name: "Salvar na planilha" }).click();
+  await page.getByText(/útil 20\.000 m³ · bomba 200 m³\/h × 10 h\/dia = 2\.000 m³\/dia · reserva 2\.000 m³/).waitFor();
+  assert.equal(amb.aba("RESERVATORIOS").objetos()[0]!["Volume útil (m³)"], 20000);
+  // liga o Pivô 2 ao piscinão pelo formulário do pivô
+  await page.getByRole("link", { name: "Editar" }).first().click();
+  await page.locator("#p_fonte").waitFor();
+  await page.selectOption("#p_fonte", "Piscinão 1");
+  await page.getByRole("button", { name: "Salvar na planilha" }).click();
+  await page.getByText(/abastece: Pivô 2/).waitFor();
+  assert.equal(amb.aba("PIVOS").objetos()[0]!["Fonte de água (vazio = direto)"], "Piscinão 1");
+  await page.screenshot({ path: PRINTS + "15_piscinao_cadastro.png", fullPage: true });
+  await ctx.close();
+});

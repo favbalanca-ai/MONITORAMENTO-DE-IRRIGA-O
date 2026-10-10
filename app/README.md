@@ -37,7 +37,9 @@ feitos sem internet.
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).
-  Em Equipamento, **Fonte de água**: abastecimento direto ou um piscinão da aba RESERVATORIOS.
+  Em Equipamento, **Fonte de água**: abastecimento direto ou um piscinão. Abaixo da lista, **Fontes de água
+  (piscinões)**: o administrador cadastra, edita e apaga piscinões (volume útil, bomba m³/h × horas/dia, reserva);
+  um piscinão em uso por algum pivô não pode ser apagado.
   Posição: **Importar KMZ com os pivôs** (um desenho por pivô, casado pelo nome ou número), ou no pivô
   **KMZ/KML** de um desenho só, ou **📍 Usar minha posição** parado no centro do pivô.
 - **Fazendas** — com mais de uma fazenda na planilha aparece um seletor no topo; cada usuário só vê as fazendas

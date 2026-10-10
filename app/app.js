@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.11-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.11-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -166,7 +166,7 @@ async function enviarFila() {
 
 /* ================= navegação ================= */
 const V = {};
-const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', clima: 'Clima', historico: 'Histórico', mapa: 'Mapa', pivos: 'Pivôs', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
+const TITULOS = { hoje: 'Hoje', lancar: 'Lançar', clima: 'Clima', historico: 'Histórico', mapa: 'Mapa', pivos: 'Pivôs', piscinao: 'Piscinão', sync: 'Ajustes', login: 'Entrar', conta: 'Minha conta', usuarios: 'Usuários' };
 function editando() { const a = document.activeElement; return !!a && /INPUT|SELECT|TEXTAREA/.test(a.tagName) && !!a.value; }
 
 function route(opts) {
@@ -176,7 +176,7 @@ function route(opts) {
   if (v !== 'login' && v !== 'sync' && syncUrl() && DADOS && DADOS.exigido !== false && !sessToken()) v = 'login';
   document.body.dataset.view = v;
   $('#page-title').textContent = TITULOS[v] || '';
-  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === v || (v === 'usuarios' || v === 'conta') && a.dataset.view === 'sync'));
+  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === v || (v === 'usuarios' || v === 'conta') && a.dataset.view === 'sync' || v === 'piscinao' && a.dataset.view === 'pivos'));
   const u = sessUsuario(); const chip = $('#user-chip');
   chip.hidden = !u; if (u) chip.textContent = '👤 ' + u.nome;
   const y = window.scrollY;
@@ -212,7 +212,7 @@ function pivosCadastro() {
   return c.pivos.map((p, i) => Object.assign({ __i: i, chaveFazenda: (fs.find((f) => f.nome === p.fazenda) || fs[0] || {}).chave }, p)).filter(daFazenda);
 }
 /** Reservatórios (piscinões) da fazenda escolhida: do cadastro (nomes) e do último cálculo (balanço). */
-function reservatoriosCadastro() { return ((DADOS && DADOS.cadastro && DADOS.cadastro.reservatorios) || []).filter((r) => !fazendas().length || !r.chaveFazenda || r.chaveFazenda === chaveAtual()); }
+function reservatoriosCadastro() { return ((DADOS && DADOS.cadastro && DADOS.cadastro.reservatorios) || []).map((r, i) => Object.assign({ __i: i }, r)).filter((r) => !fazendas().length || !r.chaveFazenda || r.chaveFazenda === chaveAtual()); }
 function reservatoriosResumo() { const r = DADOS && DADOS.resumo; return r && r.reservatorios ? r.reservatorios.filter((b) => !fazendas().length || !b.chaveFazenda || b.chaveFazenda === chaveAtual()) : []; }
 function lancs() { return ((DADOS && DADOS.lancamentos) || []).filter((l) => !fazendas().length || !l.chaveFazenda || l.chaveFazenda === chaveAtual()); }
 /** Estação, previsão e rosa da fazenda escolhida (planilha nova) — ou os campos antigos (planilha anterior). */
@@ -996,7 +996,13 @@ V.pivos = function (arg) {
   return pivosCadastro().map((p) => '<div class="card"><div class="row"><div><h2>' + (ehTalhao(p) ? ico('solo') + ' ' : '') + esc(p.nome) + (simNao(p.ativo) ? '' : ' <span class="muted">(inativo)</span>') + '</h2>' +
     '<div class="muted">' + (ehTalhao(p) ? 'Talhão' + (ehTalhaoSemBalanco(p) ? ' (só relatório do ciclo)' : '') + ' · ' : '') + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (ehTalhao(p) ? '' : p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + (p.fonte ? ' · água do ' + esc(p.fonte) : '') + '</div></div>' +
     '<a class="btn btn-outline btn-sm" href="#/pivos/' + p.__i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('') +
-    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Nova área (pivô ou talhão)</a>' +
+    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Nova área (pivô ou talhão)</a>' : '') +
+    '<h2 style="margin:18px 0 8px">' + ico('agua') + ' Fontes de água (piscinões)</h2>' +
+    (reservatoriosCadastro().length ? reservatoriosCadastro().map((r) => '<div class="card"><div class="row"><div><h2>' + esc(r.nome) + '</h2><div class="muted">útil ' + br(r.volumeUtilM3, 0) + ' m³ · bomba ' + br(r.bombaM3h, 0) + ' m³/h × ' + br(r.horasBombaDia, 0) + ' h/dia = ' + br(r.bombaM3h * r.horasBombaDia, 0) + ' m³/dia' +
+      (r.reservaMinM3 ? ' · reserva ' + br(r.reservaMinM3, 0) + ' m³' : '') + '<br>abastece: ' + (pivosCadastro().filter((p) => String(p.fonte || '').toLowerCase() === r.nome.toLowerCase()).map((p) => esc(p.nome)).join(', ') || '<i>nenhum pivô ainda</i>') + '</div></div>' +
+      '<a class="btn btn-outline btn-sm" href="#/piscinao/' + r.__i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('')
+      : '<p class="muted">Nenhum piscinão. Pivô sem fonte cadastrada é abastecimento direto.</p>') +
+    (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/piscinao/novo">+ Novo piscinão</a>' +
       '<div class="card" style="margin-top:14px"><h2>📂 Importar KMZ com os pivôs</h2><p class="muted" style="margin:4px 0 10px">Arquivo do Google Earth com um desenho por pivô. Eu caso o nome do desenho com o pivô e guardo o centro, o contorno e o raio.</p>' +
       '<label class="btn btn-outline">Escolher arquivo .kmz / .kml<input type="file" id="kmz-todos" accept=".kmz,.kml" hidden></label><div id="kmz-lista"></div></div>' : '<p class="muted">Só o administrador edita os pivôs.</p>');
 };
@@ -1031,6 +1037,57 @@ V.pivos_depois_lista = function () {
         } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Salvar posições na planilha'; }
       });
     } catch (e) { box.innerHTML = '<p class="muted" style="color:var(--red)">' + esc(e.message) + '</p>'; }
+  });
+};
+/* ================= PISCINÃO (cadastro) ================= */
+V.piscinao = function (arg) {
+  if (!DADOS || !DADOS.cadastro) return semDados();
+  const so = !ehAdmin();
+  const r = arg === 'novo' || arg === undefined ? null : (DADOS.cadastro.reservatorios || [])[Number(arg)];
+  if (arg !== 'novo' && arg !== undefined && !r) return '<div class="card vazio">Piscinão não encontrado. <a href="#/pivos">Voltar</a></div>';
+  const fa = fazendaAtual(), fs = fazendas();
+  const b = r || { nome: '', fazenda: fa ? fa.nome : '', volumeUtilM3: '', bombaM3h: '', horasBombaDia: '', reservaMinM3: '', obs: '' };
+  const num = (k, rot, ph) => '<div><label for="r_' + k + '">' + rot + '</label><input inputmode="decimal" id="r_' + k + '" name="' + k + '" value="' + esc(b[k] === '' || b[k] == null ? '' : String(b[k]).replace('.', ',')) + '" placeholder="' + ph + '"' + (so ? ' disabled' : '') + '></div>';
+  const usam = r ? pivosCadastro().filter((p) => String(p.fonte || '').toLowerCase() === r.nome.toLowerCase()).map((p) => p.nome) : [];
+  return '<form class="card" id="f-res" data-original="' + esc(r ? r.nome : '') + '" data-fazenda-original="' + esc(r ? r.fazenda || '' : '') + '" autocomplete="off"><div class="row"><h2>' + (r ? esc(r.nome) : 'Novo piscinão') + '</h2><a class="btn btn-outline btn-sm" href="#/pivos">Voltar</a></div>' +
+    '<p class="muted" style="margin:0 0 8px">Reservatório que abastece um ou mais pivôs. A planilha estima o volume de hoje a partir do nível lançado, somando a bomba e descontando o que os pivôs ligados a ele puxaram.</p>' +
+    '<div class="grid2">' + (fs.length < 2 ? '<input type="hidden" name="fazenda" value="' + esc(b.fazenda || (fs[0] ? fs[0].nome : '')) + '">' : '<div><label for="r_fazenda">Fazenda</label><select id="r_fazenda" name="fazenda"' + (so ? ' disabled' : '') + '>' + fs.map((f) => '<option' + (f.nome === b.fazenda ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') + '</select></div>') +
+    '<div><label for="r_nome">Nome</label><input id="r_nome" name="nome" value="' + esc(b.nome) + '" placeholder="ex.: Piscinão 1" required' + (so ? ' disabled' : '') + '></div>' +
+    num('volumeUtilM3', 'Volume útil (m³)', 'ex.: 20000') + num('reservaMinM3', 'Reserva mínima (m³)', 'ex.: 2000') +
+    num('bombaM3h', 'Bomba de reposição (m³/h)', 'ex.: 200') + num('horasBombaDia', 'Horas de bomba por dia', 'ex.: 10') +
+    '<div><label for="r_obs">Observação</label><input id="r_obs" name="obs" value="' + esc(b.obs || '') + '" placeholder="opcional"' + (so ? ' disabled' : '') + '></div></div>' +
+    '<p class="muted" id="r-info" style="margin-top:8px"></p>' +
+    (r ? '<p class="muted">Abastece: ' + (usam.length ? esc(usam.join(', ')) : '<i>nenhum pivô ainda</i>') + '. O link se faz no cadastro de cada pivô, em Equipamento → Fonte de água.</p>' : '') +
+    (so ? '' : '<button class="btn btn-primary btn-block" type="submit">Salvar na planilha</button>' +
+      (r && !usam.length ? '<button class="btn btn-danger btn-block" type="button" data-act="apagar-res" style="margin-top:8px">Apagar piscinão</button>' : '')) + '</form>';
+};
+V.piscinao_depois = function () {
+  const f = $('#f-res'); if (!f) return;
+  const info = () => { const v = numBR($('#r_bombaM3h', f).value) || 0, h = numBR($('#r_horasBombaDia', f).value) || 0, u = numBR($('#r_volumeUtilM3', f).value) || 0;
+    $('#r-info', f).textContent = v && h ? 'Entram ' + br(v * h, 0) + ' m³ por dia' + (u ? ' · do vazio ao cheio em ' + br(u / (v * h), 1) + ' dias sem irrigar' : '') : 'Sem bomba cadastrada, o piscinão só esvazia.'; };
+  ['#r_bombaM3h', '#r_horasBombaDia', '#r_volumeUtilM3'].forEach((q) => $(q, f).addEventListener('input', info)); info();
+  f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const dados = {}; $$('[name]', f).forEach((el) => { dados[el.name] = el.value; });
+    dados.fazendaOriginal = f.dataset.fazendaOriginal || '';
+    const btn = $('button[type=submit]', f); btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const r = await chamar('POST', null, { __reservatorio: { dados, original: f.dataset.original || null } });
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
+      DADOS.cadastro = r.cadastro; if (r.recalculo && r.recalculo.resumo) DADOS.resumo = r.recalculo.resumo; DADOS.hash = ''; grava(DADOS_KEY, DADOS);
+      toast('✅ Piscinão salvo.'); location.hash = '#/pivos'; puxar(true);
+    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Salvar na planilha'; }
+  });
+  const ap = $('[data-act="apagar-res"]', f);
+  if (ap) ap.addEventListener('click', async () => {
+    if (ap.dataset.confirma !== '1') { ap.dataset.confirma = '1'; ap.textContent = 'Toque de novo para confirmar'; return; }
+    ap.disabled = true;
+    try {
+      const r = await chamar('POST', null, { __reservatorio: { apagar: true, nome: f.dataset.original, fazenda: f.dataset.fazendaOriginal } });
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
+      DADOS.cadastro = r.cadastro; if (r.recalculo && r.recalculo.resumo) DADOS.resumo = r.recalculo.resumo; DADOS.hash = ''; grava(DADOS_KEY, DADOS);
+      toast('Piscinão apagado.'); location.hash = '#/pivos'; puxar(true);
+    } catch (e) { toast(e.message, true); ap.disabled = false; }
   });
 };
 function campoPivo(k, rot, v, so) {

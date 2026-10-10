@@ -479,3 +479,32 @@ test("reservatório: pivô abastecido por piscinão, nível lançado, volume est
   // painel tem a linha do reservatório
   assert.ok(amb.aba("PAINEL").dados.some((l) => String(l[0]).includes("Piscinão 1")));
 });
+
+test("cadastro do piscinão pelo app: cria, renomeia (pivô acompanha), não apaga em uso, apaga livre", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const op = entrar(amb, "jose", "4321").token;
+  assert.match(amb.post({ s: op, __reservatorio: { dados: { nome: "Piscinão 1", volumeUtilM3: "20000" } } }).erro, /Só o administrador/);
+  assert.match(amb.post({ s: adm, __reservatorio: { dados: { nome: "Piscinão 1", volumeUtilM3: "" } } }).erro, /volume útil/);
+  let r = amb.post({ s: adm, __reservatorio: { dados: { nome: "Piscinão 1", volumeUtilM3: "20000", bombaM3h: "200", horasBombaDia: "10", reservaMinM3: "2000", obs: "rio" }, original: null } });
+  assert.equal(r.ok, true, r.erro);
+  assert.deepEqual([...r.cadastro.reservatorios.map((x: { nome: string; volumeUtilM3: number; bombaM3h: number; horasBombaDia: number; reservaMinM3: number }) => [x.nome, x.volumeUtilM3, x.bombaM3h, x.horasBombaDia, x.reservaMinM3])], [["Piscinão 1", 20000, 200, 10, 2000]]);
+  assert.equal(amb.aba("RESERVATORIOS").objetos()[0]!["Fazenda"], "Água Viva");
+  assert.match(amb.post({ s: adm, __reservatorio: { dados: { nome: "piscinao 1", volumeUtilM3: "500" }, original: null } }).erro, /Já existe um piscinão chamado/);
+  // pivô ligado; renomear o piscinão leva o pivô junto
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "Piscinão 1" }, original: "Pivô 2" } });
+  assert.equal(r.ok, true, r.erro);
+  r = amb.post({ s: adm, __reservatorio: { dados: { nome: "Piscinão do rio", volumeUtilM3: "25000", bombaM3h: "200", horasBombaDia: "12" }, original: "Piscinão 1" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(r.cadastro.reservatorios.length, 1);
+  assert.equal(r.cadastro.reservatorios[0].volumeUtilM3, 25000);
+  assert.equal(r.cadastro.pivos[0].fonte, "Piscinão do rio");
+  assert.match(amb.post({ s: adm, __reservatorio: { apagar: true, nome: "Piscinão do rio" } }).erro, /Tire o piscinão dos pivôs Pivô 2 antes de apagar/);
+  r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "" }, original: "Pivô 2" } });
+  assert.equal(r.ok, true, r.erro);
+  r = amb.post({ s: adm, __reservatorio: { apagar: true, nome: "Piscinão do rio" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(r.cadastro.reservatorios.length, 0);
+  assert.equal(amb.aba("RESERVATORIOS").getLastRow(), 1);
+});

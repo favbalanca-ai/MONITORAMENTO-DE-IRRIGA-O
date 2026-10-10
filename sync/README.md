@@ -20,7 +20,7 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`), **e-mails do relatório**, o **código IBGE
      do município** (Formoso-MG = 3126208) para a previsão do INMET, chuva mínima e horário de ponta. Para uma segunda
      fazenda (ex.: Novo Pago) basta acrescentar a linha; cada fazenda tem a sua coleta, previsão, PAINEL e relatório.
-   - **RESERVATORIOS**: um piscinão por linha — fazenda, nome, **volume útil (m³)**, **bomba de reposição (m³/h)**,
+   - **RESERVATORIOS** (também pelo app, em Pivôs → Fontes de água → **+ Novo piscinão**): um piscinão por linha — fazenda, nome, **volume útil (m³)**, **bomba de reposição (m³/h)**,
      **horas de bomba por dia** e **reserva mínima (m³)**. Na PIVOS, a coluna **Fonte de água** liga o pivô ao
      piscinão (vazio = abastecimento direto do rio/poço). O operador lança o **nível (%)** pelo app (Lançar → Nível
      do piscinão; aba `NIVEL RESERVATORIO`), de preferência no fim do dia. A planilha estima o volume de hoje
