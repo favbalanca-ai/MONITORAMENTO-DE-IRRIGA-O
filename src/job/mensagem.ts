@@ -3,6 +3,7 @@ import type { DataISO, DiaClima } from "../motor/tipos.ts";
 import { diaAnterior } from "../motor/agregacao.ts";
 import { avisoChuva, chuvaPrevista, type DiaPrevisao } from "../motor/previsao.ts";
 import type { ResumoCiclo } from "../motor/ciclo.ts";
+import type { BalancoReservatorio } from "../motor/reservatorio.ts";
 
 /** Número no formato brasileiro (1.234,5) sem depender do Intl — o Apps Script nem sempre tem pt-BR. */
 function br_(x: number, casas: number): string {
@@ -21,7 +22,7 @@ function horas(h: number): string {
 }
 
 export interface ItemRelatorio {
-  pivo: { nome: string; cultura: { nome: string }; laminaMinimaMm?: number; equipamento?: { raioM: number; anguloGraus: number }; tipo?: string; semBalanco?: boolean };
+  pivo: { nome: string; cultura: { nome: string }; laminaMinimaMm?: number; equipamento?: { raioM: number; anguloGraus: number }; tipo?: string; semBalanco?: boolean; fonte?: string };
   linha?: LinhaBalanco;
   /** Relatório meteorológico do ciclo (graus-dia, luz, chuva, ET₀…). */
   ciclo?: ResumoCiclo;
@@ -78,12 +79,31 @@ export function linhaCiclo(c: ResumoCiclo): string {
     (c.diasQuentes ? ` · ${c.diasQuentes} d > 32 °C` : "") + (c.diasFrios ? ` · ${c.diasFrios} d < 10 °C` : "") + (c.faltamDias >= 0 ? ` · faltam ${c.faltamDias} d` : ` · ciclo encerrado há ${-c.faltamDias} d`);
 }
 
+const SEM_RES: Record<BalancoReservatorio["semaforo"], string> = { ruim: "🔴", atencao: "🟡", bom: "🟢", sem: "⚫" };
+
+/** Frases do reservatório para o relatório: volume, reposição, consumo e dias de irrigação. */
+export function linhasReservatorio(b: BalancoReservatorio): string[] {
+  const l: string[] = [];
+  const vol = b.volumeM3 === null ? "nível não lançado" : `${n0(b.volumeM3)} m³ (${n0(b.pct ?? 0)}% de ${n0(b.volumeUtilM3)} m³)`;
+  l.push(`${SEM_RES[b.semaforo]} *${b.nome}* — ${vol}${b.nivel ? ` · nível ${n0(b.nivel.pct)}% lançado ${br(b.nivel.data)}` : ""}`);
+  l.push(`   Entra ${n0(b.reposicaoDiaM3)} m³/dia na bomba · ${b.pivos.length ? `${b.pivos.join(", ")} ${b.pivos.length === 1 ? "consome" : "consomem"} ${n0(b.demandaDiaM3)} m³/dia` : "nenhum pivô ligado"}` +
+    (b.pedidoHojeM3 > 0 ? ` · hoje pedem ${n0(b.pedidoHojeM3)} m³` : ""));
+  if (b.volumeM3 !== null) {
+    if (b.cobreHoje === false) l.push(`   ⚠️ Falta ${n0(b.faltaHojeM3)} m³ pra irrigação de hoje${b.horasParaCobrir !== null ? ` (${n1(b.horasParaCobrir)} h de bomba)` : ""}`);
+    if (b.diasAutonomia !== null) l.push(`   💧 Água pra *${n1(b.diasAutonomia)} dias* de irrigação com a reposição (reserva de ${n0(b.reservaMinM3)} m³ fora)`);
+    else l.push(`   💧 A reposição cobre o consumo${b.diasAteEncher !== null ? ` · enche em ${n1(b.diasAteEncher)} dias` : " · cheio"}`);
+  }
+  for (const a of b.alertas.filter((a) => !/^Falta água|^Água pra/.test(a))) l.push(`   ⚠️ ${a}`);
+  return l;
+}
+
 export function montarMensagem(
   data: DataISO,
   clima: DiaClima & { et0: number },
   itens: ItemRelatorio[],
   previsao: DiaPrevisao[] = [],
   nomeFazenda = "",
+  reservatorios: BalancoReservatorio[] = [],
 ): { assunto: string; texto: string } {
   const irrigar = itens.filter((i) => i.linha?.decisao === "IRRIGAR").length;
   const assunto = `Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
@@ -107,6 +127,7 @@ export function montarMensagem(
     const r = prox[0]?.resumo;
     if (r) l.push(`   INMET amanhã: ${r}`);
   }
+  for (const b of reservatorios) { l.push(""); l.push(...linhasReservatorio(b)); }
 
   for (const it of itens) {
     l.push("");
@@ -145,7 +166,7 @@ export function montarMensagem(
           : `   Sem irrigação prevista nos próximos ${pj.horizonte} dias (sem chuva)`);
       }
     }
-    l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}`);
+    l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}${it.pivo.fonte ? ` · água do ${it.pivo.fonte}` : ""}`);
     const ui = it.ultimaIrrigacao, um = it.ultimaMedicao;
     if (ui || um) l.push(`   ${ui ? `Última irrigação ${br(ui.data)} (${n1(ui.mm)} mm)` : "Sem irrigação lançada"}${um ? ` · última medição ${br(um.data)} (${n0(um.umidadeRaizPct)}%)` : ""}`);
     if (it.historico && it.historico.length > 1) {
@@ -169,6 +190,7 @@ export function montarMensagemHtml(
   previsao: DiaPrevisao[] = [],
   linkApp = "",
   nomeFazenda = "",
+  reservatorios: BalancoReservatorio[] = [],
 ): string {
   const rs = resumoDoDia(itens);
   const prox = previsao.filter((d) => d.data > data).slice(0, 3);
@@ -184,6 +206,15 @@ export function montarMensagemHtml(
   if (clima.estimados?.length) html += `<br><span style="color:#b7791f">⚠️ Estação sem dado de ${h(clima.estimados.join(", "))}: valores do dia vizinho.</span>`;
   if (prox.length) html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
   html += `</div>`;
+  for (const b of reservatorios) {
+    const cor = SEM_COR[b.semaforo];
+    const [titulo, ...resto] = linhasReservatorio(b).map((t) => t.replace(/^\s+/, "").replace(/^(🔴|🟡|🟢|⚫) /u, "").replace(/\*/g, ""));
+    html += `<div style="border:1px solid #e2e8ec;border-left:5px solid ${cor};border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#f7fbfc">`;
+    html += `<div style="display:flex;justify-content:space-between"><b style="font-size:15px;color:#16404d">🏞 ${h(titulo)}</b>${b.pct !== null ? chip(`${n0(b.pct)}%`, cor) : ""}</div>`;
+    if (b.pct !== null) html += `<div style="height:10px;background:#eef2f4;border-radius:6px;overflow:hidden;margin:6px 0"><div style="width:${Math.min(100, b.pct).toFixed(0)}%;height:10px;background:#2e7d8c"></div></div>`;
+    for (const t of resto) html += `<div style="font-size:13px;margin-top:3px">${h(t)}</div>`;
+    html += `</div>`;
+  }
   for (const it of itens) {
     const x = it.linha, sem = semaforoDoItem(it);
     html += `<div style="border:1px solid #e2e8ec;border-left:5px solid ${SEM_COR[sem]};border-radius:10px;padding:10px 12px;margin-bottom:10px">`;
@@ -208,7 +239,7 @@ export function montarMensagemHtml(
       if (chuva) html += linha("Chuva", `🌧 ${h(chuva)}`);
     } else if (x.decisao === "IRRIGAR") html += linha("Ajuste", "cadastre o equipamento para ter percentímetro, tempo e custo");
     else if (x.projecao && x.projecao.horizonte > 0) html += linha("Próxima", x.projecao.proximaIrrigacao ? `${h(br(x.projecao.proximaIrrigacao))} (em ${x.projecao.emDias} dia${x.projecao.emDias === 1 ? "" : "s"}, sem chuva)` : `sem irrigação prevista em ${x.projecao.horizonte} dias (sem chuva)`);
-    html += linha("Hoje", `ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}`);
+    html += linha("Hoje", `ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}${it.pivo.fonte ? ` · água do ${h(it.pivo.fonte)}` : ""}`);
     if (it.ultimaIrrigacao || it.ultimaMedicao) html += linha("Lançamentos", `${it.ultimaIrrigacao ? `última irrigação ${h(br(it.ultimaIrrigacao.data))} (${n1(it.ultimaIrrigacao.mm)} mm)` : "sem irrigação lançada"}${it.ultimaMedicao ? ` · última medição ${h(br(it.ultimaMedicao.data))} (${n0(it.ultimaMedicao.umidadeRaizPct)}%)` : ""}`);
     if (it.historico && it.historico.length > 1) html += linha("Déficit (mm)", it.historico.map((d) => `${h(br(d.data))} <b>${n0(d.deficit)}</b>`).join(" · "));
     if (it.ciclo) html += linha("Ciclo", h(linhaCiclo(it.ciclo)).replace(/^Ciclo \d+ d: /, ""));

@@ -21,6 +21,7 @@ export const ARQUIVOS = [
   "src/motor/cadastro.ts",
   "src/motor/previsao.ts",
   "src/motor/ciclo.ts",
+  "src/motor/reservatorio.ts",
   "src/coletor/tempo.ts",
   "src/coletor/ecowitt.ts",
   "src/coletor/lacunas.ts",

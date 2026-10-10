@@ -427,3 +427,55 @@ test("duas fazendas: cada usuário vê só a sua; talhão sem pivô tem só o re
   assert.match(amb.get({ acao: "historico", s: op, pivo: "Pivô 2", fazenda: "Água Viva" }).erro, /não tem acesso/);
   assert.equal(amb.get({ acao: "historico", s: op, pivo: "Pivô 2", fazenda: "Novo Pago" }).historico.fazenda, "Novo Pago");
 });
+
+test("reservatório: pivô abastecido por piscinão, nível lançado, volume estimado e dias de irrigação", () => {
+  const amb = pronto();
+  amb.aba("RESERVATORIOS").appendRow(["Água Viva", "Piscinão 1", 20000, 200, 10, 2000, "bomba do rio"]);
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  assert.deepEqual([...cad.reservatorios.map((r: { nome: string; volumeUtilM3: number }) => [r.nome, r.volumeUtilM3])], [["Piscinão 1", 20000]]);
+  // fonte que não existe é recusada; a certa (sem acento, caixa diferente) é aceita
+  assert.match(amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "Piscinão 9" }, original: "Pivô 2" } }).erro, /fonte de água "Piscinão 9" não está na aba RESERVATORIOS/);
+  let r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "piscinao 1" }, original: "Pivô 2" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.aba("PIVOS").objetos()[0]!["Fonte de água (vazio = direto)"], "piscinao 1");
+  // nível de 60 % no dia 05 e uma irrigação de 10 mm no dia 06
+  r = amb.post({ s: adm, __lancamento: { id: "N1", tipo: "nivel", pivo: "Piscinão 1", data: "2026-02-05", nivel: "60", obs: "régua" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.aba("NIVEL RESERVATORIO").objetos()[0]!["Nível (%)"], 60);
+  assert.equal(amb.aba("NIVEL RESERVATORIO").objetos()[0]!["Fazenda"], "Água Viva");
+  assert.match(amb.post({ s: adm, __lancamento: { id: "N2", tipo: "nivel", pivo: "Piscinão 1", data: "2026-02-05", nivel: "140" } }).erro, /O nível deve ser um número entre 0 e 100/);
+  r = amb.post({ s: adm, __lancamento: { id: "L1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-06", mm: "10" } });
+  assert.equal(r.ok, true, r.erro);
+
+  const calc = amb.chamar<{ fazendas: { reservatorios: { nome: string; volumeM3: number; pct: number; reposicaoDiaM3: number; retiradoDesdeNivelM3: number; demandaDiaM3: number; pivos: string[]; diasAutonomia: number | null; semaforo: string }[]; texto: string; html: string }[] }>("calcular_", "2026-02-08");
+  const b = calc.fazendas[0]!.reservatorios[0]!;
+  assert.equal(b.nome, "Piscinão 1");
+  assert.deepEqual([...b.pivos], ["Pivô 2"]);
+  // Pivô 2: raio 400 m → 50,27 ha; 10 mm líquidos ÷ 0,85 × 50,27 × 10 = 5.914 m³
+  assert.equal(b.retiradoDesdeNivelM3, 5914);
+  assert.equal(b.reposicaoDiaM3, 2000);
+  assert.equal(b.volumeM3, 12000 + 3 * 2000 - 5914);
+  assert.equal(b.pct, 60);
+  assert.ok(b.demandaDiaM3 > 0);
+  assert.ok(b.diasAutonomia === null || b.diasAutonomia > 0);
+  assert.match(calc.fazendas[0]!.texto, /\*Piscinão 1\* — 12\.086 m³ \(60% de 20\.000 m³\) · nível 60% lançado 05\/02[\s\S]*Entra 2\.000 m³\/dia na bomba · Pivô 2 consome/);
+  assert.match(calc.fazendas[0]!.html, /🏞 Piscinão 1/);
+  assert.match(calc.fazendas[0]!.texto, /água do Piscinão 1/);
+
+  const d = amb.get({ acao: "dados", s: adm });
+  assert.equal(d.resumo.reservatorios.length, 1);
+  assert.equal(d.resumo.reservatorios[0].chaveFazenda, "agua viva");
+  assert.equal(d.resumo.pivos.find((p: { nome: string }) => p.nome === "Pivô 2").fonte, "Piscinão 1");
+  const niv = d.lancamentos.find((l: { id: string }) => l.id === "N1");
+  assert.equal(niv.tipo, "nivel");
+  assert.equal(niv.pivo, "Piscinão 1");
+  assert.deepEqual([...niv.valores], [60, "régua"]);
+  // apagar o nível: o reservatório fica "sem nível lançado"
+  r = amb.post({ s: adm, __apagar: { id: "N1" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(r.resumo.reservatorios[0].volumeM3, null);
+  assert.equal(r.resumo.reservatorios[0].semaforo, "sem");
+  // painel tem a linha do reservatório
+  assert.ok(amb.aba("PAINEL").dados.some((l) => String(l[0]).includes("Piscinão 1")));
+});

@@ -21,6 +21,8 @@ var ABA = {
   LOG: "LOG",
   PREVISAO: "PREVISAO",
   FAZENDAS: "FAZENDAS",
+  RESERVATORIOS: "RESERVATORIOS",
+  NIVEIS: "NIVEL RESERVATORIO",
   CACHE: "CACHE",
   USUARIOS: "USUÁRIOS APP",
   CONFIG_APP: "CONFIG APP",
@@ -100,6 +102,18 @@ var COLUNAS_PIVOS = [
   ["sensorSolo", "Sensor de solo da estação (canal 1-8)", true],
   ["fazenda", "Fazenda", true],
   ["tipo", "Tipo (pivô/talhão)", true],
+  ["fonte", "Fonte de água (vazio = direto)", true],
+];
+
+/** Colunas da aba RESERVATORIOS: um piscinão por linha; a bomba de reposição liga `horasBombaDia` por dia. */
+var COLUNAS_RESERVATORIOS = [
+  ["fazenda", "Fazenda"],
+  ["nome", "Reservatório"],
+  ["volumeUtilM3", "Volume útil (m³)"],
+  ["bombaM3h", "Bomba de reposição (m³/h)"],
+  ["horasBombaDia", "Horas de bomba por dia"],
+  ["reservaMinM3", "Reserva mínima (m³)"],
+  ["obs", "Obs."],
 ];
 
 /** Valores de EXEMPLO (CONTEXT.md seção 6) — não são medições da fazenda. */
@@ -109,6 +123,7 @@ var PIVO_EXEMPLO = ["Pivô 2", "SIM", "soja", "", "2025-11-25", "2026-01-20", "S
 var CABECALHOS = {
   IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs.", "Por", "ID"],
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
+  NIVEIS: ["Data", "Reservatório", "Nível (%)", "Obs.", "Por", "ID", "Fazenda"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
@@ -167,6 +182,8 @@ function instalar() {
 
   criarAbaSeFaltar_(ss, ABA.IRRIGACOES, CABECALHOS.IRRIGACOES);
   criarAbaSeFaltar_(ss, ABA.UMIDADE, CABECALHOS.UMIDADE);
+  criarAbaSeFaltar_(ss, ABA.RESERVATORIOS, COLUNAS_RESERVATORIOS.map(function (c) { return c[1]; }));
+  criarAbaSeFaltar_(ss, ABA.NIVEIS, CABECALHOS.NIVEIS);
   criarAbaSeFaltar_(ss, ABA.BALANCO, CABECALHOS.BALANCO);
   criarAbaSeFaltar_(ss, ABA.CLIMA, CABECALHOS.CLIMA);
   var lei = criarAbaSeFaltar_(ss, ABA.LEITURAS, CABECALHOS.LEITURAS);
@@ -179,6 +196,7 @@ function instalar() {
   abaConfigApp_();
   garantirColunaId_(ABA.IRRIGACOES);
   garantirColunaId_(ABA.UMIDADE);
+  garantirColunaId_(ABA.NIVEIS);
 
   var cfg = lerEstacao_();
   ss.setSpreadsheetTimeZone(cfg.fuso);
@@ -353,6 +371,33 @@ function fazendaPorChave_(chave) {
 /** A primeira fazenda — para quem precisa de um fuso ou um padrão geral. */
 function lerEstacao_() { return lerFazendas_()[0]; }
 
+/** Reservatórios (piscinões) da aba RESERVATORIOS, com a fazenda resolvida. */
+function lerReservatorios_() {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.RESERVATORIOS);
+  if (!aba || aba.getLastRow() < 2) return [];
+  var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
+  var col = {};
+  COLUNAS_RESERVATORIOS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
+  if (col.nome < 0) throw new Error("Aba RESERVATORIOS sem a coluna \"Reservatório\".");
+  var fazendas = lerFazendas_();
+  var n = function (l, k) { return col[k] < 0 ? null : Motor.numero(l[col[k]]); };
+  return vals.slice(1).filter(function (l) { return String(l[col.nome]).trim() !== ""; }).map(function (l) {
+    var faz = (col.fazenda >= 0 && fazendaPorChave_(l[col.fazenda])) || fazendas[0];
+    var nome = String(l[col.nome]).trim();
+    return {
+      nome: nome, chave: chaveCultura_(nome), fazenda: faz.nome, chaveFazenda: faz.chave,
+      volumeUtilM3: n(l, "volumeUtilM3") || 0, bombaM3h: n(l, "bombaM3h") || 0, horasBombaDia: n(l, "horasBombaDia") || 0,
+      reservaMinM3: n(l, "reservaMinM3") || 0, obs: col.obs < 0 ? "" : String(l[col.obs] || ""),
+    };
+  });
+}
+
+/** Reservatório pelo nome dentro de uma fazenda (ou em qualquer uma, se a chave da fazenda vier vazia). */
+function reservatorioPorNome_(nome, chaveFazenda) {
+  var k = chaveCultura_(nome);
+  return lerReservatorios_().filter(function (r) { return r.chave === k && (!chaveFazenda || r.chaveFazenda === chaveFazenda); });
+}
+
 function configEcowitt_(cfg) {
   var p = PropertiesService.getScriptProperties();
   var app = limparChave_(p.getProperty("ECOWITT_APPLICATION_KEY"));
@@ -443,6 +488,8 @@ function lerPivos_(cfg) {
       } : undefined,
       grausDiaCiclo: n(l, "grausDiaCiclo"),
       sensorSolo: n(l, "sensorSolo"),
+      /** Reservatório que abastece o pivô (vazio = abastecimento direto). */
+      fonte: t(l, "fonte"),
     };
   });
 }
@@ -486,8 +533,18 @@ function cadastroValidado_() {
   });
   var nomes = {};
   pivos.forEach(function (p) { var k = p.chaveFazenda + "|" + p.nome.toLowerCase(); if (nomes[k]) erros.push(p.nome + ": nome repetido na fazenda " + p.fazenda); nomes[k] = true; });
+  var reservatorios = lerReservatorios_();
+  reservatorios.forEach(function (r) {
+    if (!(r.volumeUtilM3 > 0)) erros.push(r.nome + ": informe o volume útil (m³) na aba RESERVATORIOS");
+  });
+  pivos.forEach(function (p) {
+    if (!p.fonte) return;
+    var r = reservatorios.filter(function (x) { return x.chaveFazenda === p.chaveFazenda && x.chave === chaveCultura_(p.fonte); })[0];
+    if (!r) erros.push(p.nome + ": fonte de água \"" + p.fonte + "\" não está na aba RESERVATORIOS" + (fazendas.length > 1 ? " da fazenda " + p.fazenda : ""));
+    else p.fonte = r.nome;
+  });
   if (erros.length) throw new Error("Cadastro com problemas:\n- " + erros.join("\n- "));
-  return { cfg: cfg, fazendas: fazendas, pivos: pivos };
+  return { cfg: cfg, fazendas: fazendas, pivos: pivos, reservatorios: reservatorios };
 }
 
 /* ================================ LEITURAS ================================ */
@@ -848,7 +905,7 @@ function climaDaFazenda_(cfg, ini, dia) {
 }
 
 /** Calcula uma fazenda: clima, balanço de cada área, relatório do ciclo. */
-function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid) {
+function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid, reservatorios, niveis) {
   var estacao = { latitude: cfg.latitude, altitude: cfg.altitude, alturaAnemometro: cfg.alturaAnemometro };
   areas.forEach(function (p) { p.cultura = Motor.comCiclo(Motor.CULTURAS[p.cultura], p.cicloDias); });
   var inicio = function (p) { return p.inicioBalanco || p.plantio; };
@@ -920,11 +977,38 @@ function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid) {
   var climaDia = clima[clima.length - 1];
   var et0Dia = et0De(climaDia);
   var climaMsg = Object.assign({}, climaDia, { et0: et0Dia });
+  var balReservatorios = balancoReservatorios_(cfg, (reservatorios || []).filter(function (r) { return r.chaveFazenda === cfg.chave; }), itens, irrig, niveis || [], dia);
   var rotulo = lerFazendas_().length > 1 ? cfg.nome : "";   // com uma fazenda só, o nome não precisa aparecer
-  var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev, rotulo);
-  var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL, rotulo);
+  var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev, rotulo, balReservatorios);
+  var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL, rotulo, balReservatorios);
   return { cfg: cfg, itens: itens, climaDia: climaDia, et0Dia: et0Dia, assunto: msg.assunto, texto: msg.texto, html: html,
-    linhasClima: linhasClima, linhasBalanco: linhasBalanco };
+    linhasClima: linhasClima, linhasBalanco: linhasBalanco, reservatorios: balReservatorios };
+}
+
+/**
+ * Balanço de cada reservatório da fazenda: último nível lançado + bomba × dias − o que os pivôs
+ * ligados a ele puxaram (lâmina líquida ÷ eficiência × área), consumo diário e dias de irrigação.
+ */
+function balancoReservatorios_(cfg, reservatorios, itens, irrig, niveis, dia) {
+  return reservatorios.map(function (r) {
+    var ligados = itens.filter(function (it) { return it.pivo.fonte && chaveCultura_(it.pivo.fonte) === r.chave && it.pivo.equipamento; });
+    var areaDe = function (eq) { return (Math.PI * eq.raioM * eq.raioM * ((eq.anguloGraus || 360) / 360)) / 10000; };
+    var pivos = ligados.map(function (it) {
+      var l = it.linha, rec = l && l.recomendacao;
+      return { nome: it.pivo.nome, areaHa: areaDe(it.pivo.equipamento), eficienciaPct: it.pivo.equipamento.eficienciaPct || 100,
+        etcMm: l ? l.etc : 0, pedidoBrutoMm: l && l.decisao === "IRRIGAR" && rec ? rec.laminaBrutaMm : 0 };
+    });
+    var retiradas = [];
+    ligados.forEach(function (it) {
+      var p = pivos.filter(function (x) { return x.nome === it.pivo.nome; })[0];
+      irrig.filter(function (x) { return x.area === it.pivo.nome.toLowerCase() && (!x.fazenda || x.fazenda === cfg.chave); }).forEach(function (x) {
+        retiradas.push({ data: x.data, m3: Motor.retiradaM3(p, Motor.numero(x.l[2]) || 0) });
+      });
+    });
+    var meus = niveis.filter(function (x) { return chaveCultura_(x.area) === r.chave && (!x.fazenda || x.fazenda === cfg.chave) && Motor.numero(x.l[2]) !== null; })
+      .map(function (x) { return { data: x.data, pct: Motor.numero(x.l[2]) }; });
+    return Motor.balancoReservatorio(r, meus, retiradas, pivos, dia);
+  });
 }
 
 /** Recalcula clima e balanço de todas as áreas ativas de todas as fazendas até `dia` e escreve nas abas. */
@@ -936,6 +1020,7 @@ function calcular_(dia) {
   if (!ativas.length) throw new Error("Nenhum pivô ativo na aba PIVOS.");
   var irrig = lancamentos_(ABA.IRRIGACOES, cfg.fuso);
   var umid = lancamentos_(ABA.UMIDADE, cfg.fuso);
+  var niveis = lancamentos_(ABA.NIVEIS, cfg.fuso);
   var previsoes = lerPrevisoes_();
   var fazendas = [];
   var erros = [];
@@ -943,7 +1028,7 @@ function calcular_(dia) {
     var areas = ativas.filter(function (p) { return p.chaveFazenda === f.chave; });
     if (!areas.length) return;
     try {
-      fazendas.push(calcularFazenda_(f, areas, dia, previsoes[f.chave] || null, irrig, umid));
+      fazendas.push(calcularFazenda_(f, areas, dia, previsoes[f.chave] || null, irrig, umid, c.reservatorios, niveis));
     } catch (e) {
       erros.push(f.nome + ": " + e.message);
     }
@@ -984,7 +1069,7 @@ function salvarResumo_(dia, fazendas, previsoes) {
       var eq = it.pivo.equipamento;
       var p = {
         nome: it.pivo.nome, fazenda: f.cfg.nome, chaveFazenda: f.cfg.chave, tipo: it.pivo.tipo, semBalanco: !!it.pivo.semBalanco,
-        cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "",
+        cultura: cult.nome, laminaMinimaMm: it.pivo.laminaMinimaMm, aviso: it.aviso || "", fonte: it.pivo.fonte || "",
         latitude: it.pivo.latitude, longitude: it.pivo.longitude, contorno: it.pivo.contorno || null,
         raioM: eq ? eq.raioM : null, anguloGraus: eq ? eq.anguloGraus : null,
         plantio: it.pivo.plantio, ciclo: cicloDe(it.ciclo), fimCicloDas: Motor.fimDoCicloDas(cult),
@@ -1027,6 +1112,9 @@ function salvarResumo_(dia, fazendas, previsoes) {
     clima: climaDe(fazendas[0]),
     fazendas: fazendas.map(function (f) { return { nome: f.cfg.nome, chave: f.cfg.chave, temEstacao: !!f.cfg.temEstacao, clima: climaDe(f) }; }),
     pivos: pivos,
+    reservatorios: fazendas.reduce(function (t, f) {
+      return t.concat((f.reservatorios || []).map(function (b) { return Object.assign({ fazenda: f.cfg.nome, chaveFazenda: f.cfg.chave }, b); }));
+    }, []),
   };
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
   aba.getRange(1, 1).setValue(JSON.stringify(resumo));
@@ -1211,6 +1299,10 @@ function escreverPainel_(dia, fazendas) {
       linhas.push([it.pivo.nome, it.pivo.cultura.nome + " " + l.estadio, l.das, l.decisao, r1(l.deficit), r1(l.afdMm),
         r ? r1(r.laminaBrutaMm) : "", r ? Math.round(r.percentimetroPct) : "", r ? r1(r.tempoVoltaH) : "",
         r ? Math.round(r.energiaKwh) : "", r ? Math.round(r.custoRs * 100) / 100 : "", gd, l.alertas.join(" | ")]);
+    });
+    (f.reservatorios || []).forEach(function (b) {
+      linhas.push(["🏞 " + b.nome, b.volumeM3 === null ? "nível não lançado" : b.volumeM3 + " m³ (" + b.pct + "%)", "Entra/dia (m³)", b.reposicaoDiaM3, "Consumo/dia (m³)", b.demandaDiaM3,
+        "Pedem hoje (m³)", b.pedidoHojeM3, "Dias de irrigação", b.diasAutonomia === null ? (b.volumeM3 === null ? "" : "reposição cobre") : b.diasAutonomia, "Pivôs", b.pivos.join(", "), b.alertas.join(" | ")]);
     });
     linhas.push(vazio());
     linhas.push(["Mensagem enviada:", f.texto.replace(/\*/g, "")].concat(vazio().slice(2)));
@@ -1479,7 +1571,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.10-1";
+var VERSAO_SERVIDOR = "2026.10.11-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1683,11 +1775,13 @@ function dadosApp_(u) {
   if (resumo) {
     resumo = JSON.parse(JSON.stringify(resumo));
     resumo.pivos = (resumo.pivos || []).filter(function (p) { return minha(p.chaveFazenda || chaves[0]); });
+    resumo.reservatorios = (resumo.reservatorios || []).filter(function (b) { return minha(b.chaveFazenda); });
     resumo.fazendas = (resumo.fazendas || []).filter(function (f) { return minha(f.chave); });
     if (resumo.fazendas.length) resumo.clima = resumo.fazendas[0].clima;
   }
   var cadastro = cadastroPivos_();
   cadastro.pivos = cadastro.pivos.filter(function (p) { return minha(chaveFazenda_(p.fazenda || fazendas[0].nome)); });
+  cadastro.reservatorios = cadastro.reservatorios.filter(function (r) { return minha(r.chaveFazenda); });
   var previsoes = lerPrevisoes_();
   var estacoes = {};
   fazendas.forEach(function (f) {
@@ -1721,7 +1815,7 @@ function hashDados_() {
   var n = function (nome) { var a = ss.getSheetByName(nome); return a ? a.getLastRow() : 0; };
   var ult = ultimaLeitura_();
   var prev = lerPrevisao_();
-  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), n(ABA.LEITURAS), ult ? ult.quando : "", prev ? prev.atualizadoEm : ""].join("|");
+  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), n(ABA.LEITURAS), ult ? ult.quando : "", prev ? prev.atualizadoEm : "", n(ABA.NIVEIS), n(ABA.RESERVATORIOS)].join("|");
 }
 
 function recalcularApp_() {
@@ -1797,7 +1891,8 @@ function cadastroPivos_() {
   }
   var fazendas = lerFazendas_();
   pivos.forEach(function (p) { if (!p.fazenda) p.fazenda = fazendas[0].nome; if (!p.tipo) p.tipo = "pivô"; });
-  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: catalogoCulturas_(), fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }) };
+  return { colunas: COLUNAS_PIVOS, pivos: pivos, culturas: catalogoCulturas_(), fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }),
+    reservatorios: lerReservatorios_().map(function (r) { return { nome: r.nome, fazenda: r.fazenda, chaveFazenda: r.chaveFazenda, volumeUtilM3: r.volumeUtilM3, bombaM3h: r.bombaM3h, horasBombaDia: r.horasBombaDia, reservaMinM3: r.reservaMinM3 }; }) };
 }
 
 /** Catálogo de culturas para o app: nome, ciclo, curva de Kc (sem palhada), sugestões e fonte. */
@@ -1863,9 +1958,11 @@ function lancamentosApp_(limite) {
     });
   };
   var areas = lerPivos_(lerEstacao_());
-  var todos = ler(ABA.IRRIGACOES, "irrigacao", 2).concat(ler(ABA.UMIDADE, "umidade", 4));
+  var reservatorios = lerReservatorios_();
+  var todos = ler(ABA.IRRIGACOES, "irrigacao", 2).concat(ler(ABA.UMIDADE, "umidade", 4)).concat(ler(ABA.NIVEIS, "nivel", 2));
   todos.forEach(function (l) {
-    var a = areas.filter(function (x) { return x.nome.toLowerCase() === String(l.pivo).trim().toLowerCase() && (!l.fazenda || x.chaveFazenda === l.fazenda); })[0];
+    var lista = l.tipo === "nivel" ? reservatorios : areas;
+    var a = lista.filter(function (x) { return x.nome.toLowerCase() === String(l.pivo).trim().toLowerCase() && (!l.fazenda || x.chaveFazenda === l.fazenda); })[0];
     l.chaveFazenda = a ? a.chaveFazenda : (l.fazenda || "");
     l.fazenda = a ? a.fazenda : "";
   });
@@ -1886,8 +1983,9 @@ function numeroEntre_(v, nome, min, max) {
 function gravarLancamento_(d, u) {
   var id = String(d.id || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
   if (!id) throw new Error("Lançamento sem id.");
-  var tipo = d.tipo === "umidade" ? "umidade" : d.tipo === "irrigacao" ? "irrigacao" : null;
+  var tipo = d.tipo === "umidade" ? "umidade" : d.tipo === "irrigacao" ? "irrigacao" : d.tipo === "nivel" ? "nivel" : null;
   if (!tipo) throw new Error("Tipo de lançamento desconhecido.");
+  if (tipo === "nivel") return gravarNivel_(d, id, u);
   var alvo = String(d.pivo || "").trim().toLowerCase();
   var fazPedida = d.fazenda ? chaveFazenda_(d.fazenda) : "";
   var candidatas = lerPivos_(lerEstacao_()).filter(function (x) { return x.nome.toLowerCase() === alvo && (!fazPedida || x.chaveFazenda === fazPedida); });
@@ -1919,8 +2017,9 @@ function gravarLancamento_(d, u) {
       opc(d.tensao, "A tensão", -1500, 0), T_(d.fonte)];
   }
 
-  // um id só pode existir em um dos dois tipos: se mudou de tipo, sai do outro
+  // um id só pode existir em um dos tipos: se mudou de tipo, sai do outro
   apagarPorId_(tipo === "irrigacao" ? ABA.UMIDADE : ABA.IRRIGACOES, id);
+  apagarPorId_(ABA.NIVEIS, id);
   var r = linhasLancamento_(tipo === "irrigacao" ? ABA.IRRIGACOES : ABA.UMIDADE);
   var linha = [data, p.nome].concat(valores);
   while (linha.length < r.g.cab.length) linha.push("");
@@ -1932,6 +2031,36 @@ function gravarLancamento_(d, u) {
   var nLinha = idx >= 0 ? idx + 2 : r.g.aba.getLastRow() + 1;
   r.g.aba.getRange(nLinha, 1, 1, linha.length).setValues([linha]);
   log_("app", idx >= 0 ? "regravado" : "lançado", tipo + " " + p.nome + " " + data + " por " + (por || "?"));
+  var res = recalcularApp_();
+  res.id = id;
+  return res;
+}
+
+/** Nível do reservatório (% do volume útil) lançado pelo operador; vale no fim do dia. */
+function gravarNivel_(d, id, u) {
+  var fazPedida = d.fazenda ? chaveFazenda_(d.fazenda) : "";
+  var candidatos = reservatorioPorNome_(d.pivo || d.reservatorio, fazPedida);
+  if (candidatos.length > 1) throw new Error("Há mais de um reservatório chamado \"" + (d.pivo || d.reservatorio) + "\": informe a fazenda.");
+  var r = candidatos[0];
+  if (!r) throw new Error("Reservatório \"" + (d.pivo || d.reservatorio) + "\" não está na aba RESERVATORIOS.");
+  exigirFazenda_(u, r.chaveFazenda, r.fazenda);
+  var data = dataIso_(d.data, lerEstacao_().fuso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error("Data inválida: " + d.data);
+  if (data > hojeLocal_()) throw new Error("A data não pode ser no futuro.");
+  var por = u ? u.nome : String(d.por || "");
+  var valores = [numeroEntre_(d.nivel, "O nível", 0, 100), T_(d.obs || "")];
+  apagarPorId_(ABA.IRRIGACOES, id); apagarPorId_(ABA.UMIDADE, id);
+  var g = linhasLancamento_(ABA.NIVEIS);
+  var linha = [data, r.nome].concat(valores);
+  while (linha.length < g.g.cab.length) linha.push("");
+  linha[g.g.por - 1] = T_(por);
+  linha[g.g.id - 1] = id;
+  if (g.g.fazenda > 0) linha[g.g.fazenda - 1] = r.fazenda;
+  var idx = -1;
+  g.linhas.forEach(function (l, i) { if (String(l[g.g.id - 1]) === id) idx = i; });
+  var nLinha = idx >= 0 ? idx + 2 : g.g.aba.getLastRow() + 1;
+  g.g.aba.getRange(nLinha, 1, 1, linha.length).setValues([linha]);
+  log_("app", idx >= 0 ? "regravado" : "lançado", "nível " + r.nome + " " + data + " " + valores[0] + "% por " + (por || "?"));
   var res = recalcularApp_();
   res.id = id;
   return res;
@@ -1950,7 +2079,7 @@ function apagarPorId_(nome, id) {
 
 function apagarLancamento_(id, u) {
   id = String(id || "");
-  var achou = apagarPorId_(ABA.IRRIGACOES, id) || apagarPorId_(ABA.UMIDADE, id);
+  var achou = apagarPorId_(ABA.IRRIGACOES, id) || apagarPorId_(ABA.UMIDADE, id) || apagarPorId_(ABA.NIVEIS, id);
   if (!achou) return { ok: true, jaApagado: true, hash: hashDados_() };   // apagar de novo não é erro
   log_("app", "apagado", id + " por " + (u ? u.nome : "?"));
   return recalcularApp_();
@@ -1993,6 +2122,7 @@ function salvarPivo_(dados, nomeOriginal) {
     if (c[0] === "nome" || c[0] === "cultura" || c[0] === "plantio" || c[0] === "inicioBalanco") return T_(String(v == null ? "" : v).trim());
     if (c[0] === "fazenda") return T_(fazNome || "");
     if (c[0] === "tipo") return /^t/i.test(chaveCultura_(String(v || ""))) ? "talhão" : "pivô";
+    if (c[0] === "fonte") return T_(String(v == null ? "" : v).trim());
     if (c[0] === "contorno") return T_(contornoLido_(typeof v === "string" ? v : JSON.stringify(v)) ? (typeof v === "string" ? v : JSON.stringify(v)) : "");
     var n = Motor.numero(v);
     return n === null ? "" : n;

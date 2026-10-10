@@ -13,9 +13,10 @@ feitos sem internet.
   ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
   cinza sem dados. Botão **PDF** baixa o relatório do dia (o mesmo que vai por e-mail, mais o balanço de 30 dias
-  de cada pivô). Tema claro por padrão; em Ajustes dá pra escolher escuro ou automático (segue o aparelho); no computador os pivôs ficam em duas colunas.
+  de cada pivô). Com piscinão cadastrado (aba RESERVATORIOS), um cartão mostra o volume estimado, o que entra pela bomba,
+  o que os pivôs puxam, se cobre a irrigação de hoje e pra quantos dias de irrigação dá. Tema claro por padrão; em Ajustes dá pra escolher escuro ou automático (segue o aparelho); no computador os pivôs ficam em duas colunas.
 - **Lançar** — irrigação pelo **percentímetro usado** (a lâmina sai do equipamento cadastrado) ou pela lâmina em mm,
-  ou umidade do solo (raiz, camada profunda, tensão). Sem sinal, o
+  umidade do solo (raiz, camada profunda, tensão) ou **nível do piscinão** (% do volume útil, medido no fim do dia). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — resumo do período (consumo ETc, chuva útil, irrigação em mm e m³, déficit e tendência, dias
@@ -36,6 +37,7 @@ feitos sem internet.
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).
+  Em Equipamento, **Fonte de água**: abastecimento direto ou um piscinão da aba RESERVATORIOS.
   Posição: **Importar KMZ com os pivôs** (um desenho por pivô, casado pelo nome ou número), ou no pivô
   **KMZ/KML** de um desenho só, ou **📍 Usar minha posição** parado no centro do pivô.
 - **Fazendas** — com mais de uma fazenda na planilha aparece um seletor no topo; cada usuário só vê as fazendas

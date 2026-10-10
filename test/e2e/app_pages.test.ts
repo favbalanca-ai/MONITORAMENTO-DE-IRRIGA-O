@@ -515,3 +515,49 @@ test("duas fazendas: seletor no app, talhão com relatório do ciclo, operador v
   assert.deepEqual(await op.page.locator("#l-pivo option").allTextContents(), []); // talhão sem balanço não recebe irrigação
   await op.ctx.close();
 });
+
+test("piscinão: cartão na tela Hoje, lançamento de nível e fonte de água no cadastro do pivô", async () => {
+  const amb = planilha();
+  amb.aba("RESERVATORIOS").appendRow(["Água Viva", "Piscinão 1", 20000, 200, 10, 2000, ""]);
+  const adm = amb.post({ __login: { login: "fabiana", pin: "1234" } }).token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "Piscinão 1" }, original: "Pivô 2" } });
+  amb.post({ s: adm, __lancamento: { id: "N1", tipo: "nivel", pivo: "Piscinão 1", data: "2026-02-05", nivel: "60" } });
+  amb.chamar("calcular_", "2026-02-08");
+
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "jose", "4321");
+  await page.locator(".card.reservatorio").waitFor();
+  await page.screenshot({ path: PRINTS + "14_piscinao_hoje.png", fullPage: true });
+  const card = await page.locator(".card.reservatorio").innerText();
+  assert.match(card, /Piscinão 1[\s\S]*piscinão[\s\S]*Pivô 2[\s\S]*90%[\s\S]*18\.000 m³[\s\S]*útil 20\.000 m³/);
+  assert.match(card, /ENTRA \(BOMBA\)\s+2\.000[\s\S]*PIVÔS PUXAM[\s\S]*PEDEM HOJE[\s\S]*ÁGUA PRA/i);
+  assert.match(card, /Nível 60% lançado 05\/02 \(há 3 d: \+ 6\.000 m³ de bomba − 0 m³ puxados\)/);
+  assert.match(await page.locator(".card.pivo").first().innerText(), /Piscinão 1/);
+  // lançar o nível de hoje pelo app
+  await page.getByRole("link", { name: /Lançar/ }).click();
+  await page.getByRole("button", { name: /Nível do piscinão/ }).click();
+  await page.locator("#l-nivel").waitFor();
+  assert.deepEqual(await page.locator("#l-pivo option").allTextContents(), ["Piscinão 1"]);
+  await page.fill("#l-nivel", "55");
+  await page.fill("#l-obs", "régua da tarde");
+  await page.getByRole("button", { name: "Lançar", exact: true }).click();
+  await page.getByText(/nível 55% · régua da tarde/).waitFor();
+  await page.waitForFunction(() => !document.querySelector(".badge.pend"));
+  const niveis = amb.aba("NIVEL RESERVATORIO").objetos();
+  assert.equal(niveis.length, 2);
+  assert.equal(niveis[1]!["Nível (%)"], 55);
+  assert.equal(niveis[1]!["Por"], "José");
+  await page.screenshot({ path: PRINTS + "14_piscinao.png", fullPage: true });
+  // cadastro: o administrador vê a fonte de água no formulário
+  await ctx.close();
+  const a = await abrir(amb);
+  await configurarEEntrar(a.page, "fabiana", "1234");
+  await a.page.goto(base + "#/pivos");
+  await a.page.getByText(/água do Piscinão 1/).waitFor();
+  await a.page.getByRole("link", { name: "Editar" }).first().click();
+  await a.page.locator("#p_fonte").waitFor();
+  assert.equal(await a.page.locator("#p_fonte").inputValue(), "Piscinão 1");
+  assert.deepEqual(await a.page.locator("#p_fonte option").allTextContents(), ["Abastecimento direto", "Piscinão 1 (piscinão)"]);
+  await a.ctx.close();
+});

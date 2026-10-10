@@ -1170,6 +1170,76 @@ var Motor = (function () {
           serie,
       };
   }
+  // ---- src/motor/reservatorio.ts ----
+  const DIAS_NIVEL_VELHO = 7;
+  const DIAS_AUTONOMIA_ATENCAO = 3;
+  const r0 = (x) => Math.round(x);
+  const r1 = (x) => Math.round(x * 10) / 10;
+  /** m³ brutos de uma lâmina líquida num pivô. */
+  function retiradaM3(p, liquidaMm) {
+      const ef = p.eficienciaPct > 0 ? p.eficienciaPct / 100 : 1;
+      return (liquidaMm / ef) * p.areaHa * 10;
+  }
+  function balancoReservatorio(r, niveis, retiradas, pivos, dia) {
+      var _a;
+      const reposicaoDiaM3 = Math.max(0, r.bombaM3h) * Math.max(0, r.horasBombaDia);
+      const ultimo = (_a = niveis.filter((n) => n.data <= dia).sort((a, b) => (a.data < b.data ? -1 : 1)).pop()) !== null && _a !== void 0 ? _a : null;
+      let volumeM3 = null, reposicao = 0, retirado = 0, diasDesde = null;
+      if (ultimo) {
+          diasDesde = das(dia, ultimo.data);
+          reposicao = reposicaoDiaM3 * diasDesde;
+          retirado = retiradas.filter((x) => x.data > ultimo.data && x.data <= dia).reduce((t, x) => t + x.m3, 0);
+          volumeM3 = Math.min(r.volumeUtilM3, Math.max(0, (ultimo.pct / 100) * r.volumeUtilM3 + reposicao - retirado));
+      }
+      const demandaDiaM3 = pivos.reduce((t, p) => { var _a; return t + retiradaM3(p, (_a = p.etcMm) !== null && _a !== void 0 ? _a : 0); }, 0);
+      const pedidoHojeM3 = pivos.reduce((t, p) => t + (p.pedidoBrutoMm ? p.pedidoBrutoMm * p.areaHa * 10 : 0), 0);
+      const areaHa = pivos.reduce((t, p) => t + p.areaHa, 0);
+      const disponivel = volumeM3 === null ? null : Math.max(0, volumeM3 - r.reservaMinM3);
+      const faltaHoje = disponivel === null ? 0 : Math.max(0, pedidoHojeM3 - disponivel);
+      const cobreHoje = disponivel === null ? null : faltaHoje <= 0;
+      const saldoDia = reposicaoDiaM3 - demandaDiaM3;
+      let diasAutonomia = null, diasAteEncher = null;
+      if (disponivel !== null && saldoDia < 0)
+          diasAutonomia = r1(disponivel / -saldoDia);
+      if (volumeM3 !== null && saldoDia > 0 && volumeM3 < r.volumeUtilM3)
+          diasAteEncher = r1((r.volumeUtilM3 - volumeM3) / saldoDia);
+      const alertas = [];
+      let semaforo = "bom";
+      if (!ultimo) {
+          alertas.push("Sem nível lançado: lance o nível do reservatório (%) para o cálculo valer.");
+          semaforo = "sem";
+      }
+      else {
+          if (diasDesde > DIAS_NIVEL_VELHO)
+              alertas.push(`Nível lançado há ${diasDesde} dias: confira e lance de novo.`);
+          if (volumeM3 <= r.reservaMinM3) {
+              alertas.push("No volume de reserva: não dá pra puxar mais água.");
+              semaforo = "ruim";
+          }
+          else if (cobreHoje === false) {
+              alertas.push(`Falta água pra irrigação de hoje: ${r0(faltaHoje)} m³ a mais do que tem.`);
+              semaforo = "ruim";
+          }
+          else if (diasAutonomia !== null && diasAutonomia < DIAS_AUTONOMIA_ATENCAO) {
+              alertas.push(`Água pra ${diasAutonomia} dia(s) de irrigação: ligue a bomba mais tempo ou escalone os pivôs.`);
+              semaforo = "atencao";
+          }
+          else if (diasDesde > DIAS_NIVEL_VELHO)
+              semaforo = "atencao";
+      }
+      return {
+          nome: r.nome, volumeUtilM3: r.volumeUtilM3, reservaMinM3: r.reservaMinM3,
+          volumeM3: volumeM3 === null ? null : r0(volumeM3),
+          pct: volumeM3 === null || r.volumeUtilM3 <= 0 ? null : r0((volumeM3 / r.volumeUtilM3) * 100),
+          nivel: ultimo, diasDesdeNivel: diasDesde,
+          reposicaoDesdeNivelM3: r0(reposicao), retiradoDesdeNivelM3: r0(retirado),
+          reposicaoDiaM3: r0(reposicaoDiaM3), demandaDiaM3: r0(demandaDiaM3), areaHa: r1(areaHa),
+          pivos: pivos.map((p) => p.nome),
+          pedidoHojeM3: r0(pedidoHojeM3), cobreHoje, faltaHojeM3: r0(faltaHoje),
+          horasParaCobrir: faltaHoje > 0 && r.bombaM3h > 0 ? r1(faltaHoje / r.bombaM3h) : null,
+          diasAutonomia, diasAteEncher, semaforo, alertas,
+      };
+  }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
   function formatador(fuso) {
@@ -1426,7 +1496,28 @@ var Motor = (function () {
       return `Ciclo ${c.dias} d: ${gd} · ${luz} · chuva ${n1(c.chuvaMm)} mm em ${c.diasComChuva} d · ET₀ ${n0(c.et0Mm)} mm · ${n0(c.tminAbs)}–${n0(c.tmaxAbs)} °C` +
           (c.diasQuentes ? ` · ${c.diasQuentes} d > 32 °C` : "") + (c.diasFrios ? ` · ${c.diasFrios} d < 10 °C` : "") + (c.faltamDias >= 0 ? ` · faltam ${c.faltamDias} d` : ` · ciclo encerrado há ${-c.faltamDias} d`);
   }
-  function montarMensagem(data, clima, itens, previsao = [], nomeFazenda = "") {
+  const SEM_RES = { ruim: "🔴", atencao: "🟡", bom: "🟢", sem: "⚫" };
+  /** Frases do reservatório para o relatório: volume, reposição, consumo e dias de irrigação. */
+  function linhasReservatorio(b) {
+      var _a;
+      const l = [];
+      const vol = b.volumeM3 === null ? "nível não lançado" : `${n0(b.volumeM3)} m³ (${n0((_a = b.pct) !== null && _a !== void 0 ? _a : 0)}% de ${n0(b.volumeUtilM3)} m³)`;
+      l.push(`${SEM_RES[b.semaforo]} *${b.nome}* — ${vol}${b.nivel ? ` · nível ${n0(b.nivel.pct)}% lançado ${br(b.nivel.data)}` : ""}`);
+      l.push(`   Entra ${n0(b.reposicaoDiaM3)} m³/dia na bomba · ${b.pivos.length ? `${b.pivos.join(", ")} ${b.pivos.length === 1 ? "consome" : "consomem"} ${n0(b.demandaDiaM3)} m³/dia` : "nenhum pivô ligado"}` +
+          (b.pedidoHojeM3 > 0 ? ` · hoje pedem ${n0(b.pedidoHojeM3)} m³` : ""));
+      if (b.volumeM3 !== null) {
+          if (b.cobreHoje === false)
+              l.push(`   ⚠️ Falta ${n0(b.faltaHojeM3)} m³ pra irrigação de hoje${b.horasParaCobrir !== null ? ` (${n1(b.horasParaCobrir)} h de bomba)` : ""}`);
+          if (b.diasAutonomia !== null)
+              l.push(`   💧 Água pra *${n1(b.diasAutonomia)} dias* de irrigação com a reposição (reserva de ${n0(b.reservaMinM3)} m³ fora)`);
+          else
+              l.push(`   💧 A reposição cobre o consumo${b.diasAteEncher !== null ? ` · enche em ${n1(b.diasAteEncher)} dias` : " · cheio"}`);
+      }
+      for (const a of b.alertas.filter((a) => !/^Falta água|^Água pra/.test(a)))
+          l.push(`   ⚠️ ${a}`);
+      return l;
+  }
+  function montarMensagem(data, clima, itens, previsao = [], nomeFazenda = "", reservatorios = []) {
       var _a, _b, _c, _d, _e;
       const irrigar = itens.filter((i) => { var _a; return ((_a = i.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; }).length;
       const assunto = `Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
@@ -1450,6 +1541,10 @@ var Motor = (function () {
           const r = (_b = prox[0]) === null || _b === void 0 ? void 0 : _b.resumo;
           if (r)
               l.push(`   INMET amanhã: ${r}`);
+      }
+      for (const b of reservatorios) {
+          l.push("");
+          l.push(...linhasReservatorio(b));
       }
       for (const it of itens) {
           l.push("");
@@ -1497,7 +1592,7 @@ var Motor = (function () {
                       : `   Sem irrigação prevista nos próximos ${pj.horizonte} dias (sem chuva)`);
               }
           }
-          l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}`);
+          l.push(`   ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado hoje ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}${it.pivo.fonte ? ` · água do ${it.pivo.fonte}` : ""}`);
           const ui = it.ultimaIrrigacao, um = it.ultimaMedicao;
           if (ui || um)
               l.push(`   ${ui ? `Última irrigação ${br(ui.data)} (${n1(ui.mm)} mm)` : "Sem irrigação lançada"}${um ? ` · última medição ${br(um.data)} (${n0(um.umidadeRaizPct)}%)` : ""}`);
@@ -1516,7 +1611,7 @@ var Motor = (function () {
   }
   const h = (t) => String(t !== null && t !== void 0 ? t : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   /** Versão em HTML do mesmo relatório, para o e-mail (cores do semáforo e tabelinha por pivô). */
-  function montarMensagemHtml(data, clima, itens, previsao = [], linkApp = "", nomeFazenda = "") {
+  function montarMensagemHtml(data, clima, itens, previsao = [], linkApp = "", nomeFazenda = "", reservatorios = []) {
       var _a, _b, _c, _d, _e;
       const rs = resumoDoDia(itens);
       const prox = previsao.filter((d) => d.data > data).slice(0, 3);
@@ -1535,6 +1630,17 @@ var Motor = (function () {
       if (prox.length)
           html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${((_b = prox[0]) === null || _b === void 0 ? void 0 : _b.resumo) ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
       html += `</div>`;
+      for (const b of reservatorios) {
+          const cor = SEM_COR[b.semaforo];
+          const [titulo, ...resto] = linhasReservatorio(b).map((t) => t.replace(/^\s+/, "").replace(/^(🔴|🟡|🟢|⚫) /u, "").replace(/\*/g, ""));
+          html += `<div style="border:1px solid #e2e8ec;border-left:5px solid ${cor};border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#f7fbfc">`;
+          html += `<div style="display:flex;justify-content:space-between"><b style="font-size:15px;color:#16404d">🏞 ${h(titulo)}</b>${b.pct !== null ? chip(`${n0(b.pct)}%`, cor) : ""}</div>`;
+          if (b.pct !== null)
+              html += `<div style="height:10px;background:#eef2f4;border-radius:6px;overflow:hidden;margin:6px 0"><div style="width:${Math.min(100, b.pct).toFixed(0)}%;height:10px;background:#2e7d8c"></div></div>`;
+          for (const t of resto)
+              html += `<div style="font-size:13px;margin-top:3px">${h(t)}</div>`;
+          html += `</div>`;
+      }
       for (const it of itens) {
           const x = it.linha, sem = semaforoDoItem(it);
           html += `<div style="border:1px solid #e2e8ec;border-left:5px solid ${SEM_COR[sem]};border-radius:10px;padding:10px 12px;margin-bottom:10px">`;
@@ -1566,7 +1672,7 @@ var Motor = (function () {
               html += linha("Ajuste", "cadastre o equipamento para ter percentímetro, tempo e custo");
           else if (x.projecao && x.projecao.horizonte > 0)
               html += linha("Próxima", x.projecao.proximaIrrigacao ? `${h(br(x.projecao.proximaIrrigacao))} (em ${x.projecao.emDias} dia${x.projecao.emDias === 1 ? "" : "s"}, sem chuva)` : `sem irrigação prevista em ${x.projecao.horizonte} dias (sem chuva)`);
-          html += linha("Hoje", `ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}`);
+          html += linha("Hoje", `ETc ${n1(x.etc)} mm (Kc ${n2(x.kc)}) · raiz ${n0(x.raizCm)} cm · CAD ${n1(x.cadMm)} mm${x.irrigacao ? ` · irrigado ${n1(x.irrigacao)} mm` : ""}${x.chuva ? ` · chuva ${n1(x.chuva)} mm` : ""}${it.pivo.fonte ? ` · água do ${h(it.pivo.fonte)}` : ""}`);
           if (it.ultimaIrrigacao || it.ultimaMedicao)
               html += linha("Lançamentos", `${it.ultimaIrrigacao ? `última irrigação ${h(br(it.ultimaIrrigacao.data))} (${n1(it.ultimaIrrigacao.mm)} mm)` : "sem irrigação lançada"}${it.ultimaMedicao ? ` · última medição ${h(br(it.ultimaMedicao.data))} (${n0(it.ultimaMedicao.umidadeRaizPct)}%)` : ""}`);
           if (it.historico && it.historico.length > 1)
@@ -1592,5 +1698,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, montarMensagem, montarMensagemHtml };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml };
 })();

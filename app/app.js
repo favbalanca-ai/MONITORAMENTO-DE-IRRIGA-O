@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.10-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.11-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -211,6 +211,9 @@ function pivosCadastro() {
   const fs = fazendas();
   return c.pivos.map((p, i) => Object.assign({ __i: i, chaveFazenda: (fs.find((f) => f.nome === p.fazenda) || fs[0] || {}).chave }, p)).filter(daFazenda);
 }
+/** Reservatórios (piscinões) da fazenda escolhida: do cadastro (nomes) e do último cálculo (balanço). */
+function reservatoriosCadastro() { return ((DADOS && DADOS.cadastro && DADOS.cadastro.reservatorios) || []).filter((r) => !fazendas().length || !r.chaveFazenda || r.chaveFazenda === chaveAtual()); }
+function reservatoriosResumo() { const r = DADOS && DADOS.resumo; return r && r.reservatorios ? r.reservatorios.filter((b) => !fazendas().length || !b.chaveFazenda || b.chaveFazenda === chaveAtual()) : []; }
 function lancs() { return ((DADOS && DADOS.lancamentos) || []).filter((l) => !fazendas().length || !l.chaveFazenda || l.chaveFazenda === chaveAtual()); }
 /** Estação, previsão e rosa da fazenda escolhida (planilha nova) — ou os campos antigos (planilha anterior). */
 function estacao() {
@@ -228,6 +231,7 @@ document.addEventListener('change', (ev) => { if (ev.target.id === 'faz-sel') { 
 
 /* ================= ícones (SVG inline, traço 2px) ================= */
 const ICO = {
+  agua: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 14a3 3 0 0 0 3 3"/>',
   hoje: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13h6M9 17h4"/>',
   lancar: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   historico: '<path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/>',
@@ -490,9 +494,29 @@ V.hoje = function () {
     '<p class="muted" style="margin-top:8px">Calculado ' + esc(dataBr(r.calculadoEm)) + ' ' + esc((r.calculadoEm || '').slice(11, 16)) +
     (ult ? ' · estação ' + esc(ult.quando.slice(11, 16)) + (ult.tempC != null ? ' ' + br(ult.tempC, 0) + '°' : '') : '') + ' · <a href="#/clima">ver o clima</a></p>' +
     (c.estimados && c.estimados.length ? '<ul class="alertas"><li>Estação sem dado de ' + esc(c.estimados.join(', ')) + ' — usado o dia vizinho.</li></ul>' : '') + '</div>';
+  const res = reservatoriosResumo();
+  if (res.length) h += '<div class="cards">' + res.map(cardReservatorio).join('') + '</div>';
   h += '<div class="cards">' + pivos.map(cardPivo).join('') + '</div>';
   return h || '<div class="card vazio">Nenhum pivô ativo.</div>';
 };
+/** Cartão do piscinão: quanto tem, quanto entra, quanto os pivôs puxam e pra quantos dias dá. */
+function cardReservatorio(b) {
+  const st = b.semaforo || 'sem';
+  const temVol = b.volumeM3 != null;
+  const pct = temVol ? Math.max(0, Math.min(100, b.pct)) : 0;
+  const reserva = b.volumeUtilM3 > 0 ? Math.min(100, (b.reservaMinM3 / b.volumeUtilM3) * 100) : 0;
+  const dias = b.diasAutonomia != null ? '<b>' + br(b.diasAutonomia, 1) + '</b><em>dias de irrigação</em>' : temVol ? '<b>cobre</b><em>' + (b.diasAteEncher != null ? 'enche em ' + br(b.diasAteEncher, 1) + ' d' : 'reposição ≥ consumo') + '</em>' : '<b>—</b><em>sem nível</em>';
+  return '<div class="card reservatorio sem-' + st + '"><div class="row"><div><h2>' + ico('agua') + ' ' + esc(b.nome) + '</h2><div class="tags"><span class="tag">piscinão</span>' +
+    (b.pivos && b.pivos.length ? '<span class="tag">' + esc(b.pivos.join(', ')) + '</span>' : '<span class="tag">sem pivô ligado</span>') + '</div></div>' +
+    '<span class="badge ' + (st === 'ruim' ? 'irrigar' : st === 'atencao' ? 'atencao' : st === 'bom' ? 'nao' : 'sem') + '">' + (temVol ? br(b.pct, 0) + '%' : 'sem nível') + '</span></div>' +
+    '<div class="bar agua" title="Volume em relação ao útil"><span style="width:' + pct.toFixed(1) + '%"></span>' + (reserva > 0 ? '<i style="left:' + reserva.toFixed(1) + '%"></i>' : '') + '</div>' +
+    '<div class="bar-rotulos"><span>' + (temVol ? '<b>' + br(b.volumeM3, 0) + ' m³</b>' : 'nível não lançado') + '</span><span>útil ' + br(b.volumeUtilM3, 0) + ' m³</span></div>' +
+    '<div class="kpis"><div><small>Entra (bomba)</small><b>' + br(b.reposicaoDiaM3, 0) + '</b><em>m³/dia</em></div><div><small>Pivôs puxam</small><b>' + br(b.demandaDiaM3, 0) + '</b><em>m³/dia</em></div>' +
+    '<div><small>Pedem hoje</small><b>' + br(b.pedidoHojeM3, 0) + '</b><em>m³' + (b.cobreHoje === false ? ' · faltam ' + br(b.faltaHojeM3, 0) : '') + '</em></div><div><small>Água pra</small>' + dias + '</div></div>' +
+    (b.alertas && b.alertas.length ? '<ul class="alertas">' + b.alertas.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
+    '<p class="muted" style="margin-top:8px">' + (b.nivel ? 'Nível <b>' + br(b.nivel.pct, 0) + '%</b> lançado ' + esc(dataBr(b.nivel.data)) + (b.diasDesdeNivel ? ' (há ' + b.diasDesdeNivel + ' d: + ' + br(b.reposicaoDesdeNivelM3, 0) + ' m³ de bomba − ' + br(b.retiradoDesdeNivelM3, 0) + ' m³ puxados)' : '') : 'Lance o nível em Lançar → Nível do piscinão.') +
+    (b.reservaMinM3 ? ' · reserva ' + br(b.reservaMinM3, 0) + ' m³' : '') + ' · <a href="#/lancar" data-act="lancar-nivel">lançar nível</a></p></div>';
+}
 /* ================= CLIMA (estação agora, previsão, histórico do tempo) ================= */
 let CLIMA = null;
 V.clima = function () {
@@ -560,7 +584,7 @@ function cardPivo(p) {
   const avisos = (p.avisoChuva ? '<ul class="alertas"><li>' + ico('chuva') + ' ' + esc(p.avisoChuva) + '</li></ul>' : '') +
     (naFrente.length ? '<ul class="alertas">' + naFrente.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '');
   return '<div class="card pivo sem-' + st + '"><div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span><span class="tag">' + esc(p.estadio) + '</span><span class="tag">' + esc(p.das) + ' DAS' +
-    (p.emergenciaDias ? ' · ' + esc(p.dae) + ' DAE' : '') + '</span>' + (fim ? '<span class="tag tag-erro">ciclo encerrado</span>' : '') + '</div></div>' +
+    (p.emergenciaDias ? ' · ' + esc(p.dae) + ' DAE' : '') + '</span>' + (fim ? '<span class="tag tag-erro">ciclo encerrado</span>' : '') + (p.fonte ? '<span class="tag">' + ico('agua') + ' ' + esc(p.fonte) + '</span>' : '') + '</div></div>' +
     '<span class="badge ' + classeDec(p.decisao) + '">' + SEM_ICONE[st] + ' ' + esc(p.decisao) + '</span></div>' +
     '<div class="bar" title="Déficit em relação à AFD"><span style="width:' + pct.toFixed(1) + '%"></span>' + (marca != null ? '<i style="left:' + marca.toFixed(1) + '%"></i>' : '') + '</div>' +
     '<div class="bar-rotulos"><span>Déficit <b>' + br(p.deficit, 1) + ' mm</b></span>' + (marca != null && marca > 22 && marca < 78 ? '<span class="marca" style="left:' + marca.toFixed(1) + '%">lâmina mín. ' + br(p.laminaMinimaMm, 0) + '</span>' : '') + '<span>AFD ' + br(p.afd, 1) + ' mm</span></div>' +
@@ -644,10 +668,13 @@ V.lancar = function () {
   const lista = pend.map((x) => Object.assign({ pend: true, erro: x.erro }, itemDeFila(x)))
     .concat(lancs().filter((l) => !pend.some((p) => p.id === l.id) && apagando.indexOf(l.id) < 0));
   return '<div class="seg" role="tablist"><button type="button" data-act="tipo" data-tipo="irrigacao" class="' + (tipoLanc === 'irrigacao' ? 'on' : '') + '">🚿 Irrigação</button>' +
-    '<button type="button" data-act="tipo" data-tipo="umidade" class="' + (tipoLanc === 'umidade' ? 'on' : '') + '">🌱 Umidade do solo</button></div>' +
-    '<form class="card" id="f-lanc" autocomplete="off"><div class="grid2"><div><label for="l-pivo">Pivô</label><select id="l-pivo" required>' +
-    ps.map((n) => '<option>' + esc(n) + '</option>').join('') + '</select></div><div><label for="l-data">Data</label><input id="l-data" type="date" required value="' + hojeIso() + '" max="' + hojeIso() + '"></div></div>' +
-    (tipoLanc === 'irrigacao'
+    '<button type="button" data-act="tipo" data-tipo="umidade" class="' + (tipoLanc === 'umidade' ? 'on' : '') + '">🌱 Umidade do solo</button>' +
+    (reservatoriosCadastro().length ? '<button type="button" data-act="tipo" data-tipo="nivel" class="' + (tipoLanc === 'nivel' ? 'on' : '') + '">🏞 Nível do piscinão</button>' : '') + '</div>' +
+    '<form class="card" id="f-lanc" autocomplete="off"><div class="grid2"><div><label for="l-pivo">' + (tipoLanc === 'nivel' ? 'Reservatório' : 'Pivô') + '</label><select id="l-pivo" required>' +
+    (tipoLanc === 'nivel' ? reservatoriosCadastro().map((r) => r.nome) : ps).map((n) => '<option>' + esc(n) + '</option>').join('') + '</select></div><div><label for="l-data">Data</label><input id="l-data" type="date" required value="' + hojeIso() + '" max="' + hojeIso() + '"></div></div>' +
+    (tipoLanc === 'nivel'
+      ? '<div class="grid2"><div><label for="l-nivel">Nível (% do volume útil)</label><input id="l-nivel" inputmode="numeric" placeholder="ex.: 60"></div><div><label for="l-obs">Observação</label><input id="l-obs" placeholder="opcional"></div></div><p class="muted">Meça no fim do dia, depois das irrigações. A planilha estima o volume de hoje somando a bomba e descontando o que os pivôs puxaram.</p>'
+      : tipoLanc === 'irrigacao'
       ? '<div class="seg seg-sub" role="tablist"><button type="button" data-act="modo-lanc" data-modo="pct" class="' + (modoLanc === 'pct' ? 'on' : '') + '">Pelo percentímetro</button><button type="button" data-act="modo-lanc" data-modo="mm" class="' + (modoLanc === 'mm' ? 'on' : '') + '">Pela lâmina (mm)</button></div>' +
         (modoLanc === 'pct'
           ? '<div class="grid2"><div><label for="l-pct">Percentímetro usado (%)</label><input id="l-pct" inputmode="numeric" placeholder="ex.: 40"></div><div><label for="l-obs">Observação</label><input id="l-obs" placeholder="opcional"></div></div><p class="muted" id="l-pct-info">A lâmina sai do equipamento cadastrado (raio, vazão, velocidade, eficiência).</p>'
@@ -666,11 +693,13 @@ V.lancar = function () {
 function itemDeFila(x) {
   const d = x.d;
   return { id: x.id, tipo: d.tipo, data: d.data, pivo: d.pivo, por: (sessUsuario() || {}).nome || '',
-    valores: d.tipo === 'irrigacao' ? [d.percentimetro ? (laminaDoPct(d.pivo, numBR(d.percentimetro)) || { liquidaMm: NaN }).liquidaMm : numBR(d.mm), (d.percentimetro ? 'percentímetro ' + d.percentimetro + '%' + (d.obs ? ' · ' : '') : '') + (d.obs || '')] : [numBR(d.umidadeRaiz), numBR(d.umidadeProfunda) == null ? '' : numBR(d.umidadeProfunda), numBR(d.tensao) == null ? '' : numBR(d.tensao), d.fonte || ''] };
+    valores: d.tipo === 'nivel' ? [numBR(d.nivel), d.obs || ''] : d.tipo === 'irrigacao' ? [d.percentimetro ? (laminaDoPct(d.pivo, numBR(d.percentimetro)) || { liquidaMm: NaN }).liquidaMm : numBR(d.mm), (d.percentimetro ? 'percentímetro ' + d.percentimetro + '%' + (d.obs ? ' · ' : '') : '') + (d.obs || '')] : [numBR(d.umidadeRaiz), numBR(d.umidadeProfunda) == null ? '' : numBR(d.umidadeProfunda), numBR(d.tensao) == null ? '' : numBR(d.tensao), d.fonte || ''] };
 }
 function textoLanc(l) {
   const v = l.valores || [];
-  return l.tipo === 'irrigacao'
+  return l.tipo === 'nivel'
+    ? '🏞 nível ' + br(v[0], 0) + '%' + (v[1] ? ' · ' + esc(v[1]) : '')
+    : l.tipo === 'irrigacao'
     ? '🚿 ' + br(v[0], 1) + ' mm' + (v[1] ? ' · ' + esc(v[1]) : '')
     : '🌱 ' + br(v[0], 1) + '%' + (v[1] !== '' && v[1] != null ? ' · prof. ' + br(v[1], 1) + '%' : '') + (v[2] !== '' && v[2] != null ? ' · ' + br(v[2], 0) + ' kPa' : '') + (v[3] ? ' · ' + esc(v[3]) : '');
 }
@@ -685,9 +714,12 @@ V.lancar_depois = function () {
   f.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const d = { id: novoId(), tipo: tipoLanc, pivo: $('#l-pivo').value, data: $('#l-data').value, fazenda: chaveAtual() };
-    if (!d.pivo) return toast('Cadastre um pivô ativo primeiro.', true);
+    if (!d.pivo) return toast(tipoLanc === 'nivel' ? 'Cadastre o reservatório na aba RESERVATORIOS da planilha.' : 'Cadastre um pivô ativo primeiro.', true);
     if (d.data > hojeIso()) return toast('A data não pode ser no futuro.', true);
-    if (tipoLanc === 'irrigacao' && modoLanc === 'pct') {
+    if (tipoLanc === 'nivel') {
+      d.nivel = $('#l-nivel').value; d.obs = $('#l-obs').value;
+      const n = numBR(d.nivel); if (n == null || isNaN(n) || n < 0 || n > 100) return toast('Informe o nível em % (0 a 100).', true);
+    } else if (tipoLanc === 'irrigacao' && modoLanc === 'pct') {
       d.mm = ''; d.percentimetro = $('#l-pct').value; d.obs = $('#l-obs').value;
       const n = numBR(d.percentimetro); if (n == null || isNaN(n) || n < 1 || n > 100) return toast('Informe o percentímetro usado (1 a 100%).', true);
       if (!laminaDoPct(d.pivo, n)) return toast('Esse pivô não tem equipamento cadastrado: lance pela lâmina (mm).', true);
@@ -954,7 +986,7 @@ const GRUPOS = [
   ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
-  ['Equipamento', ['raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
+  ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
 ];
 const simNao = (v) => v === true || /^(SIM|S|TRUE|1|X)$/i.test(String(v).trim());
 V.pivos = function (arg) {
@@ -962,7 +994,7 @@ V.pivos = function (arg) {
   const c = DADOS.cadastro;
   if (arg !== undefined) return formPivo(arg === 'novo' ? null : c.pivos[Number(arg)]);
   return pivosCadastro().map((p) => '<div class="card"><div class="row"><div><h2>' + (ehTalhao(p) ? ico('solo') + ' ' : '') + esc(p.nome) + (simNao(p.ativo) ? '' : ' <span class="muted">(inativo)</span>') + '</h2>' +
-    '<div class="muted">' + (ehTalhao(p) ? 'Talhão' + (ehTalhaoSemBalanco(p) ? ' (só relatório do ciclo)' : '') + ' · ' : '') + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (ehTalhao(p) ? '' : p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + '</div></div>' +
+    '<div class="muted">' + (ehTalhao(p) ? 'Talhão' + (ehTalhaoSemBalanco(p) ? ' (só relatório do ciclo)' : '') + ' · ' : '') + esc(nomeCultura(p.cultura)) + (p.cicloDias ? ' (' + esc(p.cicloDias) + ' dias)' : '') + ' · plantio ' + esc(dataBrAno(String(p.plantio))) + (ehTalhao(p) ? '' : p.raioM ? ' · raio ' + br(p.raioM, 0) + ' m' : ' · sem equipamento') + (p.fonte ? ' · água do ' + esc(p.fonte) : '') + '</div></div>' +
     '<a class="btn btn-outline btn-sm" href="#/pivos/' + p.__i + '">' + (ehAdmin() ? 'Editar' : 'Ver') + '</a></div></div>').join('') +
     (ehAdmin() ? '<a class="btn btn-outline btn-block" href="#/pivos/novo">+ Nova área (pivô ou talhão)</a>' +
       '<div class="card" style="margin-top:14px"><h2>📂 Importar KMZ com os pivôs</h2><p class="muted" style="margin:4px 0 10px">Arquivo do Google Earth com um desenho por pivô. Eu caso o nome do desenho com o pivô e guardo o centro, o contorno e o raio.</p>' +
@@ -1011,6 +1043,11 @@ function campoPivo(k, rot, v, so) {
   if (k === 'fazenda') { const fs = fazendas(); if (fs.length < 2) return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(v || (fs[0] ? fs[0].nome : '')) + '">';
     return '<div><label for="' + id + '">Fazenda</label><select id="' + id + '" name="' + k + '"' + dis + '>' + fs.map((f) => '<option' + (f.nome === v ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') + '</select></div>'; }
   if (k === 'tipo') return '<div><label for="' + id + '">Tipo</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="pivô"' + (/^t/i.test(String(v)) ? '' : ' selected') + '>Pivô (balanço e irrigação)</option><option value="talhão"' + (/^t/i.test(String(v)) ? ' selected' : '') + '>Talhão (sem pivô — relatório do ciclo)</option></select></div>';
+  if (k === 'fonte') { const rs = ((DADOS.cadastro && DADOS.cadastro.reservatorios) || []); const fz = $('#p_fazenda') ? $('#p_fazenda').value : '';
+    const meus = rs.filter((r) => !fz || r.fazenda === fz || rs.length === 0);
+    return '<div><label for="' + id + '">Fonte de água</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="">Abastecimento direto</option>' +
+      meus.map((r) => '<option value="' + esc(r.nome) + '"' + (String(v || '').toLowerCase() === r.nome.toLowerCase() ? ' selected' : '') + '>' + esc(r.nome) + ' (piscinão)</option>').join('') +
+      (v && !meus.some((r) => r.nome.toLowerCase() === String(v).toLowerCase()) ? '<option selected>' + esc(v) + '</option>' : '') + '</select></div>'; }
   if (k === 'contorno') return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(typeof v === 'string' ? v : v ? JSON.stringify(v) : '') + '">';
   return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="decimal" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : String(v).replace('.', ',')) + '"' + dis + '></div>';
 }
@@ -1067,6 +1104,9 @@ V.pivos_depois = function () {
     if (info) info.textContent = talhao ? 'Talhão sem pivô: cultura e plantio bastam pro relatório do ciclo (graus-dia, luz, chuva). Preencha o solo só se quiser o balanço hídrico.' : '';
   };
   if (tipoEl) { tipoEl.addEventListener('change', ajustarTipo); ajustarTipo(); }
+  // trocou a fazenda: a lista de piscinões é a da fazenda nova
+  const fazEl = $('#p_fazenda', f), fonteEl = $('#p_fonte', f);
+  if (fazEl && fonteEl && fazEl.tagName === 'SELECT') fazEl.addEventListener('change', () => { fonteEl.parentElement.outerHTML = campoPivo('fonte', 'Fonte de água', '', !ehAdmin()); });
   f.addEventListener('click', (ev) => {
     if (!ev.target.closest('[data-act="gps"]')) return;
     if (!navigator.geolocation) { toast('Este aparelho não informa a posição.', true); return; }
@@ -1209,6 +1249,7 @@ document.addEventListener('click', async (ev) => {
   const a = ev.target.closest('[data-act]'); if (!a || a.tagName === 'SELECT') return;
   const act = a.dataset.act;
   if (act === 'tipo') { tipoLanc = a.dataset.tipo; route({ manterRolagem: true }); }
+  else if (act === 'lancar-nivel') { tipoLanc = 'nivel'; }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
   else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);

@@ -322,3 +322,8 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
   .user-chip{max-width:110px;overflow:hidden;text-overflow:ellipsis}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+
+/* piscinão */
+.card.reservatorio .bar.agua>span{background:#2e7d8c}
+.card.reservatorio .bar.agua>i{background:#c62828;opacity:.6}
+.card.reservatorio .kpis em{display:block}

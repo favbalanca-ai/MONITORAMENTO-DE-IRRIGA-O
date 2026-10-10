@@ -20,6 +20,13 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      altitude, altura do anemômetro, fuso (Mato Grosso = `America/Cuiaba`), **e-mails do relatório**, o **código IBGE
      do município** (Formoso-MG = 3126208) para a previsão do INMET, chuva mínima e horário de ponta. Para uma segunda
      fazenda (ex.: Novo Pago) basta acrescentar a linha; cada fazenda tem a sua coleta, previsão, PAINEL e relatório.
+   - **RESERVATORIOS**: um piscinão por linha — fazenda, nome, **volume útil (m³)**, **bomba de reposição (m³/h)**,
+     **horas de bomba por dia** e **reserva mínima (m³)**. Na PIVOS, a coluna **Fonte de água** liga o pivô ao
+     piscinão (vazio = abastecimento direto do rio/poço). O operador lança o **nível (%)** pelo app (Lançar → Nível
+     do piscinão; aba `NIVEL RESERVATORIO`), de preferência no fim do dia. A planilha estima o volume de hoje
+     (nível lançado + bomba × dias − o que os pivôs ligados puxaram, lâmina ÷ eficiência × área), o consumo diário
+     dos pivôs (ETc), se o que tem cobre a irrigação de hoje e **pra quantos dias de irrigação dá** com a reposição.
+     Vai no relatório, no PAINEL e num cartão na tela Hoje.
    - **PIVOS** tem as colunas **Fazenda** e **Tipo (pivô/talhão)**. Um *talhão* é área sem pivô: não entra no balanço
      hídrico, só ganha o **relatório do ciclo da cultura** (graus-dia, fotoperíodo, horas de sol, chuva, ET₀, extremos).
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
