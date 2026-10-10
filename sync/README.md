@@ -30,7 +30,7 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
    - **PIVOS** tem as colunas **Fazenda** e **Tipo (pivô/talhão)**. Um *talhão* é área sem pivô: não entra no balanço
      hídrico, só ganha o **relatório do ciclo da cultura** (graus-dia, fotoperíodo, horas de sol, chuva, ET₀, extremos).
    - **PIVOS**: uma linha por pivô. A linha do Pivô 2 é **exemplo** — troque pelos dados reais (plantio, solo, equipamento).
-     Na coluna **Cultura** vale `soja`, `milho`, `sorgo`, `feijao`, `feijao pd`, `trigo` ou `algodao` (ver `docs/CULTURAS.md`).
+     Na coluna **Cultura** vale `soja`, `soja precoce`, `milho`, `sorgo`, `feijao`, `feijao pd`, `trigo` ou `algodao` (ver `docs/CULTURAS.md`).
      A coluna **Ciclo (dias, vazio = padrão)** é opcional: preenchida, estica/encurta a curva de Kc para a cultivar plantada.
    - Ainda na FAZENDAS: **Chuva mínima que conta** (padrão 2 mm — chuva menor fica na folha) e o **horário de ponta**
      da energia (padrão 18–21 h), usado no custo e na hora sugerida de ligar o pivô.

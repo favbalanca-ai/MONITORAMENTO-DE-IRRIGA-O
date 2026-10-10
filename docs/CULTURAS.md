@@ -7,6 +7,7 @@ por ela — são **referência**: o agrônomo precisa validar para a fazenda e a
 | Chave | Ciclo | Como o Kc anda | Kc |
 |---|---|---|---|
 | `soja` | 120 DAS | degraus por fração do ciclo | 0,45 · 0,75 · 1,05 · 1,15 · 1,20 · 0,90 (aba KC da planilha original) |
+| `soja precoce` | 100 DAS | mesmos degraus da soja, nas mesmas frações do ciclo (V1 ~17 d · V3 ~30 d · R1 ~46 d · R3 ~63 d · R5 ~83 d · R7 100 d) | 0,45 · 0,75 · 1,05 · 1,15 · 1,20 · 0,90 |
 | `milho` | 120 DAS | curva de 4 fases (17/28/33/22% do ciclo), reta nas fases 2 e 4 | 0,50 → 1,20 → 0,60 |
 | `sorgo` | 120 DAS | 4 fases de 24/42/30/24 dias | 0,50 → 1,10 → 0,55 |
 | `feijao` | 94 DAE (emergência 7 d) | degraus de 10 dias | 0,49 · 0,69 · 0,77 · 0,90 · 1,06 · 0,89 · 0,74 · 0,48 · 0,27 |
@@ -25,6 +26,7 @@ do ciclo o Kc fica parado no valor final e o balanço avisa "ciclo encerrado".
 | Chave | Raiz máx. | Dias até raiz máx. | Fator fixo | Tensão p/ irrigar |
 |---|---|---|---|---|
 | `soja` | 50 cm | 55 | — | −70 kPa |
+| `soja precoce` | 45 cm | 45 | — | −70 kPa |
 | `milho` | 40 cm | 54 | — | −60 kPa |
 | `sorgo` | 40 cm | 66 | — | −60 kPa |
 | `feijao` / `feijao pd` | 30 cm | 45 / 42 | — | −35 kPa |

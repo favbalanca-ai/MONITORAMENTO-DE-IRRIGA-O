@@ -38,7 +38,7 @@ test("CAD, déficit pela umidade e fator de depleção", () => {
 });
 
 test("catálogo tem as culturas da Embrapa, cada uma com fonte e estádios em ordem", () => {
-  assert.deepEqual(Object.keys(CULTURAS), ["soja", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
+  assert.deepEqual(Object.keys(CULTURAS), ["soja", "soja precoce", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
   for (const c of Object.values(CULTURAS)) {
     assert.ok(c.fonte, c.nome);
     const fr = c.estadios.map((e) => e.ateFracao);
@@ -96,4 +96,15 @@ test("ciclo diferente do padrão estica a curva na mesma proporção", () => {
   assert.equal(curva.length, 121);
   assert.equal(curva[0], 0.25);
   assert.equal(curva[120], 0.6);
+});
+
+test("soja precoce: 100 dias com os mesmos degraus de Kc da soja nas mesmas frações", () => {
+  const sp = CULTURAS["soja precoce"]!;
+  assert.equal(sp.cicloDias, 100);
+  assert.equal(fimDoCicloDas(sp), 100);
+  assert.deepEqual(sp.estadios.map((e) => e.kc), CULTURAS.soja!.estadios.map((e) => e.kc));
+  // R3 começa na fração 0,46 → dia 47 da precoce (dia 56 na soja de 120)
+  assert.equal(estadioPorDas(sp, 47).nome, "R3");
+  assert.equal(estadioPorDas(CULTURAS.soja!, 47).nome, "R1");
+  assert.equal(kcDoDia(sp, 100, false).kc, 0.9);
 });

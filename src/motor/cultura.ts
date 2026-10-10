@@ -20,6 +20,19 @@ export const SOJA: Cultura = {
   tBaseC: 10,
 };
 
+/**
+ * Soja precoce (cultivares de grupo de maturação 5.x–6.x, ~100 dias no Cerrado). Mesmos degraus de Kc da
+ * soja, nas mesmas frações do ciclo: V1 até ~17 d, V3 ~30 d, R1 ~46 d, R3 ~63 d, R5 ~83 d, R7 100 d.
+ * Raiz máxima mais cedo (45 cm aos 45 dias). Valores de referência — o agrônomo precisa validar.
+ */
+export const SOJA_PRECOCE: Cultura = {
+  ...SOJA,
+  nome: "Soja precoce",
+  cicloDias: 100,
+  fonte: "Kc da aba KC da planilha original; ciclo de 100 dias das cultivares precoces (Embrapa Soja, Tecnologias de Produção de Soja).",
+  sugestao: { raizMaxCm: 45, diasRaiz: 45, tensaoIrrigarKpa: -70, porque: "Ciclo curto: a raiz chega a 45 cm por volta dos 45 dias; tensão de −70 kPa como na soja." },
+};
+
 /** Monta estádios a partir de "até o dia N" (as tabelas da Embrapa vêm em dias). */
 function porDias(ciclo: number, linhas: [string, number, number, number?][]): Estadio[] {
   return linhas.map(([nome, ateDia, kc, kcFim]) => ({ nome, ateFracao: ateDia / ciclo, kc, ...(kcFim === undefined ? {} : { kcFim }) }));
@@ -235,6 +248,7 @@ export function kcDoDia(cultura: Cultura, diasAposSemeadura: number, palhada: bo
  */
 export const CULTURAS: Record<string, Cultura> = {
   soja: SOJA,
+  "soja precoce": SOJA_PRECOCE,
   milho: MILHO,
   sorgo: SORGO,
   feijao: FEIJAO,

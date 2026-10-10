@@ -197,7 +197,7 @@ test("catálogo de culturas vai com nome, ciclo, curva de Kc e sugestão da Embr
   const amb = pronto();
   const adm = entrar(amb, "fabiana", "1234").token;
   const cs = amb.get({ acao: "dados", s: adm }).cadastro.culturas;
-  assert.deepEqual(cs.map((c: { chave: string }) => c.chave), ["soja", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
+  assert.deepEqual(cs.map((c: { chave: string }) => c.chave), ["soja", "soja precoce", "milho", "sorgo", "feijao", "feijao pd", "trigo", "algodao"]);
   const trigo = cs.find((c: { chave: string }) => c.chave === "trigo");
   assert.equal(trigo.nome, "Trigo");
   assert.equal(trigo.cicloDias, 115);
