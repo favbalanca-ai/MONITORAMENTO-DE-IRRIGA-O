@@ -523,6 +523,10 @@ test("piscinão: cartão na tela Hoje, lançamento de nível e fonte de água no
   const cad = amb.get({ acao: "dados", s: adm }).cadastro;
   amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], fonte: "Piscinão 1" }, original: "Pivô 2" } });
   amb.post({ s: adm, __lancamento: { id: "N1", tipo: "nivel", pivo: "Piscinão 1", data: "2026-02-05", nivel: "60" } });
+  amb.post({ s: adm, __lancamento: { id: "L1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "5" } });
+  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("open-meteo") && !url.includes("hourly=") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  amb.chamar("atualizarPrevisao");
   amb.chamar("calcular_", "2026-02-08");
 
   const { ctx, page } = await abrir(amb);
@@ -530,9 +534,13 @@ test("piscinão: cartão na tela Hoje, lançamento de nível e fonte de água no
   await page.locator(".card.reservatorio").waitFor();
   await page.screenshot({ path: PRINTS + "14_piscinao_hoje.png", fullPage: true });
   const card = await page.locator(".card.reservatorio").innerText();
-  assert.match(card, /Piscinão 1[\s\S]*piscinão[\s\S]*Pivô 2[\s\S]*90%[\s\S]*18\.000 m³[\s\S]*útil 20\.000 m³/);
-  assert.match(card, /ENTRA \(BOMBA\)\s+2\.000[\s\S]*PIVÔS PUXAM[\s\S]*PEDEM HOJE[\s\S]*ÁGUA PRA/i);
-  assert.match(card, /Nível 60% lançado 05\/02 \(há 3 d: \+ 6\.000 m³ de bomba − 0 m³ puxados\)/);
+  // 12.000 + 3 × 2.000 − 5 mm ÷ 0,85 × 50,27 ha × 10 = 2.957 → 15.043 m³ (75 %)
+  assert.match(card, /Piscinão 1[\s\S]*piscinão[\s\S]*Pivô 2[\s\S]*75%[\s\S]*Volume atual 15\.043 m³[\s\S]*útil 20\.000 m³/);
+  assert.match(card, /SAÍDA HOJE\s+2\.957[\s\S]*ENTRADA HOJE\s+2\.000[\s\S]*SALDO DO DIA\s+−957[\s\S]*ÁGUA PRA[\s\S]*PIVÔS PUXAM[\s\S]*CONSUMO PREVISTO\s+\d/i);
+  assert.match(card, /Próximos dias \(previsão do tempo\)[\s\S]*BOMBA SUGERIDA|BOMBA SUGERIDA[\s\S]*Próximos dias \(previsão do tempo\)/);
+  assert.ok((await page.locator(".res-dia").count()) >= 3, "barras da projeção");
+  assert.match(card, /h\/dia de bomba|a bomba precisa de/);
+  assert.match(card, /Nível 60% lançado 05\/02 \(há 3 d: \+ 6\.000 m³ de bomba − 2\.957 m³ puxados\)/);
   assert.match(await page.locator(".card.pivo").first().innerText(), /Piscinão 1/);
   // lançar o nível de hoje pelo app
   await page.getByRole("link", { name: /Lançar/ }).click();

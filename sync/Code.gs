@@ -977,7 +977,7 @@ function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid, reservatorios,
   var climaDia = clima[clima.length - 1];
   var et0Dia = et0De(climaDia);
   var climaMsg = Object.assign({}, climaDia, { et0: et0Dia });
-  var balReservatorios = balancoReservatorios_(cfg, (reservatorios || []).filter(function (r) { return r.chaveFazenda === cfg.chave; }), itens, irrig, niveis || [], dia);
+  var balReservatorios = balancoReservatorios_(cfg, (reservatorios || []).filter(function (r) { return r.chaveFazenda === cfg.chave; }), itens, irrig, niveis || [], dia, diasPrev);
   var rotulo = lerFazendas_().length > 1 ? cfg.nome : "";   // com uma fazenda só, o nome não precisa aparecer
   var msg = Motor.montarMensagem(dia, climaMsg, itens, diasPrev, rotulo, balReservatorios);
   var html = Motor.montarMensagemHtml(dia, climaMsg, itens, diasPrev, APP_URL, rotulo, balReservatorios);
@@ -989,14 +989,14 @@ function calcularFazenda_(cfg, areas, dia, previsao, irrig, umid, reservatorios,
  * Balanço de cada reservatório da fazenda: último nível lançado + bomba × dias − o que os pivôs
  * ligados a ele puxaram (lâmina líquida ÷ eficiência × área), consumo diário e dias de irrigação.
  */
-function balancoReservatorios_(cfg, reservatorios, itens, irrig, niveis, dia) {
+function balancoReservatorios_(cfg, reservatorios, itens, irrig, niveis, dia, previsao) {
   return reservatorios.map(function (r) {
     var ligados = itens.filter(function (it) { return it.pivo.fonte && chaveCultura_(it.pivo.fonte) === r.chave && it.pivo.equipamento; });
     var areaDe = function (eq) { return (Math.PI * eq.raioM * eq.raioM * ((eq.anguloGraus || 360) / 360)) / 10000; };
     var pivos = ligados.map(function (it) {
       var l = it.linha, rec = l && l.recomendacao;
       return { nome: it.pivo.nome, areaHa: areaDe(it.pivo.equipamento), eficienciaPct: it.pivo.equipamento.eficienciaPct || 100,
-        etcMm: l ? l.etc : 0, pedidoBrutoMm: l && l.decisao === "IRRIGAR" && rec ? rec.laminaBrutaMm : 0 };
+        etcMm: l ? l.etc : 0, pedidoBrutoMm: l && l.decisao === "IRRIGAR" && rec ? rec.laminaBrutaMm : 0, kc: l ? l.kc : 0 };
     });
     var retiradas = [];
     ligados.forEach(function (it) {
@@ -1007,7 +1007,7 @@ function balancoReservatorios_(cfg, reservatorios, itens, irrig, niveis, dia) {
     });
     var meus = niveis.filter(function (x) { return chaveCultura_(x.area) === r.chave && (!x.fazenda || x.fazenda === cfg.chave) && Motor.numero(x.l[2]) !== null; })
       .map(function (x) { return { data: x.data, pct: Motor.numero(x.l[2]) }; });
-    return Motor.balancoReservatorio(r, meus, retiradas, pivos, dia);
+    return Motor.balancoReservatorio(r, meus, retiradas, pivos, dia, previsao || [], cfg.chuvaMinima);
   });
 }
 
@@ -1571,7 +1571,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.11-3";
+var VERSAO_SERVIDOR = "2026.10.11-4";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

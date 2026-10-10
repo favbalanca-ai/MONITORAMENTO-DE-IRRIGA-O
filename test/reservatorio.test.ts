@@ -55,3 +55,29 @@ test("falta água pra hoje e nível velho", () => {
   assert.equal(quase.horasParaCobrir, 20);
   assert.equal(quase.semaforo, "ruim");
 });
+
+test("movimento do dia e projeção com a previsão: consumo = Kc × ET₀ − chuva útil; sugere horas de bomba", () => {
+  const prev = [
+    { data: "2026-02-09", chuvaMm: 0, probPct: 10, tmin: 19, tmax: 31, et0Mm: 5 },
+    { data: "2026-02-10", chuvaMm: 12, probPct: 80, tmin: 19, tmax: 28, et0Mm: 4 },
+    { data: "2026-02-11", chuvaMm: 0, probPct: 5, tmin: 19, tmax: 32, et0Mm: 6 },
+  ];
+  const ps = [{ nome: "Pivô 1", areaHa: 50, eficienciaPct: 100, etcMm: 5, kc: 1.0 }];
+  const b = balancoReservatorio(piscinao, [{ data: "2026-02-08", pct: 50 }], [{ data: "2026-02-08", m3: 3000 }], ps, "2026-02-08", prev);
+  assert.equal(b.saidaHojeM3, 3000);
+  assert.equal(b.entradaHojeM3, 2000);
+  assert.equal(b.saldoHojeM3, -1000);
+  // 09: 5 mm × 50 ha × 10 = 2.500 m³ → 10.000 + 2.000 − 2.500 = 9.500
+  // 10: chuva útil 10 mm cobre os 4 mm → consumo 0 → 11.500
+  // 11: 6 mm → 3.000 → 10.500
+  assert.deepEqual(b.projecao.map((d) => [d.consumoM3, d.volumeM3]), [[2500, 9500], [0, 11500], [3000, 10500]]);
+  assert.equal(b.consumoPrevistoDiaM3, 1833);
+  assert.equal(b.chegaNaReservaEm, null);
+  assert.equal(b.horasBombaSugeridas, 9.2);
+  assert.match(b.sugestao, /10 h\/dia de bomba cobrem o consumo previsto de 1\.833 m³\/dia/);
+  // nível baixo e consumo alto: chega na reserva e pede mais bomba
+  const seco = balancoReservatorio(piscinao, [{ data: "2026-02-08", pct: 15 }], [], [{ nome: "Pivô 1", areaHa: 100, eficienciaPct: 80, etcMm: 6, kc: 1.2 }], "2026-02-08", prev.map((d) => ({ ...d, chuvaMm: 0 })));
+  assert.equal(seco.chegaNaReservaEm, "2026-02-09");
+  assert.ok(seco.horasBombaSugeridas! > 10);
+  assert.match(seco.sugestao, /a bomba precisa de .* h\/dia \(hoje são 10 h\)[\s\S]*chega na reserva em 09\/02/);
+});

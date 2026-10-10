@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.11-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.11-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -499,23 +499,36 @@ V.hoje = function () {
   h += '<div class="cards">' + pivos.map(cardPivo).join('') + '</div>';
   return h || '<div class="card vazio">Nenhum pivô ativo.</div>';
 };
-/** Cartão do piscinão: quanto tem, quanto entra, quanto os pivôs puxam e pra quantos dias dá. */
+/** Painel do piscinão: volume atual, movimento do dia, consumo previsto com a previsão do tempo e sugestão. */
 function cardReservatorio(b) {
   const st = b.semaforo || 'sem';
   const temVol = b.volumeM3 != null;
   const pct = temVol ? Math.max(0, Math.min(100, b.pct)) : 0;
   const reserva = b.volumeUtilM3 > 0 ? Math.min(100, (b.reservaMinM3 / b.volumeUtilM3) * 100) : 0;
-  const dias = b.diasAutonomia != null ? '<b>' + br(b.diasAutonomia, 1) + '</b><em>dias de irrigação</em>' : temVol ? '<b>cobre</b><em>' + (b.diasAteEncher != null ? 'enche em ' + br(b.diasAteEncher, 1) + ' d' : 'reposição ≥ consumo') + '</em>' : '<b>—</b><em>sem nível</em>';
+  const saldo = b.saldoHojeM3 || 0;
+  const dias = b.diasAutonomia != null ? '<b>' + br(b.diasAutonomia, 1) + '</b><em>dias de irrigação</em>' : temVol ? '<b>cobre</b><em>' + (b.diasAteEncher != null ? 'enche em ' + br(b.diasAteEncher, 1) + ' d' : 'reposição ≥ consumo') + '</em>' : '<b>—</b><em>lance o nível</em>';
+  const proj = b.projecao || [];
+  const maxVol = Math.max(b.volumeUtilM3 || 0, 1);
+  const grafico = proj.length ? '<div class="res-proj"><small>Próximos dias (previsão do tempo)</small><div class="res-barras">' + proj.map((d) => {
+    const hv = d.volumeM3 != null ? Math.max(2, (d.volumeM3 / maxVol) * 100) : 0;
+    const ruim = d.volumeM3 != null && d.volumeM3 <= b.reservaMinM3;
+    return '<div class="res-dia" title="' + esc(dataBr(d.data)) + ': sai ' + br(d.consumoM3, 0) + ' m³, entra ' + br(d.entradaM3, 0) + ' m³' + (d.chuvaMm ? ', chuva ' + br(d.chuvaMm, 1) + ' mm' : '') + '"><div class="res-col">' + (d.volumeM3 != null ? '<span class="' + (ruim ? 'ruim' : '') + '" style="height:' + hv.toFixed(0) + '%"></span>' : '') + '</div>' +
+      '<b>−' + br(d.consumoM3 / 1000, 1) + '</b><small>' + esc(dataBr(d.data).slice(0, 5)) + (d.chuvaMm >= 2 ? ' ' + ico('chuva') : '') + '</small></div>';
+  }).join('') + '</div><small class="muted">Barras: volume previsto ao fim do dia (mil m³ de consumo embaixo). Consumo = Kc × ET₀ prevista, descontada a chuva prevista.' + (b.chegaNaReservaEm ? ' <b style="color:var(--red)">Chega na reserva em ' + esc(dataBr(b.chegaNaReservaEm)) + '.</b>' : '') + '</small></div>' : '';
   return '<div class="card reservatorio sem-' + st + '"><div class="row"><div><h2>' + ico('agua') + ' ' + esc(b.nome) + '</h2><div class="tags"><span class="tag">piscinão</span>' +
     (b.pivos && b.pivos.length ? '<span class="tag">' + esc(b.pivos.join(', ')) + '</span>' : '<span class="tag">sem pivô ligado</span>') + '</div></div>' +
     '<span class="badge ' + (st === 'ruim' ? 'irrigar' : st === 'atencao' ? 'atencao' : st === 'bom' ? 'nao' : 'sem') + '">' + (temVol ? br(b.pct, 0) + '%' : 'sem nível') + '</span></div>' +
     '<div class="bar agua" title="Volume em relação ao útil"><span style="width:' + pct.toFixed(1) + '%"></span>' + (reserva > 0 ? '<i style="left:' + reserva.toFixed(1) + '%"></i>' : '') + '</div>' +
-    '<div class="bar-rotulos"><span>' + (temVol ? '<b>' + br(b.volumeM3, 0) + ' m³</b>' : 'nível não lançado') + '</span><span>útil ' + br(b.volumeUtilM3, 0) + ' m³</span></div>' +
-    '<div class="kpis"><div><small>Entra (bomba)</small><b>' + br(b.reposicaoDiaM3, 0) + '</b><em>m³/dia</em></div><div><small>Pivôs puxam</small><b>' + br(b.demandaDiaM3, 0) + '</b><em>m³/dia</em></div>' +
-    '<div><small>Pedem hoje</small><b>' + br(b.pedidoHojeM3, 0) + '</b><em>m³' + (b.cobreHoje === false ? ' · faltam ' + br(b.faltaHojeM3, 0) : '') + '</em></div><div><small>Água pra</small>' + dias + '</div></div>' +
+    '<div class="bar-rotulos"><span>' + (temVol ? 'Volume atual <b>' + br(b.volumeM3, 0) + ' m³</b>' : 'nível não lançado') + '</span><span>útil ' + br(b.volumeUtilM3, 0) + ' m³' + (b.reservaMinM3 ? ' · reserva ' + br(b.reservaMinM3, 0) : '') + '</span></div>' +
+    '<div class="kpis res-dia-kpis"><div><small>Saída hoje</small><b>' + br(b.saidaHojeM3, 0) + '</b><em>m³ irrigados</em></div><div><small>Entrada hoje</small><b>' + br(b.entradaHojeM3, 0) + '</b><em>m³ da bomba</em></div>' +
+    '<div class="' + (saldo < 0 ? 'neg' : 'pos') + '"><small>Saldo do dia</small><b>' + (saldo >= 0 ? '+' : '−') + br(Math.abs(saldo), 0) + '</b><em>m³</em></div><div><small>Água pra</small>' + dias + '</div></div>' +
+    '<div class="kpis"><div><small>Pivôs puxam</small><b>' + br(b.demandaDiaM3, 0) + '</b><em>m³/dia (ETc de hoje)</em></div><div><small>Consumo previsto</small><b>' + (b.consumoPrevistoDiaM3 != null ? br(b.consumoPrevistoDiaM3, 0) : '—') + '</b><em>m³/dia, próx. ' + (proj.length || 0) + ' d</em></div>' +
+    '<div><small>Pedem hoje</small><b>' + br(b.pedidoHojeM3, 0) + '</b><em>m³' + (b.cobreHoje === false ? ' · faltam ' + br(b.faltaHojeM3, 0) : '') + '</em></div><div><small>Bomba sugerida</small><b>' + (b.horasBombaSugeridas != null ? br(b.horasBombaSugeridas, 1) + ' h' : '—') + '</b><em>por dia</em></div></div>' +
+    grafico +
+    (b.sugestao ? '<p class="sugestao-res">' + ico('ok') + ' ' + esc(b.sugestao) + '</p>' : '') +
     (b.alertas && b.alertas.length ? '<ul class="alertas">' + b.alertas.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
     '<p class="muted" style="margin-top:8px">' + (b.nivel ? 'Nível <b>' + br(b.nivel.pct, 0) + '%</b> lançado ' + esc(dataBr(b.nivel.data)) + (b.diasDesdeNivel ? ' (há ' + b.diasDesdeNivel + ' d: + ' + br(b.reposicaoDesdeNivelM3, 0) + ' m³ de bomba − ' + br(b.retiradoDesdeNivelM3, 0) + ' m³ puxados)' : '') : 'Lance o nível em Lançar → Nível do piscinão.') +
-    (b.reservaMinM3 ? ' · reserva ' + br(b.reservaMinM3, 0) + ' m³' : '') + ' · <a href="#/lancar" data-act="lancar-nivel">lançar nível</a></p></div>';
+    ' · <a href="#/lancar" data-act="lancar-nivel">lançar nível</a></p></div>';
 }
 /* ================= CLIMA (estação agora, previsão, histórico do tempo) ================= */
 let CLIMA = null;

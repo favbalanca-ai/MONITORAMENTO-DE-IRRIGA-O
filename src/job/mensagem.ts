@@ -93,6 +93,9 @@ export function linhasReservatorio(b: BalancoReservatorio): string[] {
     if (b.diasAutonomia !== null) l.push(`   💧 Água pra *${n1(b.diasAutonomia)} dias* de irrigação com a reposição (reserva de ${n0(b.reservaMinM3)} m³ fora)`);
     else l.push(`   💧 A reposição cobre o consumo${b.diasAteEncher !== null ? ` · enche em ${n1(b.diasAteEncher)} dias` : " · cheio"}`);
   }
+  l.push(`   Hoje: saiu ${n0(b.saidaHojeM3)} m³ · entrou ${n0(b.entradaHojeM3)} m³ · saldo ${b.saldoHojeM3 >= 0 ? "+" : "−"}${n0(Math.abs(b.saldoHojeM3))} m³`);
+  if (b.projecao.length) l.push(`   Previsão: ${b.projecao.slice(0, 5).map((d) => `${br(d.data)} −${n0(d.consumoM3)}${d.volumeM3 !== null ? ` (${n0(d.volumeM3)} m³)` : ""}`).join(" · ")}${b.chegaNaReservaEm ? ` · ⚠️ reserva em ${br(b.chegaNaReservaEm)}` : ""}`);
+  if (b.sugestao) l.push(`   💡 ${b.sugestao}`);
   for (const a of b.alertas.filter((a) => !/^Falta água|^Água pra/.test(a))) l.push(`   ⚠️ ${a}`);
   return l;
 }

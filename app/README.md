@@ -14,7 +14,9 @@ feitos sem internet.
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
   cinza sem dados. Botão **PDF** baixa o relatório do dia (o mesmo que vai por e-mail, mais o balanço de 30 dias
   de cada pivô). Com piscinão cadastrado (aba RESERVATORIOS), um cartão mostra o volume estimado, o que entra pela bomba,
-  o que os pivôs puxam, se cobre a irrigação de hoje e pra quantos dias de irrigação dá. Tema claro por padrão; em Ajustes dá pra escolher escuro ou automático (segue o aparelho); no computador os pivôs ficam em duas colunas.
+  o que os pivôs puxam, se cobre a irrigação de hoje e pra quantos dias de irrigação dá. É um painel: saída, entrada e
+  saldo do dia, consumo previsto pelos próximos dias (Kc × ET₀ prevista, menos a chuva prevista) com barras do volume
+  dia a dia, dia em que chega na reserva e horas de bomba sugeridas pra segurar o nível. Tema claro por padrão; em Ajustes dá pra escolher escuro ou automático (segue o aparelho); no computador os pivôs ficam em duas colunas.
 - **Lançar** — irrigação pelo **percentímetro usado** (a lâmina sai do equipamento cadastrado) ou pela lâmina em mm,
   umidade do solo (raiz, camada profunda, tensão) ou **nível do piscinão** (% do volume útil, medido no fim do dia). Sem sinal, o
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos

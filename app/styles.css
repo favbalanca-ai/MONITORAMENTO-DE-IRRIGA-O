@@ -327,3 +327,17 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .card.reservatorio .bar.agua>span{background:#2e7d8c}
 .card.reservatorio .bar.agua>i{background:#c62828;opacity:.6}
 .card.reservatorio .kpis em{display:block}
+
+.res-dia-kpis div.neg b{color:var(--red)}
+.res-dia-kpis div.pos b{color:var(--green,#2e7d32)}
+.res-proj{margin-top:10px}
+.res-proj>small{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.res-barras{display:flex;gap:6px;align-items:flex-end}
+.res-dia{flex:1;min-width:0;text-align:center;font-size:11px}
+.res-dia .res-col{height:56px;background:#eef2f4;border-radius:6px;position:relative;overflow:hidden}
+.res-dia .res-col span{position:absolute;left:0;right:0;bottom:0;background:#2e7d8c;border-radius:6px 6px 0 0}
+.res-dia .res-col span.ruim{background:#c62828}
+.res-dia b{display:block;margin-top:3px;color:var(--ink)}
+.res-dia small{color:var(--muted);display:block}
+.res-dia .svg{width:11px;height:11px;vertical-align:-1px}
+.sugestao-res{margin-top:10px;background:var(--teal-soft,#e6f3f5);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}

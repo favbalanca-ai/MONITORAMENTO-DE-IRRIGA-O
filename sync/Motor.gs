@@ -1193,8 +1193,8 @@ var Motor = (function () {
       const ef = p.eficienciaPct > 0 ? p.eficienciaPct / 100 : 1;
       return (liquidaMm / ef) * p.areaHa * 10;
   }
-  function balancoReservatorio(r, niveis, retiradas, pivos, dia) {
-      var _a;
+  function balancoReservatorio(r, niveis, retiradas, pivos, dia, previsao = [], chuvaMinimaMm = CHUVA_MINIMA_EFETIVA_MM) {
+      var _a, _b, _c;
       const reposicaoDiaM3 = Math.max(0, r.bombaM3h) * Math.max(0, r.horasBombaDia);
       const ultimo = (_a = niveis.filter((n) => n.data <= dia).sort((a, b) => (a.data < b.data ? -1 : 1)).pop()) !== null && _a !== void 0 ? _a : null;
       let volumeM3 = null, reposicao = 0, retirado = 0, diasDesde = null;
@@ -1216,6 +1216,39 @@ var Motor = (function () {
           diasAutonomia = r1(disponivel / -saldoDia);
       if (volumeM3 !== null && saldoDia > 0 && volumeM3 < r.volumeUtilM3)
           diasAteEncher = r1((r.volumeUtilM3 - volumeM3) / saldoDia);
+      // movimento de hoje
+      const saidaHoje = retiradas.filter((x) => x.data === dia).reduce((t, x) => t + x.m3, 0);
+      const saldoHoje = reposicaoDiaM3 - saidaHoje;
+      // próximos dias: consumo = Kc × ET₀ prevista (menos a chuva útil prevista), bruto; volume dia a dia
+      const prox = previsao.filter((d) => d.data > dia && d.et0Mm !== null && d.et0Mm !== undefined).slice(0, 7);
+      const projecao = [];
+      let vol = volumeM3, chegaNaReservaEm = null;
+      for (const d of prox) {
+          const chuva = chuvaEfetiva((_b = d.chuvaMm) !== null && _b !== void 0 ? _b : 0, chuvaMinimaMm);
+          const consumo = pivos.reduce((t, p) => { var _a; return t + retiradaM3(p, Math.max(0, ((_a = p.kc) !== null && _a !== void 0 ? _a : 0) * d.et0Mm - chuva)); }, 0);
+          if (vol !== null) {
+              vol = Math.min(r.volumeUtilM3, Math.max(0, vol + reposicaoDiaM3 - consumo));
+              if (chegaNaReservaEm === null && vol <= r.reservaMinM3)
+                  chegaNaReservaEm = d.data;
+          }
+          projecao.push({ data: d.data, consumoM3: r0(consumo), entradaM3: r0(reposicaoDiaM3), volumeM3: vol === null ? null : r0(vol), chuvaMm: (_c = d.chuvaMm) !== null && _c !== void 0 ? _c : 0 });
+      }
+      const consumoPrevistoDiaM3 = projecao.length ? r0(projecao.reduce((t, d) => t + d.consumoM3, 0) / projecao.length) : null;
+      const base = consumoPrevistoDiaM3 !== null && consumoPrevistoDiaM3 !== void 0 ? consumoPrevistoDiaM3 : demandaDiaM3;
+      const horasBombaSugeridas = r.bombaM3h > 0 ? Math.min(24, r1(base / r.bombaM3h)) : null;
+      let sugestao = "";
+      if (!pivos.length)
+          sugestao = "Nenhum pivô ligado a este reservatório: escolha-o em Fonte de água no cadastro do pivô.";
+      else if (r.bombaM3h <= 0)
+          sugestao = `Sem bomba de reposição cadastrada: o piscinão só esvazia (${n0_(base)} m³/dia previstos).`;
+      else if (horasBombaSugeridas !== null && horasBombaSugeridas > r.horasBombaDia + 0.5)
+          sugestao = `Pra segurar o nível, a bomba precisa de ${n1_(horasBombaSugeridas)} h/dia (hoje são ${n1_(r.horasBombaDia)} h): consumo previsto de ${n0_(base)} m³/dia contra ${n0_(reposicaoDiaM3)} m³/dia de entrada.`;
+      else if (horasBombaSugeridas !== null && horasBombaSugeridas < r.horasBombaDia - 1 && volumeM3 !== null && volumeM3 >= r.volumeUtilM3 * 0.95)
+          sugestao = `Piscinão cheio e consumo previsto de ${n0_(base)} m³/dia: ${n1_(horasBombaSugeridas)} h/dia de bomba bastam (economia de energia).`;
+      else if (horasBombaSugeridas !== null)
+          sugestao = `${n1_(r.horasBombaDia)} h/dia de bomba cobrem o consumo previsto de ${n0_(base)} m³/dia.`;
+      if (chegaNaReservaEm)
+          sugestao += ` Mantendo assim, chega na reserva em ${chegaNaReservaEm.slice(8, 10)}/${chegaNaReservaEm.slice(5, 7)}.`;
       const alertas = [];
       let semaforo = "bom";
       if (!ultimo) {
@@ -1250,8 +1283,17 @@ var Motor = (function () {
           pivos: pivos.map((p) => p.nome),
           pedidoHojeM3: r0(pedidoHojeM3), cobreHoje, faltaHojeM3: r0(faltaHoje),
           horasParaCobrir: faltaHoje > 0 && r.bombaM3h > 0 ? r1(faltaHoje / r.bombaM3h) : null,
-          diasAutonomia, diasAteEncher, semaforo, alertas,
+          diasAutonomia, diasAteEncher,
+          saidaHojeM3: r0(saidaHoje), entradaHojeM3: r0(reposicaoDiaM3), saldoHojeM3: r0(saldoHoje),
+          projecao, consumoPrevistoDiaM3, chegaNaReservaEm, horasBombaSugeridas, sugestao,
+          semaforo, alertas,
       };
+  }
+  function n1_(x) {
+      return (Math.round(x * 10) / 10).toString().replace(".", ",");
+  }
+  function n0_(x) {
+      return Math.round(x).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
@@ -1526,6 +1568,11 @@ var Motor = (function () {
           else
               l.push(`   💧 A reposição cobre o consumo${b.diasAteEncher !== null ? ` · enche em ${n1(b.diasAteEncher)} dias` : " · cheio"}`);
       }
+      l.push(`   Hoje: saiu ${n0(b.saidaHojeM3)} m³ · entrou ${n0(b.entradaHojeM3)} m³ · saldo ${b.saldoHojeM3 >= 0 ? "+" : "−"}${n0(Math.abs(b.saldoHojeM3))} m³`);
+      if (b.projecao.length)
+          l.push(`   Previsão: ${b.projecao.slice(0, 5).map((d) => `${br(d.data)} −${n0(d.consumoM3)}${d.volumeM3 !== null ? ` (${n0(d.volumeM3)} m³)` : ""}`).join(" · ")}${b.chegaNaReservaEm ? ` · ⚠️ reserva em ${br(b.chegaNaReservaEm)}` : ""}`);
+      if (b.sugestao)
+          l.push(`   💡 ${b.sugestao}`);
       for (const a of b.alertas.filter((a) => !/^Falta água|^Água pra/.test(a)))
           l.push(`   ⚠️ ${a}`);
       return l;
