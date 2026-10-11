@@ -44,6 +44,15 @@ function planilha(): Ambiente {
   return amb;
 }
 
+/** Pedidos de NDVI feitos ao NASA GIBS (stub) — para o teste do mapa. */
+const ndviPedidos: string[] = [];
+/** Os cartões de Hoje ficam recolhidos: abre todos (o toque no cabeçalho) para ler o conteúdo. */
+async function abrirCards(page: Page) {
+  await page.locator(".card.recolhivel").first().waitFor();   // espera os dados chegarem (antes disso não há cartão)
+  const fechados = page.locator(".card.recolhivel:not(.aberto) .card-cab");
+  for (let n = await fechados.count(); n > 0; n = await fechados.count()) await fechados.first().click();
+  await page.waitForFunction(() => !document.querySelector(".card-corpo[hidden]"));
+}
 /** Abre o app num "celular", com o /exec desviado para a planilha simulada. */
 async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; chamadas: string[] }> {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: "block", isMobile: true, hasTouch: true });
@@ -70,6 +79,7 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   });
   const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
+  await ctx.route(/gibs\.earthdata\.nasa\.gov/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
   const page = await ctx.newPage();
   const erros: string[] = [];
   page.on("pageerror", (e) => erros.push(e.message));
@@ -110,6 +120,11 @@ test("primeiro uso: endereço, login e a decisão do dia", async () => {
   await page.fill("#lg-pin", "1234");
   await page.locator("#f-login button[type=submit]").click();
   await page.locator(".badge.irrigar").first().waitFor();
+  // recolhido: só cabeçalho, barra e uma linha-resumo; o toque abre
+  const fechado = await page.locator(".card.pivo").first().innerText();
+  assert.match(fechado, /Percentímetro \d+% · volta/);
+  assert.doesNotMatch(fechado, /PERCENTÍMETRO\s+\d+%/);
+  await abrirCards(page);
   const card = await page.locator(".card.pivo").first().innerText();
   assert.match(card, /Pivô 2/);
   assert.match(card, /Soja\s+R3\s+75 DAS/);
@@ -297,6 +312,7 @@ test("pivôs: culturas com nome, sugestão da Embrapa preenche o solo e a curva 
   const amb = planilha();
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "fabiana", "1234");
+  await abrirCards(page);
   await page.getByText("Detalhes").first().click();
   await page.getByText("Curva de Kc do ciclo").first().click();
   await page.locator("svg[aria-label='Curva de Kc']").first().waitFor();
@@ -414,6 +430,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByRole("button", { name: "Últimas 24 h" }).click();
   await page.getByText("Vento nas últimas 24 h").waitFor();
   await page.getByRole("link", { name: /Hoje/ }).click();
+  await abrirCards(page);
   await page.getByText("Detalhes").first().click();
   await page.getByText(/Sensor de solo 2: 33%/).waitFor();
   // com a chuva mínima de 2 mm o déficit sobe a ~27,6 mm e os 20,5 mm previstos não cobrem: sem aviso de adiar
@@ -425,6 +442,8 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   const s = amb.post({ __login: { login: "jose", pin: "4321" } }).token;
   amb.post({ s, __lancamento: { id: "E2e1", tipo: "irrigacao", pivo: "Pivô 2", data: "2026-02-08", mm: "27" } });
   await page.getByRole("button", { name: /Recalcular/ }).click();
+  await page.getByText(/Próxima irrigação prevista \d\d\/\d\d \(em \d+ d, sem chuva\)/).waitFor();
+  await abrirCards(page);
   await page.getByText(/Próxima irrigação prevista: \d\d\/\d\d \(em \d+ dias?, sem chuva\)/).waitFor();
   await page.getByText("Detalhes").first().click();
   await page.getByText(/Déficit previsto \(sem chuva\):/).waitFor();
@@ -460,6 +479,21 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   await page.locator(".leaflet-interactive").first().waitFor();
   assert.equal(await page.locator(".leaflet-interactive").count(), 2);
   await page.getByText("Pivô 2", { exact: true }).first().waitFor();
+  // NDVI: desligado não pede nada ao GIBS; ligado pede as imagens WMS do composto escolhido
+  assert.equal(await page.locator(".ndvi-ctl").isHidden(), true);
+  ndviPedidos.length = 0;
+  await page.locator(".ndvi-card .chave").click();
+  await page.locator(".ndvi-ctl").waitFor();
+  await page.waitForFunction(() => document.querySelectorAll(".leaflet-tile-pane img").length > 0);
+  await page.waitForTimeout(300);
+  assert.ok(ndviPedidos.length > 0, "pediu tiles do NDVI");
+  assert.match(ndviPedidos[0]!, /gibs\.earthdata\.nasa\.gov\/wms\/epsg3857\/best\/wms\.cgi\?.*MODIS_Terra_L3_NDVI_16Day/i);
+  assert.doesNotMatch(ndviPedidos[0]!, /time=/i);
+  await page.fill("#ndvi-data", "2026-02-05");
+  await page.locator("#ndvi-data").dispatchEvent("change");
+  await page.getByText("Composto de 02/02/2026 a 17/02/2026.").waitFor();
+  await page.waitForTimeout(300);
+  assert.ok(ndviPedidos.some((u) => /time=2026-02-02/i.test(u)), "tiles do período escolhido");
   await page.screenshot({ path: PRINTS + "11_mapa.png", fullPage: true });
 
   // cadastro de um pivô: KML de um desenho só
@@ -490,6 +524,7 @@ test("duas fazendas: seletor no app, talhão com relatório do ciclo, operador v
   assert.equal(await page.locator(".card.sem-ciclo").count(), 0);
   await page.selectOption("#faz-sel", "novo pago");
   await page.locator(".card.sem-ciclo").waitFor();
+  await abrirCards(page);
   const talhao = await page.locator(".card.sem-ciclo").innerText();
   assert.match(talhao, /Talhão 1[\s\S]*Milho[\s\S]*talhão[\s\S]*GRAUS-DIA\s+525/i); // 35 d × (25 − 10)
   assert.match(talhao, /LUZ \(FOTOPERÍODO\)[\s\S]*HORAS DE SOL\s+315/i);
@@ -532,10 +567,15 @@ test("piscinão: cartão na tela Hoje, lançamento de nível e fonte de água no
   const { ctx, page } = await abrir(amb);
   await configurarEEntrar(page, "jose", "4321");
   await page.locator(".card.reservatorio").waitFor();
+  const fechado = await page.locator(".card.reservatorio").innerText();
+  assert.match(fechado, /Hoje: saiu 2\.957 · entrou 2\.000 · saldo −957 m³ · água pra 20,6 d/);
+  assert.doesNotMatch(fechado, /SAÍDA HOJE/);
+  await page.screenshot({ path: PRINTS + "14_piscinao_fechado.png", fullPage: true });
+  await abrirCards(page);
   await page.screenshot({ path: PRINTS + "14_piscinao_hoje.png", fullPage: true });
   const card = await page.locator(".card.reservatorio").innerText();
   // 12.000 + 3 × 2.000 − 5 mm ÷ 0,85 × 50,27 ha × 10 = 2.957 → 15.043 m³ (75 %)
-  assert.match(card, /Piscinão 1[\s\S]*piscinão[\s\S]*Pivô 2[\s\S]*75%[\s\S]*Volume atual 15\.043 m³[\s\S]*útil 20\.000 m³/);
+  assert.match(card, /Piscinão 1[\s\S]*piscinão[\s\S]*Pivô 2[\s\S]*75%[\s\S]*Atual 15\.043 m³[\s\S]*útil 20\.000 · reserva 2\.000 m³/);
   assert.match(card, /SAÍDA HOJE\s+2\.957[\s\S]*ENTRADA HOJE\s+2\.000[\s\S]*SALDO DO DIA\s+−957[\s\S]*ÁGUA PRA[\s\S]*PIVÔS PUXAM[\s\S]*CONSUMO PREVISTO\s+\d/i);
   assert.match(card, /Próximos dias \(previsão do tempo\)[\s\S]*BOMBA SUGERIDA|BOMBA SUGERIDA[\s\S]*Próximos dias \(previsão do tempo\)/);
   assert.ok((await page.locator(".res-dia").count()) >= 3, "barras da projeção");

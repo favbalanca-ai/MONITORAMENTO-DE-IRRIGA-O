@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.11-5';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.12-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -232,6 +232,8 @@ document.addEventListener('change', (ev) => { if (ev.target.id === 'faz-sel') { 
 /* ================= ícones (SVG inline, traço 2px) ================= */
 const ICO = {
   agua: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 14a3 3 0 0 0 3 3"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
+  folha: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 20 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.5 5-7"/>',
   hoje: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13h6M9 17h4"/>',
   lancar: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   historico: '<path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/>',
@@ -499,6 +501,16 @@ V.hoje = function () {
   h += '<div class="cards">' + pivos.map(cardPivo).join('') + '</div>';
   return h || '<div class="card vazio">Nenhum pivô ativo.</div>';
 };
+/** Cartões da tela Hoje ficam recolhidos; o toque no cabeçalho abre. Guarda quais estão abertos. */
+const ABERTOS = new Set(ler('irrigacao_abertos', []));
+function cardAberto(chave) { return ABERTOS.has(chave); }
+function alternarCard(chave) { if (ABERTOS.has(chave)) ABERTOS.delete(chave); else ABERTOS.add(chave); grava('irrigacao_abertos', Array.from(ABERTOS)); }
+/** Monta o cartão recolhível: `cab` sempre visível (com a seta), `corpo` só quando aberto. */
+function cardRecolhivel(cls, chave, cab, corpo) {
+  const ab = cardAberto(chave);
+  return '<div class="card recolhivel ' + cls + (ab ? ' aberto' : '') + '"><div class="card-cab" data-act="abrir-card" data-chave="' + esc(chave) + '" role="button" aria-expanded="' + (ab ? 'true' : 'false') + '">' + cab +
+    '<span class="seta">' + ico('chevron') + '</span></div><div class="card-corpo"' + (ab ? '' : ' hidden') + '>' + corpo + '</div></div>';
+}
 /** Painel do piscinão: volume atual, movimento do dia, consumo previsto com a previsão do tempo e sugestão. */
 function cardReservatorio(b) {
   const st = b.semaforo || 'sem';
@@ -515,12 +527,13 @@ function cardReservatorio(b) {
     return '<div class="res-dia" title="' + esc(dataBr(d.data)) + ': sai ' + br(d.consumoM3, 0) + ' m³, entra ' + br(d.entradaM3, 0) + ' m³' + (d.chuvaMm ? ', chuva ' + br(d.chuvaMm, 1) + ' mm' : '') + '"><div class="res-col">' + (d.volumeM3 != null ? '<span class="' + (ruim ? 'ruim' : '') + '" style="height:' + hv.toFixed(0) + '%"></span>' : '') + '</div>' +
       '<b>−' + br(d.consumoM3 / 1000, 1) + '</b><small>' + esc(dataBr(d.data).slice(0, 5)) + (d.chuvaMm >= 2 ? ' ' + ico('chuva') : '') + '</small></div>';
   }).join('') + '</div><small class="muted">Barras: volume previsto ao fim do dia (mil m³ de consumo embaixo). Consumo = Kc × ET₀ prevista, descontada a chuva prevista.' + (b.chegaNaReservaEm ? ' <b style="color:var(--red)">Chega na reserva em ' + esc(dataBr(b.chegaNaReservaEm)) + '.</b>' : '') + '</small></div>' : '';
-  return '<div class="card reservatorio sem-' + st + '"><div class="row"><div><h2>' + ico('agua') + ' ' + esc(b.nome) + '</h2><div class="tags"><span class="tag">piscinão</span>' +
+  const cab = '<div class="row"><div><h2>' + ico('agua') + ' ' + esc(b.nome) + '</h2><div class="tags"><span class="tag">piscinão</span>' +
     (b.pivos && b.pivos.length ? '<span class="tag">' + esc(b.pivos.join(', ')) + '</span>' : '<span class="tag">sem pivô ligado</span>') + '</div></div>' +
     '<span class="badge ' + (st === 'ruim' ? 'irrigar' : st === 'atencao' ? 'atencao' : st === 'bom' ? 'nao' : 'sem') + '">' + (temVol ? br(b.pct, 0) + '%' : 'sem nível') + '</span></div>' +
     '<div class="bar agua" title="Volume em relação ao útil"><span style="width:' + pct.toFixed(1) + '%"></span>' + (reserva > 0 ? '<i style="left:' + reserva.toFixed(1) + '%"></i>' : '') + '</div>' +
-    '<div class="bar-rotulos"><span>' + (temVol ? 'Volume atual <b>' + br(b.volumeM3, 0) + ' m³</b>' : 'nível não lançado') + '</span><span>útil ' + br(b.volumeUtilM3, 0) + ' m³' + (b.reservaMinM3 ? ' · reserva ' + br(b.reservaMinM3, 0) : '') + '</span></div>' +
-    '<div class="kpis res-dia-kpis"><div><small>Saída hoje</small><b>' + br(b.saidaHojeM3, 0) + '</b><em>m³ irrigados</em></div><div><small>Entrada hoje</small><b>' + br(b.entradaHojeM3, 0) + '</b><em>m³ da bomba</em></div>' +
+    '<div class="bar-rotulos"><span>' + (temVol ? 'Atual <b>' + br(b.volumeM3, 0) + ' m³</b>' : 'nível não lançado') + '</span><span>útil ' + br(b.volumeUtilM3, 0) + (b.reservaMinM3 ? ' · reserva ' + br(b.reservaMinM3, 0) : '') + ' m³</span></div>' +
+    '<p class="linha-resumo">' + (temVol ? 'Hoje: saiu <b>' + br(b.saidaHojeM3, 0) + '</b> · entrou <b>' + br(b.entradaHojeM3, 0) + '</b> · saldo <b class="' + (saldo < 0 ? 'neg' : 'pos') + '">' + (saldo >= 0 ? '+' : '−') + br(Math.abs(saldo), 0) + ' m³</b>' + (b.diasAutonomia != null ? ' · água pra <b>' + br(b.diasAutonomia, 1) + ' d</b>' : '') : 'Lance o nível pra ver volume, saldo e autonomia') + '</p>';
+  const corpo = '<div class="kpis res-dia-kpis"><div><small>Saída hoje</small><b>' + br(b.saidaHojeM3, 0) + '</b><em>m³ irrigados</em></div><div><small>Entrada hoje</small><b>' + br(b.entradaHojeM3, 0) + '</b><em>m³ da bomba</em></div>' +
     '<div class="' + (saldo < 0 ? 'neg' : 'pos') + '"><small>Saldo do dia</small><b>' + (saldo >= 0 ? '+' : '−') + br(Math.abs(saldo), 0) + '</b><em>m³</em></div><div><small>Água pra</small>' + dias + '</div></div>' +
     '<div class="kpis"><div><small>Pivôs puxam</small><b>' + br(b.demandaDiaM3, 0) + '</b><em>m³/dia (ETc de hoje)</em></div><div><small>Consumo previsto</small><b>' + (b.consumoPrevistoDiaM3 != null ? br(b.consumoPrevistoDiaM3, 0) : '—') + '</b><em>m³/dia, próx. ' + (proj.length || 0) + ' d</em></div>' +
     '<div><small>Pedem hoje</small><b>' + br(b.pedidoHojeM3, 0) + '</b><em>m³' + (b.cobreHoje === false ? ' · faltam ' + br(b.faltaHojeM3, 0) : '') + '</em></div><div><small>Bomba sugerida</small><b>' + (b.horasBombaSugeridas != null ? br(b.horasBombaSugeridas, 1) + ' h' : '—') + '</b><em>por dia</em></div></div>' +
@@ -528,7 +541,8 @@ function cardReservatorio(b) {
     (b.sugestao ? '<p class="sugestao-res">' + ico('ok') + ' ' + esc(b.sugestao) + '</p>' : '') +
     (b.alertas && b.alertas.length ? '<ul class="alertas">' + b.alertas.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
     '<p class="muted" style="margin-top:8px">' + (b.nivel ? 'Nível <b>' + br(b.nivel.pct, 0) + '%</b> lançado ' + esc(dataBr(b.nivel.data)) + (b.diasDesdeNivel ? ' (há ' + b.diasDesdeNivel + ' d: + ' + br(b.reposicaoDesdeNivelM3, 0) + ' m³ de bomba − ' + br(b.retiradoDesdeNivelM3, 0) + ' m³ puxados)' : '') : 'Lance o nível em Lançar → Nível do piscinão.') +
-    ' · <a href="#/lancar" data-act="lancar-nivel">lançar nível</a></p></div>';
+    ' · <a href="#/lancar" data-act="lancar-nivel">lançar nível</a></p>';
+  return cardRecolhivel('reservatorio sem-' + st, 'res:' + b.nome, cab, corpo);
 }
 /* ================= CLIMA (estação agora, previsão, histórico do tempo) ================= */
 let CLIMA = null;
@@ -569,10 +583,11 @@ function blocoCiclo(c, compacto) {
 function cardPivo(p) {
   if (!p.decisao) {
     const talhao = p.semBalanco || /^t/i.test(String(p.tipo || ''));
-    return '<div class="card ' + (talhao ? 'sem-ciclo' : 'sem-sem') + '"><div class="row"><div><h2>' + (talhao ? ico('solo') + ' ' : '') + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span>' +
+    const cabT = '<div class="row"><div><h2>' + (talhao ? ico('solo') + ' ' : '') + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span>' +
       (talhao ? '<span class="tag">talhão</span>' : '') + (p.das != null ? '<span class="tag">' + esc(p.das) + ' DAS</span>' : '') + '</div></div>' + (talhao ? '<span class="badge sem">ciclo</span>' : '') + '</div>' +
-      (p.ciclo ? blocoCiclo(p.ciclo) : '<p class="muted">' + esc(p.aviso || 'sem cálculo') + '</p>') +
-      (p.ciclo && !talhao ? '<p class="muted" style="margin-top:6px">' + esc(p.aviso || '') + '</p>' : '') + '</div>';
+      '<p class="linha-resumo">' + (p.ciclo ? 'Graus-dia <b>' + br(p.ciclo.grausDia, 0) + '</b>' + (p.ciclo.fracaoGrausDia != null ? ' (' + br(p.ciclo.fracaoGrausDia * 100, 0) + '% do ciclo)' : '') + ' · sol <b>' + br(p.ciclo.horasSolAcumH || 0, 0) + ' h</b> · chuva <b>' + br(p.ciclo.chuvaMm, 0) + ' mm</b>' + (p.ciclo.faltamDias >= 0 ? ' · faltam <b>' + p.ciclo.faltamDias + ' d</b>' : '') : esc(p.aviso || 'sem cálculo')) + '</p>';
+    const corpoT = (p.ciclo ? blocoCiclo(p.ciclo) : '') + (p.ciclo && !talhao ? '<p class="muted" style="margin-top:6px">' + esc(p.aviso || '') + '</p>' : '');
+    return cardRecolhivel(talhao ? 'sem-ciclo' : 'sem-sem', 'area:' + p.nome, cabT, corpoT);
   }
   const st = semaforo(p);
   const pct = p.afd > 0 ? Math.min(100, (p.deficit / p.afd) * 100) : 0;
@@ -596,12 +611,16 @@ function cardPivo(p) {
   const noDetalhe = alertas.filter((a) => naFrente.indexOf(a) < 0);
   const avisos = (p.avisoChuva ? '<ul class="alertas"><li>' + ico('chuva') + ' ' + esc(p.avisoChuva) + '</li></ul>' : '') +
     (naFrente.length ? '<ul class="alertas">' + naFrente.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '');
-  return '<div class="card pivo sem-' + st + '"><div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span><span class="tag">' + esc(p.estadio) + '</span><span class="tag">' + esc(p.das) + ' DAS' +
+  const linha = p.decisao === 'IRRIGAR'
+    ? (p.rec ? 'Percentímetro <b>' + br(p.rec.percentimetroPct, 0) + '%</b> · volta <b>' + horas(p.rec.tempoVoltaH) + '</b> · ' + br(p.rec.laminaBrutaMm, 1) + ' mm · R$ ' + br(p.rec.custoRs, 0) + (p.rec.ponta ? ' · ligar às <b>' + esc(p.rec.ponta.inicioSugerido) + '</b>' : '') : 'Cadastre o equipamento pra ver percentímetro e custo')
+    : pj && pj.proximaIrrigacao ? 'Próxima irrigação prevista <b>' + esc(dataBr(pj.proximaIrrigacao)) + '</b> (em ' + pj.emDias + ' d, sem chuva)' : pj && pj.dias && pj.dias.length ? 'Sem irrigação prevista nos próximos ' + pj.dias.length + ' dias' : 'ETc ' + br(p.etc, 1) + ' mm · Kc ' + br(p.kc, 2);
+  const cab = '<div class="row"><div><h2>' + esc(p.nome) + '</h2><div class="tags"><span class="tag">' + esc(p.cultura) + '</span><span class="tag">' + esc(p.estadio) + '</span><span class="tag">' + esc(p.das) + ' DAS' +
     (p.emergenciaDias ? ' · ' + esc(p.dae) + ' DAE' : '') + '</span>' + (fim ? '<span class="tag tag-erro">ciclo encerrado</span>' : '') + (p.fonte ? '<span class="tag">' + ico('agua') + ' ' + esc(p.fonte) + '</span>' : '') + '</div></div>' +
     '<span class="badge ' + classeDec(p.decisao) + '">' + SEM_ICONE[st] + ' ' + esc(p.decisao) + '</span></div>' +
     '<div class="bar" title="Déficit em relação à AFD"><span style="width:' + pct.toFixed(1) + '%"></span>' + (marca != null ? '<i style="left:' + marca.toFixed(1) + '%"></i>' : '') + '</div>' +
     '<div class="bar-rotulos"><span>Déficit <b>' + br(p.deficit, 1) + ' mm</b></span>' + (marca != null && marca > 22 && marca < 78 ? '<span class="marca" style="left:' + marca.toFixed(1) + '%">lâmina mín. ' + br(p.laminaMinimaMm, 0) + '</span>' : '') + '<span>AFD ' + br(p.afd, 1) + ' mm</span></div>' +
-    principal + avisos +
+    '<p class="linha-resumo">' + linha + (p.avisoChuva ? ' · ' + ico('chuva') + ' chuva prevista' : '') + (naFrente.length ? ' · ' + ico('alerta') + ' ' + naFrente.length + ' alerta' + (naFrente.length > 1 ? 's' : '') : '') + '</p>';
+  const corpo = principal + avisos +
     '<details class="det"><summary>Detalhes</summary>' +
     (p.sensorSolo ? '<p class="muted" style="margin-top:8px">' + ico('solo') + ' Sensor de solo ' + p.sensorSolo.canal + ': <b>' + br(p.sensorSolo.umidadePct, 0) + '%</b>' + (p.sensorSolo.tempC != null ? ' · ' + br(p.sensorSolo.tempC, 1) + ' °C' : '') + ' <span class="muted">(' + esc(dataBr(p.sensorSolo.quando)) + ' ' + esc(String(p.sensorSolo.quando).slice(11, 16)) + ', só informativo)</span></p>' : '') +
     '<div class="chips"><span class="chip">ETc <b>' + br(p.etc, 1) + '</b> mm</span><span class="chip">Kc <b>' + br(p.kc, 2) + '</b></span><span class="chip">CAD <b>' + br(p.cad, 1) + '</b> mm</span>' +
@@ -610,7 +629,8 @@ function cardPivo(p) {
     (p.ciclo ? '<h3>Ciclo da cultura</h3>' + blocoCiclo(p.ciclo) : '') +
     (noDetalhe.length ? '<ul class="alertas" style="margin-top:8px">' + noDetalhe.map((a) => '<li>' + ico('alerta') + ' ' + esc(a) + '</li>').join('') + '</ul>' : '') +
     (p.curvaKc ? '<details class="kc-det"><summary class="muted">Curva de Kc do ciclo</summary>' + graficoKc(p.curvaKc, p.das, p.emergenciaDias) + '</details>' : '') +
-    (p.diasIncertos ? '<p class="muted" style="margin-top:8px">ℹ️ ' + esc(p.diasIncertos) + ' dia(s) do balanço com clima estimado ou incompleto.</p>' : '') + '</details></div>';
+    (p.diasIncertos ? '<p class="muted" style="margin-top:8px">ℹ️ ' + esc(p.diasIncertos) + ' dia(s) do balanço com clima estimado ou incompleto.</p>' : '') + '</details>';
+  return cardRecolhivel('pivo sem-' + st, 'pivo:' + p.nome, cab, corpo);
 }
 /** Miniatura do mapa na tela Hoje (clica e abre o Mapa). Só quando algum pivô tem posição. */
 function miniMapa() {
@@ -903,12 +923,36 @@ V.mapa = function () {
   if (mapaAtual) { try { mapaAtual.remove(); } catch (e) { /* já foi */ } mapaAtual = null; }
   if (!DADOS || !DADOS.cadastro) return semDados();
   const ps = pivosNoMapa(), com = ps.filter((p) => p.lat != null && p.lon != null), sem = ps.filter((p) => p.lat == null || p.lon == null);
+  const nd = ndviCfg();
   return '<div class="card" style="padding:0;overflow:hidden"><div id="mapa" class="mapa"><div class="loading" style="padding:30px;text-align:center">' + (com.length ? 'Carregando o mapa…' : 'Nenhum pivô com posição ainda.') + '</div></div></div>' +
+    (com.length ? '<div class="card ndvi-card"><div class="row"><div><h2>' + ico('folha') + ' NDVI por satélite</h2><div class="muted">Vigor da vegetação (MODIS/NASA, 250 m, composto de 16 dias). Verde escuro = planta vigorosa; marrom = solo nu ou planta fraca.</div></div>' +
+      '<label class="chave"><input type="checkbox" id="ndvi-on"' + (nd.on ? ' checked' : '') + '><span></span></label></div>' +
+      '<div class="ndvi-ctl"' + (nd.on ? '' : ' hidden') + '><div class="grid2"><div><label for="ndvi-data">Data (vazio = mais recente)</label><input type="date" id="ndvi-data" value="' + esc(nd.data || '') + '" max="' + hojeIso() + '"></div>' +
+      '<div><label for="ndvi-op">Transparência</label><input type="range" id="ndvi-op" min="20" max="100" value="' + esc(nd.op || 75) + '"></div></div>' +
+      '<div class="ndvi-legenda"><span>solo nu</span><i></i><span>vigor alto</span></div><p class="muted" id="ndvi-info">' + esc(ndviPeriodo(nd.data)) + '</p></div></div>' : '') +
     '<div class="card"><div class="legenda">' + Object.keys(SEM_COR).map((k) => '<span style="--c:' + SEM_COR[k] + '">' + SEM_ROTULO[k] + '</span>').join('') + '</div>' +
     '<ul class="lista" style="margin-top:8px">' + com.map((p) => '<li><div class="t"><b style="color:' + SEM_COR[semaforo(p)] + '">●</b> ' + esc(p.nome) + ' <span class="muted">' + esc(p.cultura) + (p.decisao ? ' · déficit ' + br(p.deficit, 1) + ' mm' : '') + '</span></div>' +
       (p.decisao ? '<span class="badge ' + classeDec(p.decisao) + '">' + esc(p.decisao) + '</span>' : '') + '</li>').join('') + '</ul>' +
     (sem.length ? '<p class="muted" style="margin-top:10px">Sem posição: ' + esc(sem.map((p) => p.nome).join(', ')) + '. ' + (ehAdmin() ? 'Em <a href="#/pivos">Pivôs</a>, importe o KMZ ou use "📍 Usar minha posição".' : 'O administrador cadastra pelo KMZ.') + '</p>' : '') + '</div>';
 };
+/* ---- NDVI: camada WMS do NASA GIBS (MODIS Terra, 16 dias, 250 m) ---- */
+const NDVI_KEY = 'irrigacao_ndvi';
+function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75 }); }
+/** O composto de 16 dias começa no dia 1 do ano e anda de 16 em 16: a data escolhida vira o início do período. */
+function ndviPeriodoInicio(dataIso) {
+  if (!dataIso) return '';
+  const d = new Date(dataIso + 'T00:00:00Z'), ano = d.getUTCFullYear(), j = Math.floor((d - Date.UTC(ano, 0, 1)) / 86400000);
+  return new Date(Date.UTC(ano, 0, 1 + Math.floor(j / 16) * 16)).toISOString().slice(0, 10);
+}
+function ndviPeriodo(dataIso) {
+  if (!dataIso) return 'Mostrando o composto mais recente disponível (o satélite demora uns dias pra fechar o período).';
+  const ini = ndviPeriodoInicio(dataIso), fim = new Date(Date.parse(ini + 'T00:00:00Z') + 15 * 86400000).toISOString().slice(0, 10);
+  return 'Composto de ' + dataBrAno(ini) + ' a ' + dataBrAno(fim) + '.';
+}
+function camadaNdvi(cfg) {
+  const ini = ndviPeriodoInicio(cfg.data);
+  return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: (cfg.op || 75) / 100, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
+}
 V.mapa_depois = function () {
   const com = pivosNoMapa().filter((p) => p.lat != null && p.lon != null); if (!com.length) return;
   carregarLeaflet().then(() => {
@@ -917,6 +961,20 @@ V.mapa_depois = function () {
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: 'Imagens: Esri' }).addTo(mapa);
     const ruas = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
     L.control.layers({ 'Satélite': sat, 'Mapa': ruas }, null, { position: 'topright' }).addTo(mapa);
+    // NDVI por cima do satélite, ligado pelo cartão abaixo do mapa
+    let ndvi = null;
+    const aplicarNdvi = () => {
+      const cfg = ndviCfg();
+      if (ndvi) { mapa.removeLayer(ndvi); ndvi = null; }
+      if (cfg.on) { ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); }
+      const ctl = $('.ndvi-ctl'); if (ctl) ctl.hidden = !cfg.on;
+      const info = $('#ndvi-info'); if (info) info.textContent = ndviPeriodo(cfg.data);
+    };
+    const on = $('#ndvi-on'), dt = $('#ndvi-data'), op = $('#ndvi-op');
+    if (on) on.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { on: on.checked })); aplicarNdvi(); });
+    if (dt) dt.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { data: dt.value })); aplicarNdvi(); });
+    if (op) op.addEventListener('input', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { op: Number(op.value) })); if (ndvi) ndvi.setOpacity(Number(op.value) / 100); });
+    aplicarNdvi();
     // o Leaflet só desenha depois de ter uma vista: calcula o enquadramento à mão e aplica antes das formas
     const pontos = [];
     com.forEach((p) => {
@@ -1319,6 +1377,12 @@ document.addEventListener('click', async (ev) => {
   const a = ev.target.closest('[data-act]'); if (!a || a.tagName === 'SELECT') return;
   const act = a.dataset.act;
   if (act === 'tipo') { tipoLanc = a.dataset.tipo; route({ manterRolagem: true }); }
+  else if (act === 'abrir-card') {
+    if (ev.target.closest('a,button,details,summary')) return;
+    alternarCard(a.dataset.chave);
+    const card = a.closest('.card'), corpo = card.querySelector('.card-corpo'), ab = cardAberto(a.dataset.chave);
+    corpo.hidden = !ab; card.classList.toggle('aberto', ab); a.setAttribute('aria-expanded', ab ? 'true' : 'false');
+  }
   else if (act === 'lancar-nivel') { tipoLanc = 'nivel'; }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }

@@ -398,3 +398,27 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .res-dia .res-col{background:var(--line);height:52px}
 .res-dia .res-col span{background:linear-gradient(180deg,#4fb3c4,#1f6f7e)}
 .det>summary{padding:8px 0}
+
+/* cartões recolhíveis (Hoje) */
+.card.recolhivel{padding-top:14px}
+.card-cab{position:relative;cursor:pointer;padding-right:26px;-webkit-tap-highlight-color:transparent}
+.card-cab .seta{position:absolute;right:-4px;top:0;color:var(--muted);transition:transform .2s}
+.card-cab .seta .svg{width:20px;height:20px}
+.card.aberto .card-cab .seta{transform:rotate(180deg)}
+.linha-resumo{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.45}
+.linha-resumo b{color:var(--ink)}
+.linha-resumo b.neg{color:var(--red)}.linha-resumo b.pos{color:var(--green)}
+.linha-resumo .svg{width:13px;height:13px;vertical-align:-2px}
+.card-corpo{margin-top:4px;animation:entra .2s ease both}
+@media (prefers-reduced-motion:reduce){.card-corpo,.card{animation:none}.card-cab .seta{transition:none}}
+/* NDVI */
+.ndvi-card .chave{position:relative;width:46px;height:26px;flex:none}
+.ndvi-card .chave input{opacity:0;width:0;height:0;position:absolute}
+.ndvi-card .chave span{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .2s}
+.ndvi-card .chave span::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+.ndvi-card .chave input:checked+span{background:var(--green)}
+.ndvi-card .chave input:checked+span::after{transform:translateX(20px)}
+.ndvi-card .chave input:focus-visible+span{outline:2px solid var(--teal);outline-offset:2px}
+.ndvi-ctl{margin-top:12px}
+.ndvi-legenda{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-top:10px}
+.ndvi-legenda i{flex:1;height:10px;border-radius:999px;background:linear-gradient(90deg,#8c6239,#d9c08a,#b8d46a,#4f9a3a,#1a5c1a)}

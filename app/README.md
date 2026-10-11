@@ -6,7 +6,8 @@ feitos sem internet.
 
 ## Telas
 
-- **Hoje** — a decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
+- **Hoje** — os cartões (piscinão, pivôs, talhões) ficam **recolhidos**: cabeçalho, barra e uma linha-resumo; o
+  toque abre o resto e o app lembra quais ficaram abertos. A decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
   tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**. Cartão **Próximos dias**
   com a previsão de chuva (mm e % do Open-Meteo, texto do INMET) e aviso quando a chuva prevista cobre o
   déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
@@ -35,7 +36,9 @@ feitos sem internet.
   UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora (previsão horária do
   Open-Meteo) e a melhor hora pra aplicar (janelas boas; senão as de atenção; senão a hora menos ruim).
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
-  abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede).
+  abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede). Chave **NDVI por
+  satélite**: camada de vigor da vegetação do NASA GIBS (MODIS Terra, 250 m, composto de 16 dias), com data
+  (vazio = mais recente) e transparência; gratuita e sem chave.
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).
