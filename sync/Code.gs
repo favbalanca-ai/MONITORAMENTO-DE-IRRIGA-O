@@ -1571,7 +1571,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.11-4";
+var VERSAO_SERVIDOR = "2026.10.12-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1802,6 +1802,7 @@ function dadosApp_(u) {
     exigido: loginExigido_(),
     fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }),
     estacoes: estacoes,
+    copernicus: { instancia: configApp_("COPERNICUS INSTANCE ID").replace(/[^A-Za-z0-9_-]/g, ""), camada: configApp_("COPERNICUS CAMADA NDVI") || "NDVI" },
     resumo: resumo,
     previsao: f0.previsao,
     vento24h: f0.vento24h,
@@ -2266,7 +2267,25 @@ function abaConfigApp_() {
     ]);
     aba.getRange(1, 1, 1, 3).setFontWeight("bold");
   }
+  // chaves novas entram no fim (planilha de versão anterior)
+  var atuais = aba.getLastRow() >= 2 ? aba.getRange(2, 1, aba.getLastRow() - 1, 1).getValues().map(function (l) { return String(l[0]).trim().toUpperCase(); }) : [];
+  CONFIG_APP_PADRAO.forEach(function (c) { if (atuais.indexOf(c[0]) < 0) aba.appendRow(c); });
   return aba;
+}
+
+/** Chaves opcionais da CONFIG APP (criadas vazias no Instalar). */
+var CONFIG_APP_PADRAO = [
+  ["COPERNICUS INSTANCE ID", "", "NDVI Sentinel-2 (10 m) no mapa do app: Instance ID de uma configuração do Sentinel Hub no dataspace.copernicus.eu (conta gratuita). Vazio = só o NDVI MODIS da NASA."],
+  ["COPERNICUS CAMADA NDVI", "NDVI", "Nome (ID) da camada NDVI dentro dessa configuração."],
+];
+
+/** Valor de uma chave da CONFIG APP (texto, "" se não existe). */
+function configApp_(chave) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CONFIG_APP);
+  if (!aba || aba.getLastRow() < 2) return "";
+  var vals = aba.getRange(2, 1, aba.getLastRow() - 1, 2).getValues();
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim().toUpperCase() === chave) return String(vals[i][1] == null ? "" : vals[i][1]).trim();
+  return "";
 }
 
 function loginExigido_() {

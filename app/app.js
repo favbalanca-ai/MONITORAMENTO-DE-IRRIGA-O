@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.12-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.12-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -927,7 +927,10 @@ V.mapa = function () {
   return '<div class="card" style="padding:0;overflow:hidden"><div id="mapa" class="mapa"><div class="loading" style="padding:30px;text-align:center">' + (com.length ? 'Carregando o mapa…' : 'Nenhum pivô com posição ainda.') + '</div></div></div>' +
     (com.length ? '<div class="card ndvi-card"><div class="row"><div><h2>' + ico('folha') + ' NDVI por satélite</h2><div class="muted">Vigor da vegetação (MODIS/NASA, 250 m, composto de 16 dias). Verde escuro = planta vigorosa; marrom = solo nu ou planta fraca.</div></div>' +
       '<label class="chave"><input type="checkbox" id="ndvi-on"' + (nd.on ? ' checked' : '') + '><span></span></label></div>' +
-      '<div class="ndvi-ctl"' + (nd.on ? '' : ' hidden') + '><div class="grid2"><div><label for="ndvi-data">Data (vazio = mais recente)</label><input type="date" id="ndvi-data" value="' + esc(nd.data || '') + '" max="' + hojeIso() + '"></div>' +
+      '<div class="ndvi-ctl"' + (nd.on ? '' : ' hidden') + '>' +
+      (copernicus() ? '<div class="seg seg-sub" role="tablist"><button type="button" data-act="ndvi-fonte" data-fonte="modis" class="' + (fonteNdvi() === 'modis' ? 'on' : '') + '">MODIS 250 m</button><button type="button" data-act="ndvi-fonte" data-fonte="sentinel" class="' + (fonteNdvi() === 'sentinel' ? 'on' : '') + '">Sentinel-2 10 m</button></div>'
+        : '<p class="muted" style="margin:0 0 8px">Quer 10 m de detalhe (Sentinel-2)? Crie uma conta gratuita em dataspace.copernicus.eu e cole o Instance ID na aba CONFIG APP da planilha (' + (ehAdmin() ? 'veja o sync/README' : 'peça ao administrador') + ').</p>') +
+      '<div class="grid2"><div><label for="ndvi-data">Data (vazio = mais recente)</label><input type="date" id="ndvi-data" value="' + esc(nd.data || '') + '" max="' + hojeIso() + '"></div>' +
       '<div><label for="ndvi-op">Transparência</label><input type="range" id="ndvi-op" min="20" max="100" value="' + esc(nd.op || 75) + '"></div></div>' +
       '<div class="ndvi-legenda"><span>solo nu</span><i></i><span>vigor alto</span></div><p class="muted" id="ndvi-info">' + esc(ndviPeriodo(nd.data)) + '</p></div></div>' : '') +
     '<div class="card"><div class="legenda">' + Object.keys(SEM_COR).map((k) => '<span style="--c:' + SEM_COR[k] + '">' + SEM_ROTULO[k] + '</span>').join('') + '</div>' +
@@ -937,21 +940,35 @@ V.mapa = function () {
 };
 /* ---- NDVI: camada WMS do NASA GIBS (MODIS Terra, 16 dias, 250 m) ---- */
 const NDVI_KEY = 'irrigacao_ndvi';
-function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75 }); }
+function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75, fonte: 'modis' }); }
+/** Sentinel-2 (10 m) pelo Sentinel Hub do Copernicus: só com o Instance ID na CONFIG APP da planilha. */
+function copernicus() { const c = DADOS && DADOS.copernicus; return c && c.instancia ? c : null; }
+function fonteNdvi() { const f = ndviCfg().fonte; return f === 'sentinel' && copernicus() ? 'sentinel' : 'modis'; }
 /** O composto de 16 dias começa no dia 1 do ano e anda de 16 em 16: a data escolhida vira o início do período. */
 function ndviPeriodoInicio(dataIso) {
   if (!dataIso) return '';
   const d = new Date(dataIso + 'T00:00:00Z'), ano = d.getUTCFullYear(), j = Math.floor((d - Date.UTC(ano, 0, 1)) / 86400000);
   return new Date(Date.UTC(ano, 0, 1 + Math.floor(j / 16) * 16)).toISOString().slice(0, 10);
 }
+/** Sentinel-2: a imagem mais recente com pouca nuvem nos 30 dias até a data escolhida (ou até hoje). */
+function sentinelJanela(dataIso) {
+  const fim = dataIso || hojeIso(), ini = new Date(Date.parse(fim + 'T00:00:00Z') - 30 * 86400000).toISOString().slice(0, 10);
+  return { ini, fim };
+}
 function ndviPeriodo(dataIso) {
-  if (!dataIso) return 'Mostrando o composto mais recente disponível (o satélite demora uns dias pra fechar o período).';
+  if (fonteNdvi() === 'sentinel') { const j = sentinelJanela(dataIso); return 'Sentinel-2, 10 m: a passagem mais recente com até 40% de nuvem entre ' + dataBrAno(j.ini) + ' e ' + dataBrAno(j.fim) + '.'; }
+  if (!dataIso) return 'MODIS, 250 m: composto de 16 dias mais recente disponível (o satélite demora uns dias pra fechar o período).';
   const ini = ndviPeriodoInicio(dataIso), fim = new Date(Date.parse(ini + 'T00:00:00Z') + 15 * 86400000).toISOString().slice(0, 10);
-  return 'Composto de ' + dataBrAno(ini) + ' a ' + dataBrAno(fim) + '.';
+  return 'MODIS, 250 m: composto de ' + dataBrAno(ini) + ' a ' + dataBrAno(fim) + '.';
 }
 function camadaNdvi(cfg) {
+  const op = (cfg.op || 75) / 100;
+  if (fonteNdvi() === 'sentinel') {
+    const c = copernicus(), j = sentinelJanela(cfg.data);
+    return L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), { layers: c.camada || 'NDVI', format: 'image/png', transparent: true, version: '1.3.0', time: j.ini + '/' + j.fim, maxcc: 40, priority: 'mostRecent', showlogo: false, attribution: 'NDVI: Copernicus Sentinel-2', opacity: op, maxZoom: 18 });
+  }
   const ini = ndviPeriodoInicio(cfg.data);
-  return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: (cfg.op || 75) / 100, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
+  return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: op, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
 }
 V.mapa_depois = function () {
   const com = pivosNoMapa().filter((p) => p.lat != null && p.lon != null); if (!com.length) return;
@@ -970,6 +987,7 @@ V.mapa_depois = function () {
       const ctl = $('.ndvi-ctl'); if (ctl) ctl.hidden = !cfg.on;
       const info = $('#ndvi-info'); if (info) info.textContent = ndviPeriodo(cfg.data);
     };
+    window.aplicarNdvi = aplicarNdvi;
     const on = $('#ndvi-on'), dt = $('#ndvi-data'), op = $('#ndvi-op');
     if (on) on.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { on: on.checked })); aplicarNdvi(); });
     if (dt) dt.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { data: dt.value })); aplicarNdvi(); });
@@ -1384,6 +1402,7 @@ document.addEventListener('click', async (ev) => {
     corpo.hidden = !ab; card.classList.toggle('aberto', ab); a.setAttribute('aria-expanded', ab ? 'true' : 'false');
   }
   else if (act === 'lancar-nivel') { tipoLanc = 'nivel'; }
+  else if (act === 'ndvi-fonte') { grava(NDVI_KEY, Object.assign(ndviCfg(), { fonte: a.dataset.fonte })); $$('[data-act="ndvi-fonte"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
   else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);

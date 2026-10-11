@@ -49,6 +49,11 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
      mm e probabilidade do Open-Meteo (pela latitude/longitude) e o texto do INMET (pelo município). A previsão
      só avisa — não entra no balanço.
+   - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
+     conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
+     configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o
+     **Instance ID** para a célula. Vazio = só o NDVI MODIS da NASA (250 m, sem cadastro). O Instance ID não é senha,
+     mas gasta a cota mensal da sua conta: não publique.
 8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 

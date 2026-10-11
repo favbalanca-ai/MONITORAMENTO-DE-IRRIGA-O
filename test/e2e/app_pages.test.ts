@@ -79,7 +79,7 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   });
   const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
-  await ctx.route(/gibs\.earthdata\.nasa\.gov/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
+  await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
   const page = await ctx.newPage();
   const erros: string[] = [];
   page.on("pageerror", (e) => erros.push(e.message));
@@ -494,7 +494,26 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   await page.getByText("Composto de 02/02/2026 a 17/02/2026.").waitFor();
   await page.waitForTimeout(300);
   assert.ok(ndviPedidos.some((u) => /time=2026-02-02/i.test(u)), "tiles do período escolhido");
+  assert.equal(await page.locator('[data-act="ndvi-fonte"]').count(), 0, "sem Instance ID não há Sentinel-2");
+  await page.getByText(/Quer 10 m de detalhe \(Sentinel-2\)\?/).waitFor();
   await page.screenshot({ path: PRINTS + "11_mapa.png", fullPage: true });
+  // com o Instance ID na CONFIG APP aparece a fonte Sentinel-2 (WMS do Sentinel Hub, janela de 30 dias, até 40 % de nuvem)
+  const cfgAba = amb.aba("CONFIG APP"), chaves = cfgAba.dados.map((l) => String(l[0]));
+  cfgAba.set(chaves.indexOf("COPERNICUS INSTANCE ID") + 1, 2, "a1b2-c3d4");
+  await page.goto(base + "#/sync");
+  const resposta = page.waitForResponse((r) => /acao=dados/.test(r.url()));
+  await page.getByRole("button", { name: /Puxar agora/ }).click();
+  await resposta;
+  await page.goto(base + "#/mapa");
+  await page.locator('[data-act="ndvi-fonte"][data-fonte="sentinel"]').click();
+  await page.getByText(/Sentinel-2, 10 m: a passagem mais recente com até 40% de nuvem entre 06\/01\/2026 e 05\/02\/2026/).waitFor();
+  await page.waitForTimeout(300);
+  const sentinel = ndviPedidos.find((u) => /sh\.dataspace\.copernicus\.eu\/ogc\/wms\/a1b2-c3d4\?/.test(u));
+  assert.ok(sentinel, "pediu tiles ao Sentinel Hub");
+  assert.match(sentinel!, /layers=NDVI/i);
+  assert.match(sentinel!, /time=2026-01-06%2F2026-02-05/i);
+  assert.match(sentinel!, /maxcc=40/i);
+  await page.screenshot({ path: PRINTS + "11_mapa_sentinel.png", fullPage: true });
 
   // cadastro de um pivô: KML de um desenho só
   await page.goto(base + "#/pivos/1");

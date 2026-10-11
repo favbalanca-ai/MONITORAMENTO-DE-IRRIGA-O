@@ -508,3 +508,17 @@ test("cadastro do piscinão pelo app: cria, renomeia (pivô acompanha), não apa
   assert.equal(r.cadastro.reservatorios.length, 0);
   assert.equal(amb.aba("RESERVATORIOS").getLastRow(), 1);
 });
+
+test("CONFIG APP: Instance ID do Copernicus chega ao app (vazio = só MODIS)", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  let d = amb.get({ acao: "dados", s: adm });
+  assert.deepEqual({ ...d.copernicus }, { instancia: "", camada: "NDVI" });
+  const cfg = amb.aba("CONFIG APP");
+  const linhas = cfg.dados.map((l) => String(l[0]));
+  assert.ok(linhas.includes("COPERNICUS INSTANCE ID") && linhas.includes("COPERNICUS CAMADA NDVI"), "chaves criadas no instalar");
+  cfg.set(linhas.indexOf("COPERNICUS INSTANCE ID") + 1, 2, " a1b2-c3d4 ");
+  cfg.set(linhas.indexOf("COPERNICUS CAMADA NDVI") + 1, 2, "NDVI-FAZENDA");
+  d = amb.get({ acao: "dados", s: adm });
+  assert.deepEqual({ ...d.copernicus }, { instancia: "a1b2-c3d4", camada: "NDVI-FAZENDA" });
+});
