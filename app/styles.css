@@ -422,3 +422,52 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .ndvi-ctl{margin-top:12px}
 .ndvi-legenda{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-top:10px}
 .ndvi-legenda i{flex:1;height:10px;border-radius:999px;background:linear-gradient(90deg,#8c6239,#d9c08a,#b8d46a,#4f9a3a,#1a5c1a)}
+
+/* ===== gráfico do histórico ===== */
+:root{--g-def:#e65100;--g-chuva:#1e88e5;--g-irrig:#26a07a;--g-ref:#7b8a90;--g-estresse:#c62828;--g-wash-estresse:rgba(198,40,40,.07);--g-wash-atencao:rgba(240,180,41,.10)}
+:root[data-tema="escuro"]{--g-def:#e0702a;--g-chuva:#3a8fd6;--g-irrig:#1f9e6c;--g-ref:#8fa6ad;--g-estresse:#ff8a80;--g-wash-estresse:rgba(255,138,128,.10);--g-wash-atencao:rgba(240,194,90,.10)}
+@media (prefers-color-scheme:dark){:root[data-tema="auto"]{--g-def:#e0702a;--g-chuva:#3a8fd6;--g-irrig:#1f9e6c;--g-ref:#8fa6ad;--g-estresse:#ff8a80;--g-wash-estresse:rgba(255,138,128,.10);--g-wash-atencao:rgba(240,194,90,.10)}}
+.gfx{position:relative}
+.gfx-svg{display:block;touch-action:pan-y}
+.gfx-svg text{font-family:inherit}
+.gfx-titulo{font-size:11px;font-weight:700;fill:var(--ink);letter-spacing:.2px}
+.gfx-eixo{font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.gfx-grade{stroke:var(--line);stroke-width:1}
+.gfx-zona-estresse{fill:var(--g-wash-estresse)}
+.gfx-zona-atencao{fill:var(--g-wash-atencao)}
+.gfx-afd{fill:none;stroke:var(--g-ref);stroke-width:1.5;stroke-linejoin:round}
+.gfx-lamina{stroke:var(--g-ref);stroke-width:1;stroke-dasharray:3 4}
+.gfx-def-area{fill:var(--g-def);opacity:.10}
+.gfx-def{fill:none;stroke:var(--g-def);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.gfx-etc{fill:none;stroke:var(--g-ref);stroke-width:1.5;stroke-linejoin:round;stroke-dasharray:4 3}
+.gfx-pt{stroke:var(--card);stroke-width:2}
+.gfx-fim{fill:var(--g-def)}
+.gfx-estresse{fill:var(--g-estresse)}
+.gfx-medicao{fill:var(--card);stroke:var(--g-def)}
+.gfx-chuva{fill:var(--g-chuva)}
+.gfx-irrig{fill:var(--g-irrig)}
+.gfx-rotulo{font-size:11px;font-weight:700;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round}
+.gfx-rotulo-ref{font-size:9.5px;fill:var(--muted);paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round}
+.gfx-cross{display:none}.gfx-cross.on{display:block}
+.gfx-cross line{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 3;opacity:.6}
+.gfx-cross-pt{fill:var(--g-def);stroke:var(--card);stroke-width:2}
+.gfx-hit{cursor:crosshair}
+.gfx-tip{position:absolute;top:22px;max-width:230px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 20px rgba(20,50,60,.16);padding:8px 10px;font-size:12px;pointer-events:none;z-index:2}
+.gfx-tip-cab{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;color:var(--ink)}
+.gfx-tip-cab .badge{padding:2px 7px;font-size:10px}
+.gfx-tip-l{display:flex;align-items:center;gap:7px;line-height:1.5}
+.gfx-tip-l i{width:12px;height:3px;border-radius:2px;background:var(--c,transparent);flex:none}
+.gfx-tip-l b{color:var(--ink);font-variant-numeric:tabular-nums;min-width:58px}
+.gfx-tip-l span{color:var(--muted)}
+.gfx-tip-l.ruim b{color:var(--red)}
+.gfx-tip-l.ref b{font-weight:600;color:var(--text)}
+.gfx-legenda{margin-top:8px;gap:6px 14px}
+.gfx-legenda span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.gfx-legenda span::before{content:"";display:inline-block}
+.gfx-legenda .lk::before{width:16px;height:2px;background:var(--c,var(--g-ref));border-radius:2px}
+.gfx-legenda .lk-lam::before{background:repeating-linear-gradient(90deg,var(--g-ref) 0 3px,transparent 3px 6px);height:1px}
+.gfx-legenda .lk-etc::before{background:repeating-linear-gradient(90deg,var(--g-ref) 0 4px,transparent 4px 7px)}
+.gfx-legenda .lq::before{width:10px;height:10px;border-radius:3px;background:var(--c)}
+.gfx-legenda .lp::before{width:8px;height:8px;border-radius:50%}
+.gfx-legenda .lp-estresse::before{background:var(--g-estresse)}
+.gfx-legenda .lp-medicao::before{background:var(--card);border:2px solid var(--g-def);width:6px;height:6px}

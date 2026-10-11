@@ -23,8 +23,10 @@ feitos sem internet.
   lançamento fica **na fila** e sobe sozinho quando a internet volta (reenviar nunca duplica). Lista dos
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — resumo do período (consumo ETc, chuva útil, irrigação em mm e m³, déficit e tendência, dias
-  pedindo irrigação, dias em estresse, cobertura do consumo), gráfico de déficit/AFD/lâmina mínima/chuva/irrigação
-  com os dias de estresse em vermelho (15 a 120 dias), tabela com % da AFD e "Mais colunas" (DAS, estádio, Kc,
+  pedindo irrigação, dias em estresse, cobertura do consumo), gráfico em dois painéis com o mesmo eixo de datas
+  (15 a 120 dias): em cima o déficit com as faixas de atenção (entre a lâmina mínima e a AFD) e estresse (acima da
+  AFD), dias em estresse e medições marcados e o valor de hoje; embaixo chuva e irrigação em colunas e o consumo
+  (ETc) em linha. Tocar ou passar o dedo mostra todos os números daquele dia (crosshair + balão), tabela com % da AFD e "Mais colunas" (DAS, estádio, Kc,
   ET₀, raiz, CAD) e **Baixar CSV**.
 - **Clima** — cartão **Estação agora**: última leitura com sensação, orvalho, vento e rajada (bússola), UV, radiação,
   chuva de hoje e taxa, pressão com tendência de 3 h, raios e sensores de solo (o que a estação mandar). Avisos

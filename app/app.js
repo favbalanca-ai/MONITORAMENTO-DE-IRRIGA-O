@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.12-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.12-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -781,7 +781,7 @@ V.historico = function () {
     cardCicloHist(piv) +
     '<div id="resumo-hist">' + (HIST && HIST.pivo === piv ? resumoHist(HIST) : '') + '</div>' +
     '<div class="card"><div id="grafico">' + (HIST && HIST.pivo === piv ? grafico(HIST) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
-    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Déficit</span><span class="l" style="--c:var(--afd)">AFD (limite de estresse)</span><span class="l" style="--c:var(--muted)">Lâmina mínima</span><span style="--c:var(--chuva)">Chuva</span><span style="--c:var(--irrig)">Irrigação</span><span style="--c:var(--red)">Dia em estresse</span></div></div>' +
+    '</div>' +
     '<div class="card" id="tab-hist">' + (HIST && HIST.pivo === piv ? tabelaHist(HIST) : '') + '</div>';
 };
 /** Cartão do ciclo da cultura (do plantio até hoje) da área escolhida no Histórico. */
@@ -820,7 +820,14 @@ function csvHist(h) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'balanco_' + h.pivo.replace(/[^\w]+/g, '_') + '_' + h.linhas[0].data + '_' + h.linhas[h.linhas.length - 1].data + '.csv';
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
-V.historico_depois = function () { carregarHist(); };
+V.historico_depois = function () { ligarHoverGrafico(); carregarHist(); };
+// virou o celular ou mudou o tamanho: redesenha o gráfico na largura nova
+let redesenhoHist = null;
+window.addEventListener('resize', () => {
+  if (!HIST || !$('#grafico') || !GFX) return;
+  clearTimeout(redesenhoHist);
+  redesenhoHist = setTimeout(() => { if (HIST && $('#grafico') && Math.abs(($('#grafico').clientWidth || 0) - GFX.W) > 20) { $('#grafico').innerHTML = grafico(HIST); ligarHoverGrafico(); } }, 150);
+});
 async function carregarHist() {
   const sel = $('#h-pivo'); if (!sel || !sel.value) return;
   const pref = { pivo: sel.value, dias: Number($('#h-dias').value) }; grava(HIST_KEY, pref);
@@ -828,33 +835,113 @@ async function carregarHist() {
     const r = await chamar('GET', { acao: 'historico', pivo: pref.pivo, dias: pref.dias, fazenda: chaveAtual() });
     if (!r || !r.ok) throw new Error((r && r.erro) || 'sem resposta');
     HIST = r.historico;
-    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); }
+    if ($('#grafico')) { $('#grafico').innerHTML = grafico(HIST); ligarHoverGrafico(); $('#tab-hist').innerHTML = tabelaHist(HIST); $('#resumo-hist').innerHTML = resumoHist(HIST); }
   } catch (e) { if ($('#grafico')) $('#grafico').innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 }
+/* ---- gráfico do histórico: dois painéis com o mesmo eixo de datas ---- */
+let GFX = null;   // geometria do último gráfico (pra crosshair e tooltip)
 function grafico(h) {
   const ls = h.linhas; if (!ls.length) return '<div class="vazio">Sem dados para este pivô.</div>';
-  const W = 640, H = 280, mE = 38, mD = 10, mT = 10, mB = 28, w = W - mE - mD, alt = H - mT - mB;
-  let maxV = 5; ls.forEach((l) => { maxV = Math.max(maxV, l.deficit || 0, l.afd || 0, l.chuva || 0, l.irrigacao || 0); }); maxV = Math.ceil(maxV / 10) * 10;
-  const x = (i) => mE + (ls.length === 1 ? w / 2 : (i * w) / (ls.length - 1));
-  const y = (v) => mT + alt - (Math.min(v, maxV) / maxV) * alt;
-  const bw = Math.max(2, Math.min(14, (w / ls.length) * 0.35));
-  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Gráfico do balanço hídrico">';
-  for (let g = 0; g <= 4; g++) { const v = (maxV * g) / 4, yy = y(v); s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + yy + '" y2="' + yy + '" stroke="var(--line)"/><text x="' + (mE - 6) + '" y="' + (yy + 4) + '" text-anchor="end">' + br(v, 0) + '</text>'; }
+  // largura real do cartão: no celular o gráfico ocupa a tela toda com texto legível, no computador fica mais largo
+  const el = $('#grafico'), W = Math.max(300, Math.round(el && el.clientWidth ? el.clientWidth : 640)), mE = 38, mD = 12, w = W - mE - mD;
+  const T = { y0: 26, alt: W < 480 ? 150 : 170 }, B = { y0: T.y0 + T.alt + 46, alt: W < 480 ? 78 : 90 }, H = B.y0 + B.alt + 26;
+  const n = ls.length;
+  const x = (i) => mE + (n === 1 ? w / 2 : (i * w) / (n - 1));
+  const passoX = n > 1 ? w / (n - 1) : w;
+  // escalas: déficit/AFD em cima, entradas e consumo embaixo (eixos separados, cada um com sua unidade)
+  const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1)))), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
+  let maxT = 10; ls.forEach((l) => { maxT = Math.max(maxT, l.deficit || 0, l.afd || 0); }); maxT = nice(maxT * 1.08);
+  let maxB = 5; ls.forEach((l) => { maxB = Math.max(maxB, (l.chuva || 0) + (l.irrigacao || 0), l.etc || 0); }); maxB = nice(maxB * 1.1);
+  const yT = (v) => T.y0 + T.alt - (Math.max(0, Math.min(v, maxT)) / maxT) * T.alt;
+  const yB = (v) => B.y0 + B.alt - (Math.max(0, Math.min(v, maxB)) / maxB) * B.alt;
+  const lam = h.laminaMinimaMm != null ? h.laminaMinimaMm : null;
+  const f1 = (v) => v.toFixed(1);
+  let s = '<svg class="gfx-svg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Gráfico do balanço hídrico: déficit, limites e água que entrou">';
+  // títulos dos painéis
+  s += '<text class="gfx-titulo" x="' + mE + '" y="14">Déficit de água no solo (mm)</text>';
+  s += '<text class="gfx-titulo" x="' + mE + '" y="' + (B.y0 - 12) + '">' + (W < 480 ? 'Chuva, irrigação e consumo (mm/dia)' : 'Água que entrou por dia (mm) e consumo da planta (ETc)') + '</text>';
+  // faixas do painel de cima: atenção (entre a lâmina mínima e a AFD) e estresse (acima da AFD)
+  const topo = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(l.afd || 0)));
+  if (n > 1) {
+    s += '<path class="gfx-zona-estresse" d="M' + f1(mE) + ' ' + f1(T.y0) + ' L' + f1(W - mD) + ' ' + f1(T.y0) + ' L' + topo.slice().reverse().join(' L') + ' Z"/>';
+    if (lam != null) s += '<path class="gfx-zona-atencao" d="M' + topo.join(' L') + ' L' + f1(x(n - 1)) + ' ' + f1(yT(lam)) + ' L' + f1(x(0)) + ' ' + f1(yT(lam)) + ' Z"/>';
+  }
+  // grades (hairline) e eixos
+  const grade = (P, maxV, yf, casas) => { for (let g = 0; g <= 4; g++) { const v = (maxV * g) / 4, yy = yf(v); s += '<line class="gfx-grade" x1="' + mE + '" x2="' + (W - mD) + '" y1="' + f1(yy) + '" y2="' + f1(yy) + '"/><text class="gfx-eixo" x="' + (mE - 6) + '" y="' + f1(yy + 3.5) + '" text-anchor="end">' + br(v, casas) + '</text>'; } };
+  grade(T, maxT, yT, 0); grade(B, maxB, yB, 0);
+  // linhas de referência
+  s += '<path class="gfx-afd" d="M' + topo.join(' L') + '"/>';
+  if (lam != null) s += '<line class="gfx-lamina" x1="' + mE + '" x2="' + (W - mD) + '" y1="' + f1(yT(lam)) + '" y2="' + f1(yT(lam)) + '"/>';
+  // déficit: área (wash) + linha
+  const pd = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(l.deficit || 0)));
+  s += '<path class="gfx-def-area" d="M' + f1(x(0)) + ' ' + f1(T.y0 + T.alt) + ' L' + pd.join(' L') + ' L' + f1(x(n - 1)) + ' ' + f1(T.y0 + T.alt) + ' Z"/>';
+  s += '<path class="gfx-def" d="M' + pd.join(' L') + '"/>';
+  // marcas só onde interessa: estresse, medição e o último dia (com o valor)
   ls.forEach((l, i) => {
-    if (l.chuva > 0) s += '<rect x="' + (x(i) - bw) + '" y="' + y(l.chuva) + '" width="' + bw + '" height="' + (mT + alt - y(l.chuva)) + '" fill="var(--chuva)" rx="1"><title>' + dataBr(l.data) + ': chuva ' + br(l.chuva, 1) + ' mm</title></rect>';
-    if (l.irrigacao > 0) s += '<rect x="' + x(i) + '" y="' + y(l.irrigacao) + '" width="' + bw + '" height="' + (mT + alt - y(l.irrigacao)) + '" fill="var(--irrig)" rx="1"><title>' + dataBr(l.data) + ': irrigação ' + br(l.irrigacao, 1) + ' mm</title></rect>';
+    const estresse = l.afd > 0 && l.deficit >= l.afd, ult = i === n - 1;
+    if (estresse) s += '<circle class="gfx-pt gfx-estresse" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
+    if (l.medicao) s += '<circle class="gfx-pt gfx-medicao" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
+    if (ult && !estresse && !l.medicao) s += '<circle class="gfx-pt gfx-fim" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
   });
-  const linha = (campo) => ls.map((l, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(l[campo] || 0).toFixed(1)).join(' ');
-  s += '<path d="' + linha('afd') + '" fill="none" stroke="var(--afd)" stroke-width="2" stroke-dasharray="6 4"/>';
-  if (h.laminaMinimaMm != null) s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y(h.laminaMinimaMm) + '" y2="' + y(h.laminaMinimaMm) + '" stroke="var(--muted)" stroke-dasharray="2 4"/>';
-  s += '<path d="' + linha('deficit') + '" fill="none" stroke="var(--deficit)" stroke-width="2.5" stroke-linejoin="round"/>';
-  ls.forEach((l, i) => { const estresse = l.afd > 0 && l.deficit >= l.afd; s += '<circle cx="' + x(i) + '" cy="' + y(l.deficit || 0) + '" r="' + (l.medicao ? 4.5 : estresse ? 4 : 2.5) + '" fill="' + (l.medicao ? '#fff' : estresse ? 'var(--red)' : 'var(--deficit)') + '" stroke="' + (estresse ? 'var(--red)' : 'var(--deficit)') + '" stroke-width="2"><title>' + dataBr(l.data) + ': déficit ' + br(l.deficit, 1) + ' mm · ' + esc(l.decisao) + (estresse ? ' · ESTRESSE' : '') + '</title></circle>'; });
-  const passo = Math.max(1, Math.ceil(ls.length / 7));
+  const ult = ls[n - 1], yU = yT(ult.deficit || 0);
+  s += '<text class="gfx-rotulo" x="' + f1(x(n - 1) - 8) + '" y="' + f1(yU < T.y0 + 14 ? yU + 16 : yU - 8) + '" text-anchor="end">' + br(ult.deficit, 1) + ' mm hoje</text>';
+  if (lam != null) s += '<text class="gfx-rotulo-ref" x="' + (mE + 4) + '" y="' + f1(yT(lam) - 4) + '">lâmina mínima ' + br(lam, 0) + '</text>';
+  s += '<text class="gfx-rotulo-ref" x="' + (mE + 4) + '" y="' + f1(yT(ls[0].afd || 0) - 4) + '">AFD · acima = estresse</text>';
+  // painel de baixo: chuva e irrigação empilhadas (gap de 2 px), consumo (ETc) em linha
+  const bw = Math.max(3, Math.min(24, passoX * 0.6)), base = B.y0 + B.alt;
   ls.forEach((l, i) => {
-    const ult = i === ls.length - 1;
-    if ((i % passo === 0 && ls.length - 1 - i >= passo / 2) || ult) s += '<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="' + (i === 0 ? 'start' : ult ? 'end' : 'middle') + '">' + dataBr(l.data) + '</text>';
+    const cx = x(i) - bw / 2; let topoY = base;
+    if (l.chuva > 0) { const hh = base - yB(l.chuva); s += '<rect class="gfx-chuva" x="' + f1(cx) + '" y="' + f1(base - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; topoY = base - hh; }
+    if (l.irrigacao > 0) { const hh = Math.max(0, base - yB(l.irrigacao) - (l.chuva > 0 ? 2 : 0)); s += '<rect class="gfx-irrig" x="' + f1(cx) + '" y="' + f1(topoY - (l.chuva > 0 ? 2 : 0) - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; }
   });
-  return s + '</svg>';
+  s += '<path class="gfx-etc" d="M' + ls.map((l, i) => f1(x(i)) + ' ' + f1(yB(l.etc || 0))).join(' L') + '"/>';
+  // eixo de datas (compartilhado)
+  const passo = Math.max(1, Math.ceil(n / 6));
+  ls.forEach((l, i) => {
+    const fim = i === n - 1;
+    if ((i % passo === 0 && n - 1 - i >= passo * 0.75) || fim) s += '<text class="gfx-eixo" x="' + f1(x(i)) + '" y="' + (H - 8) + '" text-anchor="' + (i === 0 ? 'start' : fim ? 'end' : 'middle') + '">' + dataBr(l.data) + '</text>';
+  });
+  // crosshair (escondido até o toque)
+  s += '<g class="gfx-cross"><line x1="0" x2="0" y1="' + T.y0 + '" y2="' + (B.y0 + B.alt) + '"/><circle class="gfx-cross-pt" r="5"/></g>';
+  s += '<rect class="gfx-hit" x="' + mE + '" y="' + T.y0 + '" width="' + w + '" height="' + (B.y0 + B.alt - T.y0) + '" fill="transparent"/>';
+  s += '</svg>';
+  GFX = { h, xs: ls.map((_, i) => x(i)), yT, W, mE, w };
+  return '<div class="gfx">' + s + '<div class="gfx-tip" hidden></div></div>' +
+    '<div class="legenda gfx-legenda"><span class="lk" style="--c:var(--g-def)">Déficit</span><span class="lk lk-afd">AFD (limite de estresse)</span><span class="lk lk-lam">Lâmina mínima</span>' +
+    '<span class="lq" style="--c:var(--g-chuva)">Chuva</span><span class="lq" style="--c:var(--g-irrig)">Irrigação</span><span class="lk lk-etc">Consumo (ETc)</span><span class="lp lp-estresse">Dia em estresse</span><span class="lp lp-medicao">Medição de umidade</span></div>';
+}
+/** Crosshair + tooltip: o dedo acha a data, o balão mostra todas as séries daquele dia. */
+function ligarHoverGrafico() {
+  const box = $('.gfx'); if (!box || !GFX) return;
+  const svg = $('svg', box), hit = $('.gfx-hit', svg), cross = $('.gfx-cross', svg), tip = $('.gfx-tip', box);
+  if (!hit) return;
+  const mostrar = (ev) => {
+    const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * GFX.W;
+    let i = 0, d = Infinity; GFX.xs.forEach((xx, k) => { const dd = Math.abs(xx - px); if (dd < d) { d = dd; i = k; } });
+    const l = GFX.h.linhas[i];
+    cross.classList.add('on'); const ln = $('line', cross), pt = $('circle', cross);   // <g> do SVG não tem .hidden
+    ln.setAttribute('x1', GFX.xs[i]); ln.setAttribute('x2', GFX.xs[i]); pt.setAttribute('cx', GFX.xs[i]); pt.setAttribute('cy', GFX.yT(l.deficit || 0));
+    const estresse = l.afd > 0 && l.deficit >= l.afd;
+    tip.textContent = '';
+    const cab = document.createElement('div'); cab.className = 'gfx-tip-cab';
+    const dt = document.createElement('b'); dt.textContent = dataBrAno(l.data) + (l.das != null ? ' · ' + l.das + ' DAS' : '') + (l.estadio ? ' · ' + l.estadio : ''); cab.appendChild(dt);
+    const bd = document.createElement('span'); bd.className = 'badge ' + classeDec(l.decisao); bd.textContent = l.decisao === 'NÃO IRRIGAR' ? 'NÃO IRRIGAR' : l.decisao; cab.appendChild(bd);
+    tip.appendChild(cab);
+    const linha = (cor, rot, val, cls) => { const row = document.createElement('div'); row.className = 'gfx-tip-l' + (cls ? ' ' + cls : ''); const k = document.createElement('i'); if (cor) k.style.setProperty('--c', cor); const v = document.createElement('b'); v.textContent = val; const t = document.createElement('span'); t.textContent = rot; row.append(k, v, t); tip.appendChild(row); };
+    linha('var(--g-def)', 'déficit' + (estresse ? ' · ESTRESSE' : ''), br(l.deficit, 1) + ' mm', estresse ? 'ruim' : '');
+    linha('', 'AFD (limite)', br(l.afd, 1) + ' mm', 'ref');
+    if (l.chuva) linha('var(--g-chuva)', 'chuva', br(l.chuva, 1) + ' mm');
+    if (l.irrigacao) linha('var(--g-irrig)', 'irrigação', br(l.irrigacao, 1) + ' mm');
+    linha('', 'consumo (ETc)' + (l.kc != null ? ' · Kc ' + br(l.kc, 2) : ''), br(l.etc, 1) + ' mm', 'ref');
+    if (l.medicao) linha('', 'medição de umidade neste dia', '🌱', 'ref');
+    tip.hidden = false;
+    const esq = px < GFX.W / 2;
+    tip.style.left = esq ? ((GFX.xs[i] / GFX.W) * 100 + 2) + '%' : 'auto';
+    tip.style.right = esq ? 'auto' : ((1 - GFX.xs[i] / GFX.W) * 100 + 2) + '%';
+  };
+  const esconder = () => { cross.classList.remove('on'); tip.hidden = true; };
+  hit.addEventListener('pointermove', mostrar); hit.addEventListener('pointerdown', mostrar);
+  hit.addEventListener('pointerleave', esconder);
 }
 function tabelaHist(h) {
   const ls = h.linhas.slice().reverse(); if (!ls.length) return '';
