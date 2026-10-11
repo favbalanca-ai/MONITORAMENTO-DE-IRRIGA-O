@@ -341,3 +341,60 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .res-dia small{color:var(--muted);display:block}
 .res-dia .svg{width:11px;height:11px;vertical-align:-1px}
 .sugestao-res{margin-top:10px;background:var(--teal-soft,#e6f3f5);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+
+/* ===== Cartões: visual profissional (v2026.10.11-5) ===== */
+:root{--shadow:0 1px 2px rgba(20,50,60,.05),0 6px 20px rgba(20,50,60,.06);--radius:18px}
+.card{padding:18px 20px;border-color:color-mix(in srgb,var(--line) 70%,transparent)}
+.card h2{font-size:16px;letter-spacing:-.01em}
+/* acento de status por dentro do cartão, em vez da borda grossa */
+.card.sem-bom,.card.sem-atencao,.card.sem-ruim,.card.sem-sem,.card.sem-ciclo{border-left:1px solid var(--line);position:relative;overflow:hidden}
+.card.sem-bom::before,.card.sem-atencao::before,.card.sem-ruim::before,.card.sem-sem::before,.card.sem-ciclo::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--acento);border-radius:18px 0 0 18px}
+.card.sem-bom{--acento:var(--sem-bom)}.card.sem-atencao{--acento:var(--sem-atencao)}.card.sem-ruim{--acento:var(--sem-ruim)}.card.sem-sem{--acento:var(--sem-sem)}.card.sem-ciclo{--acento:var(--teal)}
+.card.sem-ruim::before{background:linear-gradient(180deg,var(--sem-ruim),#e57373)}
+.card.sem-bom::before{background:linear-gradient(180deg,var(--sem-bom),#66bb6a)}
+.card.sem-atencao::before{background:linear-gradient(180deg,var(--sem-atencao),#f7d070)}
+/* etiquetas e selos */
+.tags{gap:5px;margin-top:6px}
+.tag{border-radius:999px;padding:3px 9px;font-size:11px;letter-spacing:.2px;background:var(--tag);display:inline-flex;align-items:center;gap:4px}
+.tag .svg{width:12px;height:12px}
+.badge{padding:6px 12px;font-size:11.5px;letter-spacing:.3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.04)}
+/* blocos de números: fundo neutro, número em destaque, unidade pequena */
+.kpis{gap:10px;margin-top:14px}
+.kpis div{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.kpis small{font-size:10.5px;letter-spacing:.5px;color:var(--muted)}
+.kpis b{font-size:22px;color:var(--ink);letter-spacing:-.02em;margin-top:2px}
+.kpis em{font-size:11.5px;margin-top:1px}
+.kpis-ciclo div{background:var(--teal-soft);border-color:transparent}
+.card.reservatorio .kpis b{color:#1f6f7e}
+.res-dia-kpis div.neg b{color:var(--red)}.res-dia-kpis div.pos b{color:var(--green)}
+:root[data-tema="escuro"] .kpis div,:root[data-tema="auto"] .kpis div{background:#10202a;border-color:#24383f}
+:root[data-tema="escuro"] .card.reservatorio .kpis b{color:#7cc4d0}
+@media (prefers-color-scheme: dark){:root[data-tema="auto"] .card.reservatorio .kpis b{color:#7cc4d0}}
+/* barras mais finas e com degradê */
+.bar{height:8px;border-radius:999px;margin:14px 0 4px}
+.bar>span{background:linear-gradient(90deg,#f0932b,var(--deficit));border-radius:999px}
+.card.reservatorio .bar.agua>span{background:linear-gradient(90deg,#4fb3c4,#1f6f7e)}
+.bar>i{width:2px;opacity:.35}
+.bar-rotulos{font-size:12px}
+/* cartão-resumo do dia com degradê */
+.resumo.card{background:linear-gradient(135deg,#16404d 0%,#2e7d8c 100%);color:#e6f2f4;border-color:transparent}
+.resumo.card h2,.resumo.card .resumo-dia{color:#fff}
+.resumo.card .resumo-dia{color:rgba(255,255,255,.75)}
+.resumo.card .muted{color:rgba(255,255,255,.75)}
+.resumo.card a{color:#fff}
+.resumo.card .chip{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff}
+.resumo.card .chip b{color:#fff}
+.resumo.card .btn-outline{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff}
+.resumo.card .sem-chip{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.15);border-top:3px solid var(--c);border-radius:12px}
+.resumo.card .sem-chip b{color:#fff}.resumo.card .sem-chip small{color:rgba(255,255,255,.8)}
+.resumo.card .sem-chip.vazio{opacity:.5}
+.resumo.card .alertas li{background:rgba(255,255,255,.14);color:#fff}
+/* alertas e sugestões */
+.alertas li{border-radius:12px;border:1px solid rgba(183,121,31,.18)}
+.sugestao-res{border:1px solid rgba(62,154,170,.25);border-radius:12px}
+.prox{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-top:12px;font-size:13px}
+/* projeção do piscinão */
+.res-proj{margin-top:14px;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:14px}
+.res-dia .res-col{background:var(--line);height:52px}
+.res-dia .res-col span{background:linear-gradient(180deg,#4fb3c4,#1f6f7e)}
+.det>summary{padding:8px 0}
