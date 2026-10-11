@@ -46,6 +46,9 @@ feitos sem internet.
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).
+  Em Solo e raiz: **Textura do solo** com valores de referência (botão Usar) pra quem não tem análise; abaixo dos
+  campos, o app mostra ao vivo a CAD e a AFD que aquele solo dá (raiz máxima e planta nova) e os dias de folga; e
+  "Tenho o laudo" converte CC e PMP de % de peso pra % de volume pela densidade, com média pesada de duas camadas.
   Em Equipamento, **Fonte de água**: abastecimento direto ou um piscinão. Abaixo da lista, **Fontes de água
   (piscinões)**: o administrador cadastra, edita e apaga piscinões (volume útil, bomba m³/h × horas/dia, reserva);
   um piscinão em uso por algum pivô não pode ser apagado.

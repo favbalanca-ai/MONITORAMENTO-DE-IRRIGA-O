@@ -34,6 +34,8 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      A coluna **Ciclo (dias, vazio = padrão)** é opcional: preenchida, estica/encurta a curva de Kc para a cultivar plantada.
    - Ainda na FAZENDAS: **Chuva mínima que conta** (padrão 2 mm — chuva menor fica na folha) e o **horário de ponta**
      da energia (padrão 18–21 h), usado no custo e na hora sugerida de ligar o pivô.
+   - Colunas opcionais da PIVOS **Textura do solo** e **Densidade do solo (g/cm³)**: só documentação do cadastro
+     (o balanço usa CC e PMP em % de volume; o app ajuda a converter o laudo).
    - Colunas opcionais da PIVOS: **Tarifa na ponta** (R$/kWh; preenchida, o app mostra "ligar às 21:00" e o custo nas
      duas tarifas) e **Graus-dia do ciclo** da cultivar (preenchido, o estádio anda pela soma térmica, não por dias).
    - **LEITURAS** ganhou a coluna **Extras (JSON)**: tudo o mais que a estação manda em cada coleta (UV, rajada, direção,

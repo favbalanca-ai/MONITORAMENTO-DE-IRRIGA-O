@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.12-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.13-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1159,7 +1159,7 @@ function pivoDoDesenho(nome, pivos) {
 /* ================= PIVÔS ================= */
 const GRUPOS = [
   ['Identificação', ['fazenda', 'tipo', 'nome', 'ativo', 'cultura', 'cicloDias', 'grausDiaCiclo', 'plantio', 'inicioBalanco', 'palhada']],
-  ['Solo e raiz', ['umidadeInicialPct', 'cc', 'pmp', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
+  ['Solo e raiz', ['textura', 'densidade', 'cc', 'pmp', 'umidadeInicialPct', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
   ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
@@ -1266,6 +1266,14 @@ V.piscinao_depois = function () {
     } catch (e) { toast(e.message, true); ap.disabled = false; }
   });
 };
+/** Referência por textura (% de volume), p/ quem não tem o laudo: CC, PMP e densidade típica. Agrônomo confirma. */
+const TEXTURAS = [
+  ['arenoso', 'Arenoso (areia, areia franca)', 15, 6, 1.5],
+  ['medio', 'Médio / franco', 26, 12, 1.35],
+  ['argiloso', 'Argiloso (Latossolo do Cerrado)', 34, 21, 1.15],
+  ['muito argiloso', 'Muito argiloso', 38, 25, 1.1],
+];
+function texturaRef(chave) { return TEXTURAS.find((t) => t[0] === String(chave || '').toLowerCase().trim()) || null; }
 function campoPivo(k, rot, v, so) {
   const id = 'p_' + k, dis = so ? ' disabled' : '';
   if (k === 'ativo' || k === 'palhada') return '<div><label for="' + id + '">' + esc(rot.replace(' (SIM/NÃO)', '')) + '</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="SIM"' + (simNao(v) ? ' selected' : '') + '>Sim</option><option value="NÃO"' + (simNao(v) ? '' : ' selected') + '>Não</option></select></div>';
@@ -1281,6 +1289,7 @@ function campoPivo(k, rot, v, so) {
     return '<div><label for="' + id + '">Fonte de água</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="">Abastecimento direto</option>' +
       meus.map((r) => '<option value="' + esc(r.nome) + '"' + (String(v || '').toLowerCase() === r.nome.toLowerCase() ? ' selected' : '') + '>' + esc(r.nome) + ' (piscinão)</option>').join('') +
       (v && !meus.some((r) => r.nome.toLowerCase() === String(v).toLowerCase()) ? '<option selected>' + esc(v) + '</option>' : '') + '</select></div>'; }
+  if (k === 'textura') return '<div><label for="' + id + '">Textura do solo</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="">— não informada —</option>' + TEXTURAS.map((t) => '<option value="' + t[0] + '"' + (String(v || '').toLowerCase().trim() === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>').join('') + '</select></div>';
   if (k === 'contorno') return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(typeof v === 'string' ? v : v ? JSON.stringify(v) : '') + '">';
   return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="decimal" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : String(v).replace('.', ',')) + '"' + dis + '></div>';
 }
@@ -1293,6 +1302,7 @@ function formPivo(p) {
     '<p class="muted" id="tipo-info" style="margin:0 0 4px"></p>' +
     GRUPOS.map((g) => '<fieldset data-grupo="' + esc(g[0]) + '"><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
       (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') +
+      (g[0] === 'Solo e raiz' ? '<div id="solo-info"></div>' : '') +
       (g[0] === 'Localização (mapa)' ? (so ? '' : '<div class="toolbar" style="margin-top:10px"><button type="button" class="btn btn-outline btn-sm" data-act="gps">📍 Usar minha posição</button>' +
         '<label class="btn btn-outline btn-sm">📂 KMZ / KML do pivô<input type="file" id="p_arquivo" accept=".kmz,.kml" hidden></label></div>') + '<div id="loc-info" class="muted"></div>' : '') + '</fieldset>').join('') +
     '<p class="muted" style="margin-top:10px">Solo, Kc e equipamento precisam ser confirmados com o agrônomo e a placa do pivô.</p>' +
@@ -1318,6 +1328,52 @@ function infoCultura(f) {
       (sg.fatorDeplecaoFixo ? ', fator fixo ' + br(sg.fatorDeplecaoFixo, 2) : '') + (sg.tensaoIrrigarKpa ? ', tensão ' + sg.tensaoIrrigarKpa + ' kPa' : '') + '.<div class="muted">' + esc(sg.porque) + '</div></div>' +
       (dis ? '' : '<button type="button" class="btn btn-outline btn-sm" data-act="sugestao">Usar</button>') + '</div>' : '') +
     (c.fonte ? '<p class="muted" style="margin-top:6px">Fonte: ' + esc(c.fonte) + '</p>' : '');
+}
+/**
+ * Abaixo de "Solo e raiz": o que esses números dão (CAD e AFD com a raiz máxima e com 20 cm, dias de folga),
+ * a referência da textura escolhida e a calculadora do laudo (% de peso → % de volume, por camada).
+ */
+function infoSolo(f) {
+  const box = $('#solo-info', f); if (!box) return;
+  const n = (k) => numBR($('#p_' + k, f) ? $('#p_' + k, f).value : '');
+  const cc = n('cc'), pmp = n('pmp'), zMax = n('raizMaxCm'), ff = n('fatorFixo'), lam = n('laminaMinimaMm');
+  const tx = texturaRef($('#p_textura', f) ? $('#p_textura', f).value : '');
+  const dis = !ehAdmin();
+  let h = '';
+  if (cc != null && pmp != null && !isNaN(cc) && !isNaN(pmp)) {
+    if (pmp >= cc) h += '<p class="muted" style="color:var(--red)">Ponto de murcha precisa ser menor que a capacidade de campo.</p>';
+    else if (cc > 60 || pmp > 45) h += '<p class="muted" style="color:var(--red)">Valores altos demais pra % de volume: o laudo veio em % de peso? Use a calculadora abaixo.</p>';
+    else {
+      const f0 = ff != null && !isNaN(ff) ? ff : 0.6, cad = (z) => ((cc - pmp) / 100) * z * 10;
+      const z = zMax != null && !isNaN(zMax) && zMax > 0 ? zMax : 50;
+      h += '<div class="solo-calc"><b>Com esses valores:</b> água disponível ' + br(cc - pmp, 0) + ' mm por 10 cm de solo · CAD com raiz de ' + br(z, 0) + ' cm = <b>' + br(cad(z), 0) + ' mm</b>, AFD ≈ <b>' + br(cad(z) * f0, 0) + ' mm</b>' +
+        ' (' + (ff != null && !isNaN(ff) ? 'fator fixo ' + br(ff, 2) : 'fator 0,60 num dia comum') + ') → cerca de <b>' + br((cad(z) * f0) / 5, 0) + ' dias</b> de folga gastando 5 mm/dia · planta nova (raiz 20 cm): AFD ≈ ' + br(cad(20) * f0, 0) + ' mm' +
+        (lam != null && !isNaN(lam) && lam > cad(20) * f0 ? ' <span style="color:var(--amber)">· a lâmina mínima (' + br(lam, 0) + ' mm) é maior que a AFD da planta nova: no começo do ciclo o pivô vai ligar tarde</span>' : '') + '</div>';
+    }
+  }
+  if (tx) h += '<div class="sugestao"><div><b>Referência pra solo ' + esc(tx[1].charAt(0).toLowerCase() + tx[1].slice(1)) + ':</b> capacidade de campo ' + tx[2] + '%, ponto de murcha ' + tx[3] + '%, densidade ' + String(tx[4]).replace('.', ',') + ' g/cm³ (% de volume).<div class="muted">Serve enquanto não há análise do solo. O laudo do laboratório manda.</div></div>' + (dis ? '' : '<button type="button" class="btn btn-outline btn-sm" data-act="usar-textura">Usar</button>') + '</div>';
+  if (!dis) h += '<details class="det" id="solo-laudo"><summary>Tenho o laudo do laboratório (converter % de peso em % de volume)</summary>' +
+    '<p class="muted" style="margin:6px 0">Laudos costumam dar a umidade em % de peso (g/g). O app precisa de % de volume: peso × densidade do solo. Com duas camadas, faço a média pesada pela raiz máxima.</p>' +
+    '<div class="grid2"><div><label for="l-cc1">CC 0–20 cm (% peso)</label><input id="l-cc1" inputmode="decimal" placeholder="ex.: 28"></div><div><label for="l-pmp1">PMP 0–20 cm (% peso)</label><input id="l-pmp1" inputmode="decimal" placeholder="ex.: 17"></div>' +
+    '<div><label for="l-cc2">CC 20–40 cm (% peso)</label><input id="l-cc2" inputmode="decimal" placeholder="opcional"></div><div><label for="l-pmp2">PMP 20–40 cm (% peso)</label><input id="l-pmp2" inputmode="decimal" placeholder="opcional"></div>' +
+    '<div><label for="l-dens">Densidade do solo (g/cm³)</label><input id="l-dens" inputmode="decimal" placeholder="ex.: 1,2" value="' + esc(($('#p_densidade', f) && $('#p_densidade', f).value) || '') + '"></div><div style="display:flex;align-items:flex-end"><button type="button" class="btn btn-outline btn-sm" data-act="converter-laudo">Converter e preencher</button></div></div>' +
+    '<p class="muted" id="l-laudo-info"></p></details>';
+  box.innerHTML = h;
+}
+function converterLaudo(f) {
+  const v = (id) => numBR($('#' + id, f).value);
+  const d = v('l-dens'), cc1 = v('l-cc1'), pmp1 = v('l-pmp1'), cc2 = v('l-cc2'), pmp2 = v('l-pmp2'), z = numBR($('#p_raizMaxCm', f).value) || 40;
+  if (d == null || isNaN(d) || d <= 0.5 || d > 2.2) return toast('Informe a densidade do solo (0,8 a 2,0 g/cm³).', true);
+  if (cc1 == null || isNaN(cc1) || pmp1 == null || isNaN(pmp1)) return toast('Informe CC e PMP da camada 0–20 cm.', true);
+  // média pesada pela profundidade da raiz: os primeiros 20 cm e o que sobra até a raiz máxima na 2ª camada
+  const temC2 = cc2 != null && !isNaN(cc2) && pmp2 != null && !isNaN(pmp2);
+  const p1 = temC2 ? Math.min(20, z) / Math.min(z, 40) : 1, p2 = 1 - p1;
+  const ccV = (cc1 * p1 + (temC2 ? cc2 : 0) * p2) * d, pmpV = (pmp1 * p1 + (temC2 ? pmp2 : 0) * p2) * d;
+  $('#p_cc', f).value = String(Math.round(ccV * 10) / 10).replace('.', ','); $('#p_pmp', f).value = String(Math.round(pmpV * 10) / 10).replace('.', ',');
+  if ($('#p_densidade', f)) $('#p_densidade', f).value = String(d).replace('.', ',');
+  const info = $('#l-laudo-info', f); if (info) info.textContent = 'CC ' + br(ccV, 1) + '% e PMP ' + br(pmpV, 1) + '% em volume' + (temC2 ? ' (média das duas camadas pesada pela raiz de ' + br(z, 0) + ' cm)' : '') + '. Confira e salve.';
+  infoSolo(f);
+  toast('CC e PMP preenchidos em % de volume. Confira e salve.');
 }
 function infoLocal(f, texto) {
   const box = $('#loc-info', f); if (!box) return;
@@ -1363,6 +1419,17 @@ V.pivos_depois = function () {
     } catch (e) { toast(e.message, true); }
   });
   ['#p_cultura', '#p_cicloDias', '#p_plantio'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('change', () => infoCultura(f)); });
+  infoSolo(f);
+  ['#p_cc', '#p_pmp', '#p_raizMaxCm', '#p_fatorFixo', '#p_laminaMinimaMm'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('input', () => { const ab = $('#solo-laudo', f) && $('#solo-laudo', f).open; const vals = ['l-cc1', 'l-pmp1', 'l-cc2', 'l-pmp2', 'l-dens'].map((id) => ($('#' + id, f) || {}).value); infoSolo(f); if (ab && $('#solo-laudo', f)) { $('#solo-laudo', f).open = true; ['l-cc1', 'l-pmp1', 'l-cc2', 'l-pmp2', 'l-dens'].forEach((id, i) => { if ($('#' + id, f) && vals[i] != null) $('#' + id, f).value = vals[i]; }); } }); });
+  const txEl = $('#p_textura', f); if (txEl) txEl.addEventListener('change', () => infoSolo(f));
+  f.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-act="usar-textura"],[data-act="converter-laudo"]'); if (!b) return;
+    if (b.dataset.act === 'converter-laudo') return converterLaudo(f);
+    const tx = texturaRef($('#p_textura', f).value); if (!tx) return;
+    $('#p_cc', f).value = String(tx[2]); $('#p_pmp', f).value = String(tx[3]); if ($('#p_densidade', f)) $('#p_densidade', f).value = String(tx[4]).replace('.', ',');
+    if ($('#p_umidadeInicialPct', f) && !$('#p_umidadeInicialPct', f).value) $('#p_umidadeInicialPct', f).value = String(tx[2]);
+    infoSolo(f); toast('Preenchido com a referência do solo ' + tx[1].charAt(0).toLowerCase() + tx[1].slice(1) + '. Confira com o agrônomo e salve.');
+  });
   f.addEventListener('click', (ev) => {
     if (!ev.target.closest('[data-act="sugestao"]')) return;
     const c = cultura($('#p_cultura', f).value); if (!c || !c.sugestao) return;

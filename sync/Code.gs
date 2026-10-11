@@ -103,6 +103,8 @@ var COLUNAS_PIVOS = [
   ["fazenda", "Fazenda", true],
   ["tipo", "Tipo (pivô/talhão)", true],
   ["fonte", "Fonte de água (vazio = direto)", true],
+  ["textura", "Textura do solo", true],
+  ["densidade", "Densidade do solo (g/cm³)", true],
 ];
 
 /** Colunas da aba RESERVATORIOS: um piscinão por linha; a bomba de reposição liga `horasBombaDia` por dia. */
@@ -1571,7 +1573,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.12-1";
+var VERSAO_SERVIDOR = "2026.10.12-2";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2128,7 +2130,7 @@ function salvarPivo_(dados, nomeOriginal) {
     if (c[0] === "nome" || c[0] === "cultura" || c[0] === "plantio" || c[0] === "inicioBalanco") return T_(String(v == null ? "" : v).trim());
     if (c[0] === "fazenda") return T_(fazNome || "");
     if (c[0] === "tipo") return /^t/i.test(chaveCultura_(String(v || ""))) ? "talhão" : "pivô";
-    if (c[0] === "fonte") return T_(String(v == null ? "" : v).trim());
+    if (c[0] === "fonte" || c[0] === "textura") return T_(String(v == null ? "" : v).trim());
     if (c[0] === "contorno") return T_(contornoLido_(typeof v === "string" ? v : JSON.stringify(v)) ? (typeof v === "string" ? v : JSON.stringify(v)) : "");
     var n = Motor.numero(v);
     return n === null ? "" : n;

@@ -275,9 +275,28 @@ test("pivôs: operador só vê; administrador edita e a planilha valida", async 
   await page.getByText(/PMP precisa ser menor que a CC/).waitFor();
   await page.fill("#p_pmp", "18");
   await page.fill("#p_laminaMinimaMm", "6,5");
+  // ajuda do solo: CAD/AFD ao vivo, referência por textura e conversão do laudo (% peso → % volume)
+  await page.getByText(/CAD com raiz de 50 cm = 70 mm, AFD ≈ 42 mm/).waitFor();
+  await page.selectOption("#p_textura", "argiloso");
+  await page.getByText(/Referência pra solo argiloso \(Latossolo do Cerrado\)/).waitFor();
+  await page.locator('[data-act="usar-textura"]').click();
+  assert.equal(await page.inputValue("#p_cc"), "34");
+  assert.equal(await page.inputValue("#p_pmp"), "21");
+  assert.equal(await page.inputValue("#p_densidade"), "1,15");
+  await page.locator("#solo-laudo summary").click();
+  await page.fill("#l-cc1", "28"); await page.fill("#l-pmp1", "16"); await page.fill("#l-cc2", "26"); await page.fill("#l-pmp2", "15"); await page.fill("#l-dens", "1,2");
+  await page.locator('[data-act="converter-laudo"]').click();
+  // raiz máxima 50 cm → 20 cm da camada 1 e 20 cm da camada 2 (até 40): média 27 × 1,2 = 32,4 · 15,5 × 1,2 = 18,6
+  assert.equal(await page.inputValue("#p_cc"), "32,4");
+  assert.equal(await page.inputValue("#p_pmp"), "18,6");
+  await page.screenshot({ path: PRINTS + "6_pivos_solo.png", fullPage: true });
   await page.locator("#f-pivo button[type=submit]").click();
   await page.getByText("✅ Pivô salvo").waitFor();
-  assert.equal(amb.aba("PIVOS").objetos()[0]!["Lâmina mínima p/ irrigar (mm)"], 6.5);
+  const salvo = amb.aba("PIVOS").objetos()[0]!;
+  assert.equal(salvo["Lâmina mínima p/ irrigar (mm)"], 6.5);
+  assert.equal(salvo["Textura do solo"], "argiloso");
+  assert.equal(salvo["Densidade do solo (g/cm³)"], 1.2);
+  assert.equal(salvo["Capacidade de campo (%)"], 32.4);
   await page.screenshot({ path: PRINTS + "6_pivos.png", fullPage: true });
   await ctx.close();
 });
