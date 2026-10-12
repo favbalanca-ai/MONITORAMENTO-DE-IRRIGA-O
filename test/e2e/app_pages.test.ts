@@ -215,6 +215,23 @@ test("sem internet: o lançamento fica na fila e sobe quando o sinal volta, sem 
   await ctx.close();
 });
 
+test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pelo app", async () => {
+  const amb = planilha();
+  amb.respostaHttp = () => ({ code: 503, corpo: {} });
+  amb.chamar("atualizarPrevisao");   // falha e deixa o motivo no LOG
+  const { ctx, page } = await abrir(amb);
+  await configurarEEntrar(page, "fabiana", "1234");
+  await page.getByRole("link", { name: /Clima/ }).click();
+  await page.getByText(/Última tentativa da planilha: .* — erro/).waitFor();
+  await page.getByText(/Open-Meteo: HTTP 503/).waitFor();
+  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("open-meteo") && !url.includes("hourly=") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  await page.getByRole("button", { name: /Atualizar/ }).click();
+  await page.getByText("Próximos dias").waitFor();
+  await page.locator(".prev-dia").first().waitFor();
+  await ctx.close();
+});
+
 test("histórico desenha gráfico e tabela", async () => {
   const amb = planilha();
   const { ctx, page } = await abrir(amb);

@@ -1540,6 +1540,16 @@ function backupDiario() {
   }
 }
 
+/** Última linha do LOG de uma ação (pra mostrar no app por que algo não aconteceu). */
+function ultimoLog_(acao) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.LOG);
+  if (!aba || aba.getLastRow() < 2) return null;
+  var n = aba.getLastRow(), ini = Math.max(2, n - 300);
+  var vals = aba.getRange(ini, 1, n - ini + 1, 4).getValues();
+  for (var i = vals.length - 1; i >= 0; i--) if (String(vals[i][1]) === acao) return { quando: String(vals[i][0]), status: String(vals[i][2]), detalhe: String(vals[i][3]).slice(0, 400) };
+  return null;
+}
+
 function log_(acao, status, detalhe, dia) {
   try {
     var aba = SpreadsheetApp.getActive().getSheetByName(ABA.LOG);
@@ -1569,11 +1579,11 @@ function aviso_(texto) {
  * O endereço /exec vai na tela ⚙️ Sincronizar do app (nunca no GitHub).
  *
  * doGet  ?acao=dados | hash | historico&pivo=&dias= | usuarios     (&s=<sessão>)
- * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__pivo} {__reservatorio} {__usuario} {__trocarPin}
+ * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__previsao} {__pivo} {__reservatorio} {__usuario} {__trocarPin}
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.12-2";
+var VERSAO_SERVIDOR = "2026.10.12-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1648,6 +1658,12 @@ function doPost(e) {
     if (tipo === "__lancamento") return json_(gravarLancamento_(d, u));
     if (tipo === "__apagar") return json_(apagarLancamento_(d.id, u));
     if (tipo === "__recalcular") return json_(recalcularApp_());
+    if (tipo === "__previsao") {
+      exigirAdmin_(u);
+      var okPrev = atualizarPrevisao();
+      var lg = ultimoLog_("previsão");
+      return json_({ ok: true, atualizou: !!okPrev, log: lg, hash: hashDados_() });
+    }
     if (tipo === "__pivo") {
       exigirAdmin_(u);
       return json_({ ok: true, cadastro: salvarPivo_(d.dados || {}, d.original || null), recalculo: recalcularApp_() });
@@ -1805,6 +1821,7 @@ function dadosApp_(u) {
     fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }),
     estacoes: estacoes,
     copernicus: { instancia: configApp_("COPERNICUS INSTANCE ID").replace(/[^A-Za-z0-9_-]/g, ""), camada: configApp_("COPERNICUS CAMADA NDVI") || "NDVI" },
+    logPrevisao: ultimoLog_("previsão"),
     resumo: resumo,
     previsao: f0.previsao,
     vento24h: f0.vento24h,

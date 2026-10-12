@@ -522,3 +522,27 @@ test("CONFIG APP: Instance ID do Copernicus chega ao app (vazio = só MODIS)", (
   d = amb.get({ acao: "dados", s: adm });
   assert.deepEqual({ ...d.copernicus }, { instancia: "a1b2-c3d4", camada: "NDVI-FAZENDA" });
 });
+
+test("previsão pelo app: __previsao busca na hora e devolve o LOG; sem previsão o app recebe o motivo", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const op = entrar(amb, "jose", "4321").token;
+  amb.respostaHttp = () => ({ code: 503, corpo: {} });
+  assert.match(amb.post({ s: op, __previsao: {} }).erro, /Só o administrador/);
+  let r = amb.post({ s: adm, __previsao: {} });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(r.atualizou, false);
+  assert.equal(r.log.status, "erro");
+  assert.match(r.log.detalhe, /Open-Meteo: HTTP 503/);
+  let d = amb.get({ acao: "dados", s: adm });
+  assert.equal(d.estacoes["agua viva"].previsao, null);
+  assert.equal(d.logPrevisao.status, "erro");
+  // agora o Open-Meteo responde
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("open-meteo") && !url.includes("hourly=") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  r = amb.post({ s: adm, __previsao: {} });
+  assert.equal(r.atualizou, true);
+  assert.equal(r.log.status, "parcial");
+  d = amb.get({ acao: "dados", s: adm });
+  assert.ok(d.estacoes["agua viva"].previsao.dias.length > 0);
+});

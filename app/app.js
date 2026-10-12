@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.13-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.13-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -551,7 +551,7 @@ V.clima = function () {
   const r = DADOS.resumo || {};
   return (cardEstacao() || '<div class="card vazio">A estação ainda não mandou nenhuma leitura.</div>') +
     cardRosa24h() +
-    (cardPrevisao(r.dia) || '<div class="card vazio">Sem previsão ainda. Na planilha: 💧 Manejo → 🌧 Atualizar previsão do tempo.</div>') +
+    (cardPrevisao(r.dia) || cardSemPrevisao()) +
     miniMapa() +
     '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>';
@@ -669,12 +669,22 @@ function cardPrevisao(dia) {
   const prox = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 5);
   if (!prox.length) return '';
   const soma = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
-  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span></div>' +
+  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + '"><small>' + esc(dataBr(d.data)) + '</small><b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
       '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' + (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') + '</div>').join('') + '</div>' +
     (prox[0].resumo ? '<p class="muted" style="margin-top:8px">INMET amanhã — ' + esc(prox[0].resumo) + '</p>' : '') +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + '. A previsão não entra no balanço; só avisa.</p></div>';
 }
+
+/** Sem previsão: diz o que a planilha registrou da última tentativa e deixa o administrador tentar de novo. */
+function cardSemPrevisao() {
+  const lg = DADOS && DADOS.logPrevisao, f = fazendaAtual();
+  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2>' + botaoPrevisao() + '</div>' +
+    '<p class="muted" style="margin-top:6px">Sem previsão guardada' + (f && fazendas().length > 1 ? ' para ' + esc(f.nome) : '') + '.</p>' +
+    (lg ? '<p class="muted">Última tentativa da planilha: ' + esc(lg.quando) + ' — <b>' + esc(lg.status) + '</b>' + (lg.detalhe ? '<br>' + esc(lg.detalhe) : '') + '</p>' : '<p class="muted">A planilha ainda não tentou buscar a previsão (o gatilho roda a cada 3 h depois do Instalar / atualizar).</p>') +
+    '<p class="muted">Precisa de latitude e longitude na aba FAZENDAS (Open-Meteo) e do código IBGE do município (INMET).' + (ehAdmin() ? '' : ' Peça ao administrador pra atualizar.') + '</p></div>';
+}
+function botaoPrevisao() { return ehAdmin() ? '<button type="button" class="btn btn-outline btn-sm" data-act="previsao">' + ico('refresh') + ' Atualizar</button>' : ''; }
 
 /* ================= LANÇAR ================= */
 let tipoLanc = 'irrigacao', modoLanc = 'pct';
@@ -1579,6 +1589,15 @@ document.addEventListener('click', async (ev) => {
     a.disabled = true; a.textContent = 'Recalculando…';
     try { const r = await chamar('POST', null, { __recalcular: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro'); if (r.aviso) toast(r.aviso, true); else toast('Recalculado.'); await puxar(true); }
     catch (e) { toast(e.message, true); a.disabled = false; a.innerHTML = ico('refresh') + ' Recalcular'; }
+  }
+  else if (act === 'previsao') {
+    a.disabled = true; a.textContent = 'Buscando…';
+    try {
+      const r = await chamar('POST', null, { __previsao: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro');
+      if (r.atualizou) toast('Previsão atualizada' + (r.log && r.log.status !== 'ok' ? ' com avisos: ' + r.log.detalhe : '.'), r.log && r.log.status !== 'ok');
+      else toast('A planilha não conseguiu buscar a previsão: ' + (r.log ? r.log.detalhe : 'sem detalhe no LOG'), true);
+      DADOS.hash = ''; await puxar(true);
+    } catch (e) { toast(e.message, true); a.disabled = false; a.innerHTML = ico('refresh') + ' Atualizar'; }
   }
   else if (act === 'apagar') {
     const id = a.dataset.id;
