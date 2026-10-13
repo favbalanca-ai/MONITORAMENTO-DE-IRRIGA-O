@@ -80,6 +80,8 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
   await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
+  // Open-Meteo buscado pelo celular: sem internet por padrão (cada teste libera com a própria resposta, se quiser)
+  await ctx.route(/api\.open-meteo\.com/, (r) => r.abort("internetdisconnected"));
   const page = await ctx.newPage();
   const erros: string[] = [];
   page.on("pageerror", (e) => erros.push(e.message));
@@ -219,16 +221,33 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
   const amb = planilha();
   amb.respostaHttp = () => ({ code: 503, corpo: {} });
   amb.chamar("atualizarPrevisao");   // falha e deixa o motivo no LOG
-  const { ctx, page } = await abrir(amb);
+  const { ctx, page, chamadas } = await abrir(amb);
   await configurarEEntrar(page, "fabiana", "1234");
   await page.getByRole("link", { name: /Clima/ }).click();
   await page.getByText(/Última tentativa da planilha: .* — erro/).waitFor();
   await page.getByText(/Open-Meteo: HTTP 503/).waitFor();
-  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
-  amb.respostaHttp = (url) => (url.includes("open-meteo") && !url.includes("hourly=") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  // "Atualizar": o celular busca o Open-Meteo (a planilha continua sem conseguir: 503) e manda pra planilha
+  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const time: string[] = [], temperature_2m: number[] = [], relative_humidity_2m: number[] = [], wind_speed_10m: number[] = [], wind_gusts_10m: number[] = [], precipitation: number[] = [], precipitation_probability: number[] = [];
+  const h0 = new Date(); h0.setMinutes(0, 0, 0);
+  for (let i = 0; i < 48; i++) {
+    const d = new Date(h0.getTime() + i * 3600_000);
+    time.push(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 13) + ":00"); temperature_2m.push(24); relative_humidity_2m.push(70); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5);
+  }
+  const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  const pedidosCel: string[] = [];
+  await ctx.route(/api\.open-meteo\.com/, (r) => { pedidosCel.push(r.request().url()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().includes("hourly=") ? omHoras : om), headers: { "Access-Control-Allow-Origin": "*" } }); });
   await page.getByRole("button", { name: /Atualizar/ }).click();
+  await page.getByText(/Previsão atualizada pelo celular/).waitFor();
   await page.getByText("Próximos dias").waitFor();
   await page.locator(".prev-dia").first().waitFor();
+  assert.equal(pedidosCel.length, 2);
+  assert.ok(pedidosCel.some((u) => u.includes("models=best_match,ecmwf_ifs025")));
+  assert.ok(chamadas.includes("POST __previsaoDados"));
+  await page.getByText(/Fonte: Open-Meteo \(6 modelos\) via app/).waitFor();
+  await page.locator(".j48").waitFor(); // as 48 h também vieram pelo celular
+  // sem Open-Meteo na planilha, a aba PREVISAO ficou com os números que o celular mandou
+  assert.equal(amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!["Chuva prevista (mm)"], 12.4);
   await ctx.close();
 });
 

@@ -1173,18 +1173,25 @@ function salvarResumo_(dia, fazendas, previsoes) {
  * Météo-France: mm, %, ET₀, tempo, vento, UR, sol, UV), horas (pulverização) e INMET (texto).
  * Se o pedido com vários modelos falhar, repete só com o melhor ajuste — a previsão nunca fica sem nada por isso.
  */
-function previsaoDaFazenda_(cfg) {
+function previsaoDaFazenda_(cfg, fornecido) {
   cfg = comCoordenadas_(cfg);
-  var fontes = [], erros = [], om = [], inmet = [];
+  var fontes = [], erros = [], om = [], inmet = [], omOk = false;
+  // `fornecido` = respostas do Open-Meteo que o app buscou no celular (o Open-Meteo bloqueia os endereços
+  // compartilhados do Google com "HTTP 429"; do celular passa)
+  var diarioDoApp = fornecido && fornecido.diario ? function () { return fornecido.diario; } : null;
+  var horasDoApp = fornecido && fornecido.horas ? function () { return fornecido.horas; } : null;
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       try {
-        om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
+        om = Motor.lerOpenMeteo(diarioDoApp ? diarioDoApp() : buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
         var nModelos = om.length && om[om.length - 1].modelos ? om.reduce(function (t, d) { return Math.max(t, d.modelos ? d.modelos.length : 0); }, 0) : 0;
-        fontes.push(nModelos > 1 ? "Open-Meteo (" + nModelos + " modelos)" : "Open-Meteo");
+        fontes.push((nModelos > 1 ? "Open-Meteo (" + nModelos + " modelos)" : "Open-Meteo") + (diarioDoApp ? " via app" : ""));
+        omOk = true;
       } catch (e1) {
+        if (diarioDoApp) throw e1;
         om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso, 14, 7, [])));
         fontes.push("Open-Meteo");
+        omOk = true;
         erros.push("Open-Meteo modelos: " + e1.message + " (usei só o melhor ajuste)");
       }
     } catch (e) { erros.push("Open-Meteo: " + e.message); }
@@ -1201,27 +1208,43 @@ function previsaoDaFazenda_(cfg) {
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       // cada hora prevista ganha luz = true/false (primeira à última luz do dia): o avião só aplica com luz
-      horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))), Motor.marcadorDeLuz(cfg.latitude, cfg.longitude, cfg.fuso));
+      horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(horasDoApp ? horasDoApp() : buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))), Motor.marcadorDeLuz(cfg.latitude, cfg.longitude, cfg.fuso));
     } catch (e) { erros.push("Open-Meteo horas: " + e.message); }
     try {
       var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
       for (var i = 0; i < 4; i++) luz.push(Motor.luzDoDia(Motor.somarDias(hoje, i), cfg.latitude, cfg.longitude, cfg.fuso));
     } catch (e2) { erros.push("luz do dia: " + e2.message); }
   }
-  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas, luz: luz }, erros: erros };
+  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas, luz: luz }, erros: erros, omOk: omOk, inmet: inmet };
 }
 
-/** Gatilho (a cada 3 h) e menu: previsão de todas as fazendas → aba PREVISAO + CACHE. Devolve a da primeira. */
-function atualizarPrevisao() {
+/**
+ * Gatilho (a cada 3 h), menu e app: previsão de todas as fazendas → aba PREVISAO + CACHE. Devolve a da primeira.
+ * `fornecidos` (opcional): { chaveDaFazenda: { diario, horas } } com as respostas do Open-Meteo buscadas pelo app;
+ * com ele, só essas fazendas são atualizadas (as outras ficam como estão).
+ */
+function atualizarPrevisao(fornecidos) {
   var fazendas = lerFazendas_();
+  if (fornecidos) fazendas = fazendas.filter(function (f) { return !!fornecidos[f.chave]; });
+  if (!fazendas.length) throw new Error("Fazenda não encontrada.");
   var mapa = lerPrevisoes_();
   var linhas = [], resumoLog = [], falhou = false;
   fazendas.forEach(function (cfg) {
-    var r = previsaoDaFazenda_(cfg);
+    var r = previsaoDaFazenda_(cfg, fornecidos ? fornecidos[cfg.chave] : null);
+    var anterior = mapa[cfg.chave];
+    // Open-Meteo falhou nesta rodada (429…): uma previsão boa anterior vale mais que só o texto do INMET
+    if (!r.omOk && anterior && anterior.dias && anterior.dias.some(function (d) { return d.chuvaMm !== null && d.chuvaMm !== undefined; })) {
+      var diasAnt = anterior.dias.filter(function (d) { return d.chuvaMm !== null && d.chuvaMm !== undefined; });
+      var dias2 = Motor.juntarPrevisao(diasAnt, r.inmet || []);
+      r.previsao = r.previsao || { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), fontes: [], horas: [], luz: [] };
+      r.previsao.dias = dias2;
+      r.previsao.diasDe = anterior.diasDe || anterior.atualizadoEm;
+      r.previsao.fontes = (anterior.fontes || []).filter(function (f) { return /Open-Meteo/.test(f); }).concat(r.previsao.fontes.filter(function (f) { return !/Open-Meteo/.test(f); }));
+      r.erros.push("previsão diária: mantive a da rodada " + String(r.previsao.diasDe).replace("T", " ").slice(0, 16));
+    }
     if (!r.previsao) { resumoLog.push(cfg.nome + ": ERRO " + r.erros.join(" | ")); falhou = true; return; }
     if (r.erros.length) falhou = true;
     // horas (48 h) ou luz do dia que falharam nesta rodada: fica a rodada anterior, avisando
-    var anterior = mapa[cfg.chave];
     if (anterior && (!r.previsao.horas || !r.previsao.horas.length) && anterior.horas && anterior.horas.length) {
       r.previsao.horas = anterior.horas;
       r.previsao.horasDe = anterior.horasDe || anterior.atualizadoEm;
@@ -1241,6 +1264,19 @@ function atualizarPrevisao() {
   var algum = fazendas.some(function (f) { return mapa[f.chave]; });
   if (!algum) { log_("previsão", "erro", resumoLog.join(" / ")); return null; }
   try { guardarHistoricoPrevisao_(fazendas, mapa); } catch (e) { resumoLog.push("histórico: " + e.message); falhou = true; }
+  // aba PREVISAO: todas as fazendas (as que não entraram nesta rodada, com o que já tinham)
+  var v2 = function (x) { return x === null || x === undefined ? "" : x; };
+  var nestaRodada = fazendas.map(function (f) { return f.chave; });
+  lerFazendas_().forEach(function (cfg) {
+    if (nestaRodada.indexOf(cfg.chave) >= 0 || !mapa[cfg.chave]) return;
+    var p = mapa[cfg.chave];
+    (p.dias || []).forEach(function (d) {
+      var f = d.faixaChuva;
+      linhas.push([d.data, v2(d.chuvaMm), v2(d.probPct), v2(d.tmin), v2(d.tmax), d.resumo || "", p.atualizadoEm, (p.fontes || []).join(", "), cfg.nome,
+        d.tempo || "", f ? f.minMm : "", f ? f.maxMm : "", f ? f.comChuva : "", f ? f.modelos : "",
+        v2(d.urPct), v2(d.ventoKmh), v2(d.rajadaKmh), v2(d.et0Mm), v2(d.radiacaoMJ), v2(d.solH), v2(d.uvMax)]);
+    });
+  });
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
   escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, linhas);
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
@@ -1732,11 +1768,11 @@ function aviso_(texto) {
  * O endereço /exec vai na tela ⚙️ Sincronizar do app (nunca no GitHub).
  *
  * doGet  ?acao=dados | hash | historico&pivo=&dias= | usuarios     (&s=<sessão>)
- * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__previsao} {__pivo} {__reservatorio} {__usuario} {__trocarPin} {__push} {__pushSair}
+ * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__previsao} {__previsaoDados} {__pivo} {__reservatorio} {__usuario} {__trocarPin} {__push} {__pushSair}
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-4";
+var VERSAO_SERVIDOR = "2026.10.16-5";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1819,6 +1855,17 @@ function doPost(e) {
       var okPrev = atualizarPrevisao();
       var lg = ultimoLog_("previsão");
       return json_({ ok: true, atualizou: !!okPrev, log: lg, hash: hashDados_() });
+    }
+    if (tipo === "__previsaoDados") {
+      // o app buscou o Open-Meteo no celular e manda as respostas; qualquer usuário logado pode (é só previsão)
+      var chaveF = chaveFazenda_(String(d.fazenda || ""));
+      if (!lerFazendas_().some(function (f) { return f.chave === chaveF; })) return json_({ ok: false, erro: "Fazenda não encontrada." });
+      if (JSON.stringify(d).length > 600000) return json_({ ok: false, erro: "Previsão grande demais." });
+      if (!d.diario || typeof d.diario !== "object" || !d.diario.daily) return json_({ ok: false, erro: "Resposta diária do Open-Meteo inválida." });
+      try { Motor.lerOpenMeteo(d.diario); } catch (eV) { return json_({ ok: false, erro: eV.message }); }
+      var forn = {}; forn[chaveF] = { diario: d.diario, horas: d.horas && typeof d.horas === "object" && d.horas.hourly ? d.horas : null };
+      var okPD = atualizarPrevisao(forn);
+      return json_({ ok: true, atualizou: !!okPD, log: ultimoLog_("previsão"), hash: hashDados_() });
     }
     if (tipo === "__pivo") {
       exigirAdmin_(u);
@@ -1964,8 +2011,11 @@ function dadosApp_(u) {
   var previsoes = lerPrevisoes_();
   var estacoes = {};
   fazendas.forEach(function (f) {
+    var fc = comCoordenadas_(f);
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
-      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null };
+      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null,
+      // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
+      previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso) } : null };
   });
   var f0 = estacoes[chaves[0]];
   return {

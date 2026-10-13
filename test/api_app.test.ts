@@ -359,6 +359,52 @@ test("Open-Meteo ocupado (429): a planilha espera e tenta de novo; se as 48 h fa
   assert.equal(amb.urls.slice(antes).filter((u) => u.includes("open-meteo") && !u.includes("hourly=") && u.includes("models=")).length, 1);
 });
 
+test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open-Meteo e a planilha não busca nada do Google", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  const time = [], temperature_2m = [], relative_humidity_2m = [], wind_speed_10m = [], wind_gusts_10m = [], precipitation = [], precipitation_probability = [];
+  for (let h = 0; h < 48; h++) { time.push("2026-02-0" + (h < 24 ? 8 : 9) + "T" + String(h % 24).padStart(2, "0") + ":00"); temperature_2m.push(24); relative_humidity_2m.push(70); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5); }
+  const horas = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
+  const op = entrar(amb, "jose", "4321").token;   // operador também pode: é só previsão
+  const r = amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: om, horas } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.atualizou, true);
+  assert.equal(r.log.status, "ok");
+  assert.ok(!amb.urls.some((u) => u.includes("open-meteo")), "não pediu nada ao Open-Meteo pelo Google");
+  const d = amb.get({ acao: "dados", s: op });
+  assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET"]);
+  assert.equal(d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09").faixaChuva.modelos, 6);
+  assert.equal(d.previsao.horas.length, 48);
+  assert.equal(d.previsao.luz.length, 4);
+  assert.match(d.estacoes["agua viva"].previsaoUrls.diario, /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-14\.74&longitude=-46\.24.*models=best_match/);
+  assert.match(d.estacoes["agua viva"].previsaoUrls.horas, /hourly=temperature_2m/);
+  // recusas: fazenda desconhecida, resposta sem série diária
+  assert.match(amb.post({ s: op, __previsaoDados: { fazenda: "outra", diario: om } }).erro, /Fazenda não encontrada/);
+  assert.match(amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: { daily: {} } } }).erro, /série diária/);
+});
+
+test("Open-Meteo falhou na rodada: a previsão diária boa anterior fica (só o texto do INMET se renova)", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  amb.chamar("atualizarPrevisao");
+  amb.agoraMs! += 3 * 3600_000;
+  amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; resumo?: string }[]; fontes: string[]; diasDe?: string; atualizadoEm: string };
+  assert.equal(p.dias.find((x) => x.data === "2026-02-09")!.chuvaMm, 12.4);
+  assert.match(p.dias.find((x) => x.data === "2026-02-09")!.resumo!, /pancadas/);
+  assert.deepEqual([...p.fontes], ["Open-Meteo (6 modelos)", "INMET"]);
+  assert.equal(p.diasDe, "2026-02-08T19:00:00");
+  assert.equal(p.atualizadoEm, "2026-02-08T22:00:00");
+  const ultimo = amb.aba("LOG").objetos().filter((l) => l["Ação"] === "previsão").pop()!;
+  assert.match(String(ultimo["Detalhe"]), /previsão diária: mantive a da rodada 2026-02-08 19:00/);
+  // aba PREVISAO continua com os números
+  assert.equal(amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!["Chuva prevista (mm)"], 12.4);
+});
+
 test("previsão com vários modelos: faixa e concordância vão para a aba e o app; se o pedido falhar, cai para o melhor ajuste", () => {
   const amb = pronto();
   const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));

@@ -63,7 +63,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      (primeira à última luz do dia, calculadas pela latitude/longitude) e a previsão traz o nascer/pôr dos
      próximos 4 dias: a aplicação aérea só entra nas janelas com luz. Quando o Open-Meteo responde "muitos pedidos" (429) ou
      está fora do ar (5xx), a planilha espera e tenta até 3 vezes; se mesmo assim as 48 h falharem, ficam as
-     da rodada anterior (o LOG avisa "mantive as horas da rodada …").
+     da rodada anterior (o LOG avisa "mantive as horas da rodada …"); a previsão diária boa anterior também fica quando o
+     Open-Meteo falha (só o texto do INMET se renova). Como o Open-Meteo bloqueia os endereços do Google com
+     frequência, o **app busca o Open-Meteo no celular** e manda as respostas (`__previsaoDados`): a planilha
+     só lê o INMET e grava. A URL que o app usa vai em `estacoes[].previsaoUrls`.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
      conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o

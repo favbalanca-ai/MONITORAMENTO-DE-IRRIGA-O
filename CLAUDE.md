@@ -29,7 +29,8 @@ final de cada tarefa, em português do Brasil, informal e direto.
 3. **Bibliotecas externas** só via `<script>` de `cdn.jsdelivr.net` ou `cdnjs.cloudflare.com`, com
    versão fixa, e só se não houver API nativa.
 4. **Padrão do `doPost`:** um tipo por pedido, com chave `__nome` (`__login`, `__lancamento`,
-   `__apagar`, `__recalcular`, `__pivo`, `__usuario`, `__trocarPin`). Tipo novo = um `if` no roteador.
+   `__apagar`, `__recalcular`, `__previsao`, `__previsaoDados`, `__pivo`, `__reservatorio`, `__usuario`, `__trocarPin`,
+   `__push`, `__pushSair`). Tipo novo = um `if` no roteador.
 5. **Idempotência:** todo lançamento tem `id` (coluna ID das abas IRRIGACOES/UMIDADE). Reenviar o mesmo
    id regrava a mesma linha, nunca duplica. É isso que permite a fila sem internet do app.
 6. **Abas novas** são criadas pelo `Code.gs` quando faltam. Localize colunas **pelo cabeçalho**.

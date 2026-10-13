@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-5';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-6';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -117,6 +117,7 @@ async function puxar(forcar) {
     logAdd(true, 'Puxar planilha', d.resumo ? 'dia ' + d.resumo.dia : (d.erroCalculo || 'sem cálculo'));
     ocupado = false; setStatus('ok');
     if (!editando()) route({ manterRolagem: true });
+    setTimeout(previsaoAutomatica, 1500);   // previsão velha? o celular busca o Open-Meteo e manda pra planilha
     return true;
   } catch (e) {
     ocupado = false; setStatus('err', navigator.onLine === false ? 'Sem internet' : 'Erro');
@@ -770,7 +771,8 @@ function cardPrevisao(dia) {
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
   return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     tira + resumo + linhaAmanha + detalhes +
-    '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + '. A previsão não entra no balanço; só avisa.</p></div>';
+    '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
+    (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
 }
 
 /** Sem previsão: diz o que a planilha registrou da última tentativa e deixa o administrador tentar de novo. */
@@ -781,7 +783,63 @@ function cardSemPrevisao() {
     (lg ? '<p class="muted">Última tentativa da planilha: ' + esc(lg.quando) + ' — <b>' + esc(lg.status) + '</b>' + (lg.detalhe ? '<br>' + esc(lg.detalhe) : '') + '</p>' : '<p class="muted">A planilha ainda não tentou buscar a previsão (o gatilho roda a cada 3 h depois do Instalar / atualizar).</p>') +
     '<p class="muted">Precisa de latitude e longitude na aba FAZENDAS (Open-Meteo) e do código IBGE do município (INMET).' + (ehAdmin() ? '' : ' Peça ao administrador pra atualizar.') + '</p></div>';
 }
-function botaoPrevisao() { return ehAdmin() ? '<button type="button" class="btn btn-outline btn-sm" data-act="previsao">' + ico('refresh') + ' Atualizar</button>' : ''; }
+function botaoPrevisao() { return '<button type="button" class="btn btn-outline btn-sm" data-act="previsao">' + ico('refresh') + ' Atualizar</button>'; }
+
+/* ================= previsão buscada pelo celular ================= */
+const PREV_CEL_KEY = 'irrigacao_prev_cel';
+/** A previsão guardada está velha (mais de 3 h) ou sem números do Open-Meteo? */
+function previsaoVelha(e) {
+  const pv = e && e.previsao; if (!pv || !pv.dias || !pv.dias.length) return true;
+  if (!pv.dias.some((d) => d.chuvaMm != null)) return true;
+  if (!pv.horas || !pv.horas.length) return true;
+  const t = Date.parse(String(pv.atualizadoEm || '').replace(' ', 'T'));
+  return !isFinite(t) || Date.now() - t > 3 * 3600 * 1000;
+}
+async function baixarJson(url) {
+  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+/**
+ * Busca o Open-Meteo (diário + horas) de cada fazenda AQUI no celular e manda para a planilha
+ * (`__previsaoDados`). `forcar` = todas as fazendas, mesmo com previsão recente.
+ * Devolve { ok, avisos, erro }.
+ */
+async function previsaoPeloCelular(forcar) {
+  if (!DADOS || !DADOS.estacoes || navigator.onLine === false) return { ok: false, erro: 'sem internet' };
+  const chaves = Object.keys(DADOS.estacoes).filter((k) => DADOS.estacoes[k].previsaoUrls && (forcar || previsaoVelha(DADOS.estacoes[k])));
+  if (!chaves.length) return { ok: false, erro: 'nenhuma fazenda com latitude/longitude' + (forcar ? '' : ' ou previsão já recente') };
+  const avisos = []; let algum = false, erro = '';
+  for (const k of chaves) {
+    const e = DADOS.estacoes[k];
+    try {
+      const diario = await baixarJson(e.previsaoUrls.diario);
+      let horas = null;
+      try { horas = await baixarJson(e.previsaoUrls.horas); } catch (eh) { avisos.push(e.nome + ' horas: ' + eh.message); }
+      const r = await chamar('POST', null, { __previsaoDados: { fazenda: k, diario, horas } });
+      if (!r || !r.ok) throw new Error((r && r.erro) || 'a planilha recusou');
+      algum = true;
+      if (r.log && r.log.status !== 'ok' && r.log.detalhe) avisos.push(r.log.detalhe);
+    } catch (ex) { erro = e.nome + ': ' + ex.message; avisos.push(erro); }
+  }
+  grava(PREV_CEL_KEY, Date.now());
+  return { ok: algum, avisos: avisos.join(' | '), erro: erro || avisos.join(' | ') };
+}
+/** Depois de puxar a planilha: se a previsão está velha, busca pelo celular (no máximo uma vez por hora). */
+async function previsaoAutomatica() {
+  try {
+    if (!DADOS || !DADOS.estacoes) return;
+    const ultima = Number(ler(PREV_CEL_KEY, 0)) || 0;
+    if (Date.now() - ultima < 3600 * 1000) return;
+    if (!Object.keys(DADOS.estacoes).some((k) => DADOS.estacoes[k].previsaoUrls && previsaoVelha(DADOS.estacoes[k]))) return;
+    const r = await previsaoPeloCelular(false);
+    logAdd(r.ok, 'Previsão pelo celular', r.ok ? 'enviada à planilha' + (r.avisos ? ' · ' + r.avisos : '') : r.erro);
+    if (r.ok) { DADOS.hash = ''; await puxar(true); }
+  } catch (e) { logAdd(false, 'Previsão pelo celular', e.message); }
+}
 
 /* ================= LANÇAR ================= */
 let tipoLanc = 'irrigacao', modoLanc = 'pct';
@@ -1842,9 +1900,15 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'previsao') {
     a.disabled = true; a.textContent = 'Buscando…';
     try {
-      const r = await chamar('POST', null, { __previsao: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro');
-      if (r.atualizou) toast('Previsão atualizada' + (r.log && r.log.status !== 'ok' ? ' com avisos: ' + r.log.detalhe : '.'), r.log && r.log.status !== 'ok');
-      else toast('A planilha não conseguiu buscar a previsão: ' + (r.log ? r.log.detalhe : 'sem detalhe no LOG'), true);
+      // primeiro pelo celular (o Open-Meteo bloqueia os endereços do Google com 429); se não der, a planilha tenta
+      const r1 = await previsaoPeloCelular(true);
+      if (r1.ok) toast('Previsão atualizada pelo celular' + (r1.avisos ? ' com avisos: ' + r1.avisos : '.'), !!r1.avisos);
+      else {
+        if (!ehAdmin()) throw new Error('Não consegui buscar a previsão pelo celular: ' + r1.erro);
+        const r = await chamar('POST', null, { __previsao: {} }); if (!r || !r.ok) throw new Error((r && r.erro) || 'erro');
+        if (r.atualizou) toast('Previsão atualizada pela planilha' + (r.log && r.log.status !== 'ok' ? ' com avisos: ' + r.log.detalhe : '.'), r.log && r.log.status !== 'ok');
+        else toast('A planilha não conseguiu buscar a previsão: ' + (r.log ? r.log.detalhe : 'sem detalhe no LOG'), true);
+      }
       DADOS.hash = ''; await puxar(true);
     } catch (e) { toast(e.message, true); a.disabled = false; a.innerHTML = ico('refresh') + ' Atualizar'; }
   }

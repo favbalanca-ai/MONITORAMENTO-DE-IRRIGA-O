@@ -15,7 +15,10 @@ feitos sem internet.
   Totais de chuva × ET₀ (saldo) em 7 e 14 dias. **Tendência** de cada dia: o que as rodadas anteriores
   (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
   confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
-  chuva prevista cobre o déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
+  chuva prevista cobre o déficit. **O próprio app busca o Open-Meteo** (o Open-Meteo bloqueia os endereços
+  do Google de onde a planilha sai, "HTTP 429"): ao abrir o app com a previsão velha (> 3 h) ou pelo botão
+  **Atualizar**, o celular baixa o diário e as horas e manda para a planilha (`__previsaoDados`); a fonte
+  aparece como "Open-Meteo (6 modelos) via app". Qualquer usuário logado pode. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
   ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
   cinza sem dados. Botão **PDF** baixa o relatório do dia (o mesmo que vai por e-mail, mais o balanço de 30 dias
