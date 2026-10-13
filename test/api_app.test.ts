@@ -282,6 +282,45 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   assert.ok(amb.aba("LOG").objetos().some((l) => l["Ação"] === "previsão" && l["Status"] === "parcial" && /INMET: HTTP 503/.test(String(l["Detalhe"]))));
 });
 
+test("tendência: cada rodada vai para PREVISAO HISTORICO e o dia-alvo ganha 89% → 60% → 50% (caindo)", () => {
+  const amb = pronto();
+  const base = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  // três rodadas, em dias seguidos, com a chance de 12/02 caindo: 89 → 60 → 50 (e os modelos desistindo da chuva)
+  const rodada = (prob: number, mm: number, comChuva: number) => {
+    const o = JSON.parse(JSON.stringify(base)); const d = o.daily; const i = d.time.indexOf("2026-02-12");
+    d.precipitation_probability_max_best_match[i] = prob; d.precipitation_sum_best_match[i] = mm;
+    ["ecmwf_ifs025", "gfs_seamless", "icon_seamless", "gem_seamless", "meteofrance_seamless"].forEach((m, k) => { d["precipitation_sum_" + m][i] = k < comChuva - 1 ? mm : 0; });
+    return o;
+  };
+  const rodadas = [rodada(89, 18, 6), rodada(60, 9, 4), rodada(50, 6, 2)];
+  for (let r = 0; r < 3; r++) {
+    amb.agoraMs = deLocal("2026-02-" + String(8 + r).padStart(2, "0") + "T09:00:00", "America/Sao_Paulo");
+    amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: rodadas[r] } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+    // duas rodadas no mesmo dia: a segunda substitui a primeira (não duplica)
+    amb.chamar("atualizarPrevisao");
+    amb.chamar("atualizarPrevisao");
+  }
+  const hist = amb.aba("PREVISAO HISTORICO").objetos();
+  const de12 = hist.filter((l) => String(l["Dia previsto"]).slice(0, 10) === "2026-02-12");
+  assert.deepEqual(de12.map((l) => [String(l["Emitida em"]).slice(0, 10), l["Probabilidade (%)"], l["Chuva prevista (mm)"], l["Modelos com chuva"]]), [["2026-02-08", 89, 18, 6], ["2026-02-09", 60, 9, 4], ["2026-02-10", 50, 6, 2]]);
+  // só dias previstos (nada de dias passados), uma linha por emissão × dia
+  assert.ok(hist.every((l) => String(l["Dia previsto"]).slice(0, 10) >= String(l["Emitida em"]).slice(0, 10)));
+  assert.equal(hist.filter((l) => String(l["Emitida em"]).slice(0, 10) === "2026-02-10").length, 5); // 10 a 14/02
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const d = amb.get({ acao: "dados", s: adm });
+  const dia = d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-12");
+  assert.equal(dia.tendencia.direcao, "caindo");
+  assert.equal(dia.tendencia.texto, "89% → 60% → 50% · caindo");
+  assert.equal(dia.tendencia.emissoes, 3);
+  assert.equal(dia.tendencia.nivel, "baixa");
+  const amanha = d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-11");
+  assert.equal(amanha.tendencia.direcao, "estavel");
+  // o relatório conta a tendência de amanhã
+  const rel = amb.chamar("calcular_", "2026-02-10") as { fazendas: { texto: string }[] };
+  assert.match(rel.fazendas[0]!.texto, /Tendência amanhã: 20% → 20% → 20% · estável/);
+});
+
 test("previsão com vários modelos: faixa e concordância vão para a aba e o app; se o pedido falhar, cai para o melhor ajuste", () => {
   const amb = pronto();
   const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));

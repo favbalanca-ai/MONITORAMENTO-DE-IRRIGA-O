@@ -5,7 +5,12 @@ import type { DataISO, DiaClima, Leitura } from "./tipos.ts";
 export const HORA_FECHAMENTO = "18:00:00";
 
 export function diaAnterior(data: DataISO): DataISO {
-  const t = Date.parse(data + "T00:00:00Z") - 86_400_000;
+  return somarDias(data, -1);
+}
+
+/** Data ISO deslocada `n` dias (negativo = para trás). */
+export function somarDias(data: DataISO, n: number): DataISO {
+  const t = Date.parse(data + "T00:00:00Z") + n * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);
 }
 

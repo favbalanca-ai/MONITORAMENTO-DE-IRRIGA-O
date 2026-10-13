@@ -36,6 +36,8 @@ export interface DiaPrevisao {
   modelos?: ModeloDia[];
   /** Faixa e concordância entre os modelos para a chuva do dia. */
   faixaChuva?: FaixaChuva;
+  /** Como a previsão deste dia mudou de uma rodada para outra (a planilha anexa, do histórico). */
+  tendencia?: TendenciaPrevisao;
   /** Texto do INMET por turno ("manhã: sol; tarde: pancadas de chuva…"). */
   resumo?: string;
 }
@@ -443,4 +445,63 @@ export function horaMenosRuim(horas: HoraAplicacao[], apartirDe: string): HoraAp
     if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct)) melhor = h;
   }
   return melhor;
+}
+
+/* ------------------------------ tendência: como a previsão de um dia mudou de uma rodada para outra ------------------------------ */
+
+/** O que UMA rodada da previsão (emitida em `emissao`) disse sobre um dia-alvo. */
+export interface PontoPrevisao {
+  /** Dia em que a previsão foi buscada. */
+  emissao: DataISO;
+  probPct: number | null;
+  chuvaMm: number | null;
+  comChuva?: number | null;
+  modelos?: number | null;
+}
+
+export type DirecaoPrevisao = "subindo" | "caindo" | "estavel" | "nova";
+export type NivelConfianca = "alta" | "media" | "baixa";
+
+export interface TendenciaPrevisao {
+  /** Rodadas em ordem (a última é a atual). */
+  pontos: PontoPrevisao[];
+  emissoes: number;
+  /** Chance atual − chance da rodada anterior (pontos percentuais). */
+  deltaProb: number | null;
+  /** Chuva atual − chuva da rodada anterior (mm). */
+  deltaChuva: number | null;
+  direcao: DirecaoPrevisao;
+  /**
+   * Índice de 0 a 100 que junta a chance atual (50%), a concordância dos modelos (30%) e a estabilidade
+   * entre as últimas rodadas (20%). Alto = chuva firme; baixo = chute.
+   */
+  confianca: number;
+  nivel: NivelConfianca;
+  /** "89% → 60% → 50% · caindo" */
+  texto: string;
+}
+
+/**
+ * Tendência de um dia-alvo a partir do histórico de rodadas. Sobe/cai quando a chance mudou 10 pontos
+ * ou mais em relação à rodada anterior; com uma rodada só é "nova".
+ */
+export function tendenciaPrevisao(pontos: PontoPrevisao[]): TendenciaPrevisao {
+  const ps = [...pontos].sort((a, b) => (a.emissao < b.emissao ? -1 : a.emissao > b.emissao ? 1 : 0));
+  const atual = ps[ps.length - 1];
+  const anterior = ps.length > 1 ? ps[ps.length - 2] : undefined;
+  const deltaProb = atual && anterior && atual.probPct !== null && anterior.probPct !== null ? Math.round(atual.probPct - anterior.probPct) : null;
+  const deltaChuva = atual && anterior && atual.chuvaMm !== null && anterior.chuvaMm !== null ? Math.round((atual.chuvaMm - anterior.chuvaMm) * 10) / 10 : null;
+  let direcao: DirecaoPrevisao = ps.length < 2 ? "nova" : "estavel";
+  if (deltaProb !== null && deltaProb >= 10) direcao = "subindo";
+  else if (deltaProb !== null && deltaProb <= -10) direcao = "caindo";
+  else if (deltaProb === null && deltaChuva !== null && ps.length >= 2) direcao = deltaChuva >= 3 ? "subindo" : deltaChuva <= -3 ? "caindo" : "estavel";
+  const prob = atual?.probPct ?? 0;
+  const concord = atual && atual.modelos && atual.comChuva !== null && atual.comChuva !== undefined ? (100 * atual.comChuva) / atual.modelos : prob;
+  const ultimas = ps.slice(-3).map((p) => p.probPct).filter((x): x is number => x !== null);
+  const estab = ultimas.length >= 2 ? Math.max(0, 100 - 2 * (Math.max(...ultimas) - Math.min(...ultimas))) : 50;
+  const confianca = Math.round(0.5 * prob + 0.3 * concord + 0.2 * estab);
+  const nivel: NivelConfianca = confianca >= 70 ? "alta" : confianca >= 45 ? "media" : "baixa";
+  const seq = ps.slice(-4).map((p) => (p.probPct === null ? (p.chuvaMm === null ? "?" : p.chuvaMm.toFixed(0) + " mm") : Math.round(p.probPct) + "%")).join(" → ");
+  const rot: Record<DirecaoPrevisao, string> = { subindo: "subindo", caindo: "caindo", estavel: "estável", nova: "primeira rodada" };
+  return { pontos: ps, emissoes: ps.length, deltaProb, deltaChuva, direcao, confianca, nivel, texto: seq + " · " + rot[direcao] };
 }

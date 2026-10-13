@@ -470,6 +470,12 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
     time.push(loc); temperature_2m.push(noite ? 22 : 33); relative_humidity_2m.push(noite ? 75 : 35); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5);
   }
   const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  // rodada de ontem dizia 95% de chance pra 09/02; a de hoje diz 80% → tendência "caindo"
+  const omOntem = JSON.parse(JSON.stringify(om)); omOntem.daily.precipitation_probability_max_best_match[8] = 95;
+  amb.agoraMs = deLocal("2026-02-07T19:00:00", "America/Sao_Paulo");
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: omOntem } : { code: 500, corpo: {} });
+  amb.chamar("atualizarPrevisao");
+  amb.agoraMs = deLocal("2026-02-08T19:00:00", "America/Sao_Paulo");
   amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
   amb.chamar("atualizarPrevisao");
   // leitura ao vivo com todos os sensores (vento forte, chovendo, UV, pressão, sensor de solo 2)
@@ -518,12 +524,16 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
   // cartão "Próximos dias": tempo, faixa dos modelos e, em detalhes, os 14 dias + comparação modelo a modelo
   await page.getByText(/Amanhã: Pancadas de chuva fracas · 5 de 6 modelos veem chuva \(0–19 mm\)/).waitFor();
+  await page.getByText(/Tendência: 95% → 80% ↓ caindo · confiança alta \(7\d\)/).waitFor();
+  assert.equal(await page.locator(".prev-dia .tend.tend-caindo").count(), 1); // só 09/02 tem duas rodadas diferentes… os outros dias são "estável"
+  assert.ok((await page.locator(".prev-dia .tend").count()) >= 5);
   assert.equal(await page.locator(".prev-dia").count(), 6); // a resposta guardada só tem 6 dias depois de 08/02
   await page.getByText(/Detalhes dos 6 dias e comparação dos modelos/).click();
   await page.getByText("Chuva por modelo (mm)").waitFor();
   assert.deepEqual(await page.locator(".prev-modelos tbody tr td:first-child").allInnerTexts(), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France"]);
   const tabPrev = await page.locator(".prev-tab").first().innerText();
-  assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
+  assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+65% → 65% · estável\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
+  assert.equal(await page.locator(".prev-tab .spark-tend").count(), 6);
   // rosa dos ventos 24 h: uma leitura ao vivo vinda de 135° (SE) a 11 km/h
   const rosa = await page.locator(".card.rosa24").innerText();
   assert.match(rosa, /Vento nas últimas 24 h\s+1 leituras/);

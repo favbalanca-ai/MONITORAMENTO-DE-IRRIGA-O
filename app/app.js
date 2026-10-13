@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -681,6 +681,27 @@ function resumoPrevisao(dias, n) {
   dias.slice(0, n).forEach((d) => { chuva += d.chuvaMm || 0; if ((d.chuvaMm || 0) >= 1) comChuva++; if (d.et0Mm != null) { et0 += d.et0Mm; temEt0 = true; } });
   return { n: Math.min(n, dias.length), chuva, et0: temEt0 ? et0 : null, saldo: temEt0 ? chuva - et0 : null, comChuva };
 }
+const TEND_SETA = { subindo: '↑', caindo: '↓', estavel: '→', nova: '·' };
+const TEND_ROTULO = { subindo: 'subindo', caindo: 'caindo', estavel: 'estável', nova: '1ª rodada' };
+const CONF_ROTULO = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+/** Mini-gráfico (SVG) da chance de chuva de um dia ao longo das rodadas; a última bolinha é a atual. */
+function sparkTendencia(t) {
+  if (!t || !t.pontos || t.pontos.length < 2) return '';
+  const ps = t.pontos.slice(-8), W = 72, H = 24, n = ps.length;
+  const x = (i) => 4 + (i * (W - 8)) / (n - 1);
+  const y = (p) => 2 + (H - 4) * (1 - Math.max(0, Math.min(100, p == null ? 0 : p)) / 100);
+  const d = ps.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.probPct).toFixed(1)).join(' ');
+  return '<svg class="spark-tend tend-' + t.direcao + '" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(t.texto) + '">' +
+    '<path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    ps.map((p, i) => '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.probPct).toFixed(1) + '" r="' + (i === n - 1 ? 3 : 1.8) + '" fill="currentColor"/>').join('') + '</svg>';
+}
+/** Selo "↓ caindo · confiança baixa (39)". */
+function seloTendencia(t, curto) {
+  if (!t) return '';
+  const cls = 'tend tend-' + t.direcao + ' conf-' + t.nivel;
+  if (curto) return '<span class="' + cls + '" title="' + esc(t.texto + ' · confiança ' + CONF_ROTULO[t.nivel].toLowerCase() + ' (' + t.confianca + ')') + '">' + TEND_SETA[t.direcao] + ' ' + t.confianca + '</span>';
+  return '<span class="' + cls + '">' + TEND_SETA[t.direcao] + ' ' + esc(TEND_ROTULO[t.direcao]) + '</span> · confiança <b>' + esc(CONF_ROTULO[t.nivel].toLowerCase()) + '</b> (' + t.confianca + ')';
+}
 /** Texto curto sobre a concordância dos modelos num dia. */
 function textoModelos(f) {
   if (!f) return '';
@@ -709,6 +730,7 @@ function cardPrevisao(dia) {
     '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
     (d.faixaChuva ? '<span class="prev-mod">' + d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' ' + ico('chuva') + '</span>' : '') +
+    (d.tendencia && d.tendencia.emissoes >= 2 ? '<span class="prev-tend">' + seloTendencia(d.tendencia, true) + '</span>' : '') +
     '</div>').join('') + '</div>';
   const resumo = '<div class="prev-resumo">' +
     '<span><small>2 dias</small><b>' + br(soma2, 1) + ' mm</b></span>' +
@@ -717,11 +739,13 @@ function cardPrevisao(dia) {
     '</div>';
   const amanha = prox[0];
   const linhaAmanha = (amanha.tempo || amanha.faixaChuva ? '<p class="muted prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</p>' : '') +
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 ? '<p class="muted prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</p>' : '') +
     (amanha.resumo ? '<p class="muted">INMET amanhã — ' + esc(amanha.resumo) + '</p>' : '');
   const n = (x, c) => (x == null ? '–' : br(x, c));
-  const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
+  const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
     todos.map((d) => '<tr class="' + classe(d).trim() + '"><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td><td class="esq">' + iconeTempo(d.codigoTempo) + ' ' + esc(d.tempo || (d.resumo ? 'INMET: ' + d.resumo : '–')) + '</td>' +
       '<td>' + n(d.chuvaMm, 1) + ' mm</td><td>' + (d.probPct == null ? '–' : br(d.probPct, 0) + '%') + '</td>' +
+      '<td class="esq td-tend">' + (d.tendencia && d.tendencia.emissoes >= 2 ? sparkTendencia(d.tendencia) + '<small>' + esc(d.tendencia.texto) + '</small>' : '<small class="muted">1ª rodada</small>') + '</td>' +
       '<td>' + (d.faixaChuva ? d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' · ' + br(d.faixaChuva.minMm, 0) + '–' + br(d.faixaChuva.maxMm, 0) + ' mm' : '–') + '</td>' +
       '<td>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°' : '–') + '</td>' +
       '<td>' + (d.urPct == null ? '–' : br(d.urPct, 0) + '%') + '</td>' +
@@ -738,7 +762,8 @@ function cardPrevisao(dia) {
       '</tbody></table></div>';
   }
   const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + tabela + modelos +
-    '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p></details>';
+    '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
+    '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
   return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     tira + resumo + linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + '. A previsão não entra no balanço; só avisa.</p></div>';

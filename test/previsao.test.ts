@@ -142,3 +142,41 @@ test("pulverização: Delta T, semáforo por instante e janelas boas nas horas p
   assert.equal(m.quando.slice(11), "00:00"); // 20 °C e UR 40: o menor Delta T do dia
   assert.equal(m.urPct, 40);
 });
+
+test("tendência: a chance de chuva de um dia-alvo firmando ou caindo de uma rodada para outra", async () => {
+  const { tendenciaPrevisao } = await import("../src/motor/previsao.ts");
+  const caindo = tendenciaPrevisao([
+    { emissao: "2026-10-13", probPct: 89, chuvaMm: 18, comChuva: 6, modelos: 6 },
+    { emissao: "2026-10-14", probPct: 60, chuvaMm: 9, comChuva: 4, modelos: 6 },
+    { emissao: "2026-10-15", probPct: 50, chuvaMm: 6, comChuva: 2, modelos: 6 },
+  ]);
+  assert.equal(caindo.direcao, "caindo");
+  assert.equal(caindo.deltaProb, -10);
+  assert.equal(caindo.deltaChuva, -3);
+  assert.equal(caindo.emissoes, 3);
+  assert.equal(caindo.texto, "89% → 60% → 50% · caindo");
+  // 0,5·50 + 0,3·33 + 0,2·(100 − 2·39 = 22) = 25 + 10 + 4,4 ≈ 39 → baixa
+  assert.equal(caindo.confianca, 39);
+  assert.equal(caindo.nivel, "baixa");
+  // fora de ordem entra em ordem
+  const subindo = tendenciaPrevisao([
+    { emissao: "2026-10-15", probPct: 85, chuvaMm: 20, comChuva: 6, modelos: 6 },
+    { emissao: "2026-10-13", probPct: 40, chuvaMm: 5, comChuva: 2, modelos: 6 },
+    { emissao: "2026-10-14", probPct: 70, chuvaMm: 15, comChuva: 5, modelos: 6 },
+  ]);
+  assert.equal(subindo.direcao, "subindo");
+  assert.deepEqual(subindo.pontos.map((p) => p.emissao), ["2026-10-13", "2026-10-14", "2026-10-15"]);
+  assert.equal(subindo.confianca, 75); // 0,5·85 + 0,3·100 + 0,2·10 = 74,5 → 75
+  assert.equal(subindo.nivel, "alta");
+  const estavel = tendenciaPrevisao([{ emissao: "2026-10-13", probPct: 80, chuvaMm: 10 }, { emissao: "2026-10-14", probPct: 75, chuvaMm: 12 }]);
+  assert.equal(estavel.direcao, "estavel");
+  assert.equal(estavel.texto, "80% → 75% · estável");
+  const nova = tendenciaPrevisao([{ emissao: "2026-10-13", probPct: 30, chuvaMm: 2 }]);
+  assert.equal(nova.direcao, "nova");
+  assert.equal(nova.deltaProb, null);
+  assert.equal(nova.confianca, Math.round(0.5 * 30 + 0.3 * 30 + 0.2 * 50)); // sem modelos, concordância = chance; estabilidade desconhecida = 50
+  // só mm (INMET sem %): usa a chuva
+  const mm = tendenciaPrevisao([{ emissao: "2026-10-13", probPct: null, chuvaMm: 2 }, { emissao: "2026-10-14", probPct: null, chuvaMm: 9 }]);
+  assert.equal(mm.direcao, "subindo");
+  assert.equal(mm.texto, "2 mm → 9 mm · subindo");
+});

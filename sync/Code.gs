@@ -20,6 +20,7 @@ var ABA = {
   LEITURAS: "LEITURAS",
   LOG: "LOG",
   PREVISAO: "PREVISAO",
+  PREVISAO_HIST: "PREVISAO HISTORICO",
   FAZENDAS: "FAZENDAS",
   RESERVATORIOS: "RESERVATORIOS",
   NIVEIS: "NIVEL RESERVATORIO",
@@ -139,6 +140,7 @@ var CABECALHOS = {
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
   NIVEIS: ["Data", "Reservatório", "Nível (%)", "Obs.", "Por", "ID", "Fazenda"],
   PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
+  PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
@@ -211,6 +213,7 @@ function instalar() {
   lei.getRange("A:A").setNumberFormat("@"); // texto: não deixa o Sheets converter a hora
   criarAbaSeFaltar_(ss, ABA.LOG, CABECALHOS.LOG);
   criarAbaSeFaltar_(ss, ABA.PREVISAO, CABECALHOS.PREVISAO);
+  criarAbaSeFaltar_(ss, ABA.PREVISAO_HIST, CABECALHOS.PREVISAO_HIST);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
   abaUsuarios_();
@@ -1224,12 +1227,70 @@ function atualizarPrevisao() {
   });
   var algum = fazendas.some(function (f) { return mapa[f.chave]; });
   if (!algum) { log_("previsão", "erro", resumoLog.join(" / ")); return null; }
+  try { guardarHistoricoPrevisao_(fazendas, mapa); } catch (e) { resumoLog.push("histórico: " + e.message); falhou = true; }
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
   escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, linhas);
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
   aba.getRange(2, 1).setValue(JSON.stringify({ porFazenda: mapa }));
   log_("previsão", falhou ? "parcial" : "ok", resumoLog.join(" / "));
   return mapa[fazendas[0].chave] || null;
+}
+
+/** Dias de rodadas guardados na aba PREVISAO HISTORICO. */
+var DIAS_HISTORICO_PREVISAO = 45;
+
+/**
+ * Guarda o que a rodada de hoje disse sobre cada dia previsto (uma linha por fazenda × dia de emissão × dia
+ * previsto; a rodada mais nova do dia substitui a anterior) e anexa a cada dia da previsão a TENDÊNCIA:
+ * como a chance de chuva daquele dia mudou de uma rodada para outra (89% → 60% → 50%: caindo).
+ */
+function guardarHistoricoPrevisao_(fazendas, mapa) {
+  var ss = SpreadsheetApp.getActive();
+  var aba = criarAbaSeFaltar_(ss, ABA.PREVISAO_HIST, CABECALHOS.PREVISAO_HIST);
+  var cab = CABECALHOS.PREVISAO_HIST;
+  var v = function (x) { return x === null || x === undefined ? "" : x; };
+  var n = function (x) { return x === "" || x === null || x === undefined ? null : Number(x); };
+  var iso = function (x) { return x instanceof Date ? Motor.paraLocal(x.getTime(), fazendas[0].fuso).slice(0, 10) : String(x).slice(0, 10); };
+  var antigas = aba.getLastRow() < 2 ? [] : aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues();
+  var porChave = {}, ordem = [];
+  antigas.forEach(function (l) {
+    if (!l[0] || !l[1] || !l[2]) return;
+    var k = chaveFazenda_(String(l[0])) + "|" + iso(l[1]) + "|" + iso(l[2]);
+    if (!porChave[k]) ordem.push(k);
+    porChave[k] = [String(l[0]), iso(l[1]), iso(l[2]), n(l[3]), n(l[4]), n(l[5]), n(l[6]), n(l[7]), n(l[8]), n(l[9]), n(l[10]), n(l[11])];
+  });
+  var limite = null;
+  fazendas.forEach(function (cfg) {
+    var p = mapa[cfg.chave];
+    if (!p || !p.dias) return;
+    var emissao = String(p.atualizadoEm).slice(0, 10);
+    if (!limite) limite = Motor.somarDias(emissao, -DIAS_HISTORICO_PREVISAO);
+    p.dias.forEach(function (d) {
+      if (d.data < emissao) return; // dias passados (ET₀ do Open-Meteo) não são previsão
+      var f = d.faixaChuva || null;
+      var k = cfg.chave + "|" + emissao + "|" + d.data;
+      if (!porChave[k]) ordem.push(k);
+      porChave[k] = [cfg.nome, emissao, d.data, v(d.chuvaMm), v(d.probPct), f ? f.comChuva : "", f ? f.modelos : "", f ? f.minMm : "", f ? f.maxMm : "", v(d.tmin), v(d.tmax), v(d.et0Mm)];
+    });
+  });
+  // tendência de cada dia: todas as rodadas guardadas daquele dia-alvo, da fazenda
+  fazendas.forEach(function (cfg) {
+    var p = mapa[cfg.chave];
+    if (!p || !p.dias) return;
+    p.dias.forEach(function (d) {
+      var pontos = [];
+      ordem.forEach(function (k) {
+        var partes = k.split("|");
+        if (partes[0] !== cfg.chave || partes[2] !== d.data) return;
+        var l = porChave[k];
+        pontos.push({ emissao: l[1], probPct: n(l[4]), chuvaMm: n(l[3]), comChuva: n(l[5]), modelos: n(l[6]) });
+      });
+      if (pontos.length) d.tendencia = Motor.tendenciaPrevisao(pontos);
+    });
+  });
+  var linhas = ordem.filter(function (k) { return !limite || k.split("|")[1] >= limite; }).map(function (k) { return porChave[k]; });
+  linhas.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0; });
+  escreverTabela_(ABA.PREVISAO_HIST, cab, linhas);
 }
 
 function buscarJson_(url) {
@@ -1651,7 +1712,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-1";
+var VERSAO_SERVIDOR = "2026.10.16-2";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

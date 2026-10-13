@@ -56,7 +56,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      (Alemanha), GEM (Canadá) e Météo-France — mais o texto do INMET (pelo município). Por dia: chuva, chance,
      tempo, faixa mín–máx entre os modelos e quantos veem chuva, Tmin/Tmax, UR, vento, rajada, ET₀, radiação,
      sol e UV, até 14 dias. Se o pedido com modelos falhar, repete só com o melhor ajuste (anota no LOG). A
-     previsão só avisa — não entra no balanço.
+     previsão só avisa — não entra no balanço. Cada rodada também grava em **PREVISAO HISTORICO** o que
+     disse sobre cada dia previsto (uma linha por fazenda × dia da rodada × dia previsto, 45 dias guardados);
+     dessa aba sai a **tendência** de cada dia (89% → 60% → 50%: caindo) e o índice de confiança que o app e
+     o relatório das 18h mostram.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
      conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o

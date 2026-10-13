@@ -103,7 +103,11 @@ var Motor = (function () {
   /** Hora local que fecha a janela do dia. */
   const HORA_FECHAMENTO = "18:00:00";
   function diaAnterior(data) {
-      const t = Date.parse(data + "T00:00:00Z") - 86400000;
+      return somarDias(data, -1);
+  }
+  /** Data ISO deslocada `n` dias (negativo = para trás). */
+  function somarDias(data, n) {
+      const t = Date.parse(data + "T00:00:00Z") + n * 86400000;
       return new Date(t).toISOString().slice(0, 10);
   }
   const media = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -1289,6 +1293,33 @@ var Motor = (function () {
       }
       return melhor;
   }
+  /**
+   * Tendência de um dia-alvo a partir do histórico de rodadas. Sobe/cai quando a chance mudou 10 pontos
+   * ou mais em relação à rodada anterior; com uma rodada só é "nova".
+   */
+  function tendenciaPrevisao(pontos) {
+      const ps = [...pontos].sort((a, b) => (a.emissao < b.emissao ? -1 : a.emissao > b.emissao ? 1 : 0));
+      const atual = ps[ps.length - 1];
+      const anterior = ps.length > 1 ? ps[ps.length - 2] : undefined;
+      const deltaProb = atual && anterior && atual.probPct !== null && anterior.probPct !== null ? Math.round(atual.probPct - anterior.probPct) : null;
+      const deltaChuva = atual && anterior && atual.chuvaMm !== null && anterior.chuvaMm !== null ? Math.round((atual.chuvaMm - anterior.chuvaMm) * 10) / 10 : null;
+      let direcao = ps.length < 2 ? "nova" : "estavel";
+      if (deltaProb !== null && deltaProb >= 10)
+          direcao = "subindo";
+      else if (deltaProb !== null && deltaProb <= -10)
+          direcao = "caindo";
+      else if (deltaProb === null && deltaChuva !== null && ps.length >= 2)
+          direcao = deltaChuva >= 3 ? "subindo" : deltaChuva <= -3 ? "caindo" : "estavel";
+      const prob = atual?.probPct ?? 0;
+      const concord = atual && atual.modelos && atual.comChuva !== null && atual.comChuva !== undefined ? (100 * atual.comChuva) / atual.modelos : prob;
+      const ultimas = ps.slice(-3).map((p) => p.probPct).filter((x) => x !== null);
+      const estab = ultimas.length >= 2 ? Math.max(0, 100 - 2 * (Math.max(...ultimas) - Math.min(...ultimas))) : 50;
+      const confianca = Math.round(0.5 * prob + 0.3 * concord + 0.2 * estab);
+      const nivel = confianca >= 70 ? "alta" : confianca >= 45 ? "media" : "baixa";
+      const seq = ps.slice(-4).map((p) => (p.probPct === null ? (p.chuvaMm === null ? "?" : p.chuvaMm.toFixed(0) + " mm") : Math.round(p.probPct) + "%")).join(" → ");
+      const rot = { subindo: "subindo", caindo: "caindo", estavel: "estável", nova: "primeira rodada" };
+      return { pontos: ps, emissoes: ps.length, deltaProb, deltaChuva, direcao, confianca, nivel, texto: seq + " · " + rot[direcao] };
+  }
   // ---- src/motor/ciclo.ts ----
   /**
    * Resumo meteorológico do ciclo de uma área (pivô ou talhão): graus-dia, horas de luz, chuva, ET₀ e extremos
@@ -1971,6 +2002,9 @@ var Motor = (function () {
           const f = prox[0]?.faixaChuva;
           if (f)
               l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+          const t = prox[0]?.tendencia;
+          if (t && t.emissoes >= 2)
+              l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
           const r7 = resumoPrevisao(previsao, data, 7);
           if (r7.et0Mm !== null && r7.dias >= 3)
               l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm`);
@@ -2064,6 +2098,9 @@ var Motor = (function () {
       const f1 = prox[0]?.faixaChuva;
       if (f1)
           html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+      const t1 = prox[0]?.tendencia;
+      if (t1 && t1.emissoes >= 2)
+          html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;
       const r7 = resumoPrevisao(previsao, data, 7);
       if (r7.et0Mm !== null && r7.dias >= 3)
           html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm</span>`;
@@ -2168,5 +2205,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

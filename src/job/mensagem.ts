@@ -131,6 +131,8 @@ export function montarMensagem(
     if (r) l.push(`   INMET amanhã: ${r}`);
     const f = prox[0]?.faixaChuva;
     if (f) l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+    const t = prox[0]?.tendencia;
+    if (t && t.emissoes >= 2) l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
     const r7 = resumoPrevisao(previsao, data, 7);
     if (r7.et0Mm !== null && r7.dias >= 3) l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm`);
   }
@@ -214,6 +216,8 @@ export function montarMensagemHtml(
   if (prox.length) html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
   const f1 = prox[0]?.faixaChuva;
   if (f1) html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+  const t1 = prox[0]?.tendencia;
+  if (t1 && t1.emissoes >= 2) html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;
   const r7 = resumoPrevisao(previsao, data, 7);
   if (r7.et0Mm !== null && r7.dias >= 3) html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm</span>`;
   html += `</div>`;

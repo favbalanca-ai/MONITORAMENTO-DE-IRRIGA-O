@@ -291,6 +291,17 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-tab tr.chuva td{background:var(--blue-soft)}
 .prev-modelos td.chuva{color:var(--blue);font-weight:700}
 .prev-tab td small{color:var(--muted)}
+.prev-tend{margin-top:3px}
+.tend{display:inline-block;font-weight:700;font-size:11px;border-radius:999px;padding:1px 7px;background:var(--bg);color:var(--muted);white-space:nowrap}
+.tend-subindo{color:var(--blue)}.tend-caindo{color:var(--amber)}.tend-estavel{color:var(--muted)}
+.tend.conf-alta{background:var(--blue-soft);color:var(--blue)}
+.tend.conf-media{background:var(--amber-soft);color:var(--amber)}
+.tend.conf-baixa{background:var(--line);color:var(--muted)}
+.prev-amanha-tend{margin-top:4px}
+.td-tend{white-space:nowrap}
+.td-tend small{display:block;font-size:11px;line-height:1.2}
+.spark-tend{display:block;color:var(--muted)}
+.spark-tend.tend-subindo{color:var(--blue)}.spark-tend.tend-caindo{color:var(--amber)}
 .mapa{height:min(70vh,560px);min-height:300px;background:#dfe7ea}
 .rotulo-pivo{background:rgba(22,64,77,.85);color:#fff;font-weight:700;font-size:12px;padding:2px 7px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-50%)}
 .kc-det{margin-top:10px}.kc-det summary{cursor:pointer;font-size:13px}

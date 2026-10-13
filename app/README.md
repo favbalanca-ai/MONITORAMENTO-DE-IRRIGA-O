@@ -12,7 +12,10 @@ feitos sem internet.
   (na tela Clima) com 7 dias em destaque — tempo (ícone), chuva, chance, temperatura e **quantos modelos
   veem chuva** (Open-Meteo: melhor ajuste + ECMWF, GFS, ICON, GEM e Météo-France; texto do INMET) — e, em
   "Detalhes", 14 dias com UR, vento/rajada, ET₀, horas de sol e UV e a tabela de chuva modelo a modelo.
-  Totais de chuva × ET₀ (saldo) em 7 e 14 dias. Aviso quando a chuva prevista cobre o déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
+  Totais de chuva × ET₀ (saldo) em 7 e 14 dias. **Tendência** de cada dia: o que as rodadas anteriores
+  (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
+  confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
+  chuva prevista cobre o déficit. Só a decisão: resumo no topo (quantos pivôs em cada estado) e, em cada pivô: **próxima irrigação prevista** (com a
   ET₀ prevista do Open-Meteo, sem contar chuva), **déficit ao fim da volta** e, com tarifa de ponta cadastrada,
   a **hora de ligar** e o custo. A borda de cada pivô é o semáforo: verde bom · amarelo atenção · vermelho irrigar ·
   cinza sem dados. Botão **PDF** baixa o relatório do dia (o mesmo que vai por e-mail, mais o balanço de 30 dias
