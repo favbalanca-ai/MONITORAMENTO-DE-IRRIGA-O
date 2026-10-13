@@ -546,3 +546,23 @@ test("previsão pelo app: __previsao busca na hora e devolve o LOG; sem previsã
   d = amb.get({ acao: "dados", s: adm });
   assert.ok(d.estacoes["agua viva"].previsao.dias.length > 0);
 });
+
+test("fazenda sem latitude/longitude: a previsão usa o centro dos pivôs dela", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const urls: string[] = [];
+  amb.respostaHttp = (url) => { urls.push(url); return url.includes("open-meteo") && !url.includes("hourly=") ? { code: 200, corpo: om } : { code: 500, corpo: {} }; };
+  setFazenda(amb, "Latitude", ""); setFazenda(amb, "Longitude", "");
+  const adm = entrar(amb, "fabiana", "1234").token;
+  let r = amb.post({ s: adm, __previsao: {} });
+  assert.equal(r.atualizou, false);
+  assert.match(r.log.detalhe, /preencha Latitude e Longitude na linha da fazenda "Água Viva"/);
+  // pivô com posição (do KMZ/GPS): a fazenda passa a ter coordenadas
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  const salvo = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "-46,3" }, original: "Pivô 2" } });
+  assert.equal(salvo.ok, true, salvo.erro);
+  urls.length = 0;
+  r = amb.post({ s: adm, __previsao: {} });
+  assert.equal(r.atualizou, true, r.log && r.log.detalhe);
+  assert.ok(urls.some((u) => /latitude=-14\.9&longitude=-46\.3/.test(u)), urls.join("\n"));
+});

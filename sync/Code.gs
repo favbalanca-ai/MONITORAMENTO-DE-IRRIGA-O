@@ -373,6 +373,21 @@ function fazendaPorChave_(chave) {
 /** A primeira fazenda — para quem precisa de um fuso ou um padrão geral. */
 function lerEstacao_() { return lerFazendas_()[0]; }
 
+/**
+ * Fazenda sem latitude/longitude na aba FAZENDAS: usa o centro médio dos pivôs dela (do KMZ ou do GPS).
+ * Devolve a própria cfg quando já tem coordenadas ou quando nenhum pivô tem posição.
+ */
+function comCoordenadas_(cfg) {
+  if (cfg.latitude !== null && cfg.longitude !== null) return cfg;
+  var pts = [];
+  try {
+    lerPivos_(cfg).forEach(function (p) { if (p.chaveFazenda === cfg.chave && p.latitude !== null && p.longitude !== null) pts.push([p.latitude, p.longitude]); });
+  } catch (e) { return cfg; }
+  if (!pts.length) return cfg;
+  var lat = pts.reduce(function (t, q) { return t + q[0]; }, 0) / pts.length, lon = pts.reduce(function (t, q) { return t + q[1]; }, 0) / pts.length;
+  return Object.assign({}, cfg, { latitude: Math.round(lat * 1e5) / 1e5, longitude: Math.round(lon * 1e5) / 1e5, coordenadasDosPivos: true });
+}
+
 /** Reservatórios (piscinões) da aba RESERVATORIOS, com a fazenda resolvida. */
 function lerReservatorios_() {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.RESERVATORIOS);
@@ -523,8 +538,9 @@ function cadastroValidado_() {
   var erros = [];
   fazendas.forEach(function (f) {
     var dessa = pivos.filter(function (p) { return p.chaveFazenda === f.chave; });
+    var fc = comCoordenadas_(f);   // fazenda sem latitude na aba: vale o centro dos pivôs dela
     var cad = {
-      estacao: { latitude: f.latitude, altitude: f.altitude, alturaAnemometro: f.alturaAnemometro, fuso: f.fuso },
+      estacao: { latitude: fc.latitude, altitude: f.altitude, alturaAnemometro: f.alturaAnemometro, fuso: f.fuso },
       pivos: dessa.filter(function (p) { return !p.semBalanco; }),
     };
     Motor.validarCadastro(cad, fusoValido_).forEach(function (e) { erros.push((fazendas.length > 1 ? f.nome + ": " : "") + e); });
@@ -893,6 +909,7 @@ function climaOpenMeteo_(cfg, ini, fim) {
 
 /** Clima de uma fazenda entre `ini` e `dia`: da estação dela, ou do Open-Meteo quando não tem estação. */
 function climaDaFazenda_(cfg, ini, dia) {
+  cfg = comCoordenadas_(cfg);
   // leituras da estação (ou importadas) da fazenda valem sempre; o Open-Meteo entra só quando não há nenhuma
   var leituras = lerLeituras_(Motor.diaAnterior(ini) + "T" + Motor.HORA_FECHAMENTO, dia + "T" + Motor.HORA_FECHAMENTO, cfg.chave);
   var clima = Motor.climaCompleto(leituras, ini, dia);
@@ -1127,13 +1144,14 @@ function salvarResumo_(dia, fazendas, previsoes) {
 
 /** Busca a previsão de UMA fazenda: Open-Meteo (mm, %, ET₀, horas) e INMET (texto). */
 function previsaoDaFazenda_(cfg) {
+  cfg = comCoordenadas_(cfg);
   var fontes = [], erros = [], om = [], inmet = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
       fontes.push("Open-Meteo");
     } catch (e) { erros.push("Open-Meteo: " + e.message); }
-  } else erros.push("Open-Meteo: preencha latitude e longitude da fazenda.");
+  } else erros.push("Open-Meteo: preencha Latitude e Longitude na linha da fazenda \"" + cfg.nome + "\" (aba FAZENDAS), ou cadastre a posição de um pivô dela.");
   if (cfg.ibge) {
     try {
       inmet = Motor.lerInmet(buscarJson_(Motor.INMET_URL + Math.round(cfg.ibge)));
@@ -1583,7 +1601,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.12-3";
+var VERSAO_SERVIDOR = "2026.10.13-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
