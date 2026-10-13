@@ -566,3 +566,22 @@ test("fazenda sem latitude/longitude: a previsão usa o centro dos pivôs dela",
   assert.equal(r.atualizou, true, r.log && r.log.detalhe);
   assert.ok(urls.some((u) => /latitude=-14\.9&longitude=-46\.3/.test(u)), urls.join("\n"));
 });
+
+test("cabeçalho editado à mão (espaço, acento, maiúscula) ainda é reconhecido; erro de coordenadas mostra o que leu", () => {
+  const amb = pronto();
+  const faz = amb.aba("FAZENDAS");
+  const cab = faz.dados[0]!.map(String);
+  faz.set(1, cab.indexOf("Latitude") + 1, " LATITUDE ");
+  faz.set(1, cab.indexOf("Longitude") + 1, "longitude");
+  faz.set(1, cab.indexOf("Município (código IBGE)") + 1, "Municipio (codigo IBGE)");
+  const urls: string[] = [];
+  amb.respostaHttp = (url) => { urls.push(url); return { code: 500, corpo: {} }; };
+  const adm = entrar(amb, "fabiana", "1234").token;
+  let r = amb.post({ s: adm, __previsao: {} });
+  assert.ok(urls.some((u) => /latitude=-14\.74/.test(u)), "leu a latitude mesmo com o cabeçalho diferente");
+  assert.ok(urls.some((u) => /3126208/.test(u)), "leu o IBGE");
+  // célula com lixo: a mensagem diz o que estava lá
+  setFazenda(amb, " LATITUDE ", "sul 14");
+  r = amb.post({ s: adm, __previsao: {} });
+  assert.match(r.log.detalhe, /Lido: latitude="sul 14", longitude=-46\.24/);
+});

@@ -28,6 +28,14 @@ var ABA = {
   CONFIG_APP: "CONFIG APP",
 };
 
+/** Acha uma coluna pelo cabeçalho sem se importar com espaços, maiúsculas e acentos (célula editada à mão). */
+function colunaPorCabecalho_(cab, nome) {
+  var norm = function (t) { return String(t == null ? "" : t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase(); };
+  var alvo = norm(nome);
+  for (var i = 0; i < cab.length; i++) if (norm(cab[i]) === alvo) return i;
+  return -1;
+}
+
 /** Nome da fazenda quando a planilha veio de antes das fazendas (aba ESTACAO só). */
 var FAZENDA_PADRAO = "Água Viva";
 
@@ -305,6 +313,7 @@ function lerEstacaoAba_() {
 function chaveFazenda_(nome) { return chaveCultura_(nome); }
 
 function normalizarCfg_(cfg) {
+  cfg.latitudeBruta = cfg.latitude; cfg.longitudeBruta = cfg.longitude;   // o que estava na célula, pro diagnóstico
   ["latitude", "longitude", "altitude", "alturaAnemometro", "ibge", "chuvaMinima", "pontaInicio", "pontaFim"].forEach(function (k) { cfg[k] = Motor.numero(cfg[k]); });
   if (cfg.chuvaMinima === null) cfg.chuvaMinima = Motor.CHUVA_MINIMA_EFETIVA_MM;
   cfg.ponta = { inicioH: cfg.pontaInicio === null ? 18 : cfg.pontaInicio, fimH: cfg.pontaFim === null ? 21 : cfg.pontaFim };
@@ -328,7 +337,7 @@ function lerFazendas_() {
   if (aba && aba.getLastRow() >= 2) {
     var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
     var col = {};
-    COLUNAS_FAZENDAS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
+    COLUNAS_FAZENDAS.forEach(function (c) { col[c[0]] = colunaPorCabecalho_(vals[0], c[1]); });
     vals.slice(1).forEach(function (l) {
       if (col.nome < 0 || String(l[col.nome]).trim() === "") return;
       var cfg = {};
@@ -361,7 +370,7 @@ function garantirFazendas_() {
   }
   var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0] : [];
   COLUNAS_FAZENDAS.forEach(function (c) {
-    if (cab.indexOf(c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
+    if (colunaPorCabecalho_(cab, c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
   });
 }
 
@@ -394,7 +403,7 @@ function lerReservatorios_() {
   if (!aba || aba.getLastRow() < 2) return [];
   var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
   var col = {};
-  COLUNAS_RESERVATORIOS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
+  COLUNAS_RESERVATORIOS.forEach(function (c) { col[c[0]] = colunaPorCabecalho_(vals[0], c[1]); });
   if (col.nome < 0) throw new Error("Aba RESERVATORIOS sem a coluna \"Reservatório\".");
   var fazendas = lerFazendas_();
   var n = function (l, k) { return col[k] < 0 ? null : Motor.numero(l[col[k]]); };
@@ -451,7 +460,7 @@ function garantirColunasPivos_() {
   if (!aba) return;
   var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0] : [];
   COLUNAS_PIVOS.forEach(function (c) {
-    if (c[2] && cab.indexOf(c[1]) < 0) {
+    if (c[2] && colunaPorCabecalho_(cab, c[1]) < 0) {
       aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold");
       cab.push(c[1]);
     }
@@ -463,7 +472,7 @@ function lerPivos_(cfg) {
   if (!aba || aba.getLastRow() < 2) return [];
   var vals = aba.getRange(1, 1, aba.getLastRow(), aba.getLastColumn()).getValues();
   var col = {};
-  COLUNAS_PIVOS.forEach(function (c) { col[c[0]] = vals[0].indexOf(c[1]); });
+  COLUNAS_PIVOS.forEach(function (c) { col[c[0]] = colunaPorCabecalho_(vals[0], c[1]); });
   var faltando = COLUNAS_PIVOS.filter(function (c) { return col[c[0]] < 0 && !c[2]; }).map(function (c) { return c[1]; });
   if (faltando.length) throw new Error("Aba PIVOS sem as colunas: " + faltando.join(", "));
   var n = function (linha, k) { return col[k] < 0 ? null : Motor.numero(linha[col[k]]); };
@@ -1151,7 +1160,7 @@ function previsaoDaFazenda_(cfg) {
       om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
       fontes.push("Open-Meteo");
     } catch (e) { erros.push("Open-Meteo: " + e.message); }
-  } else erros.push("Open-Meteo: preencha Latitude e Longitude na linha da fazenda \"" + cfg.nome + "\" (aba FAZENDAS), ou cadastre a posição de um pivô dela.");
+  } else erros.push("Open-Meteo: preencha Latitude e Longitude na linha da fazenda \"" + cfg.nome + "\" (aba FAZENDAS), ou cadastre a posição de um pivô dela. Lido: latitude=" + JSON.stringify(cfg.latitudeBruta === undefined ? cfg.latitude : cfg.latitudeBruta) + ", longitude=" + JSON.stringify(cfg.longitudeBruta === undefined ? cfg.longitude : cfg.longitudeBruta) + ".");
   if (cfg.ibge) {
     try {
       inmet = Motor.lerInmet(buscarJson_(Motor.INMET_URL + Math.round(cfg.ibge)));
@@ -1601,7 +1610,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.13-1";
+var VERSAO_SERVIDOR = "2026.10.13-2";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1925,7 +1934,7 @@ function cadastroPivos_() {
     pivos = vals.slice(1).filter(function (l) { return String(l[0]).trim() !== ""; }).map(function (l) {
       var o = {};
       COLUNAS_PIVOS.forEach(function (c) {
-        var i = vals[0].indexOf(c[1]);
+        var i = colunaPorCabecalho_(vals[0], c[1]);
         var x = i < 0 ? "" : l[i];
         o[c[0]] = x instanceof Date ? dataIso_(x, fuso) : x === undefined ? "" : x;
       });
@@ -2193,7 +2202,7 @@ function abaReservatorios_() {
   var aba = criarAbaSeFaltar_(ss, ABA.RESERVATORIOS, COLUNAS_RESERVATORIOS.map(function (c) { return c[1]; }));
   var cab = aba.getLastColumn() ? aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(String) : [];
   COLUNAS_RESERVATORIOS.forEach(function (c) {
-    if (cab.indexOf(c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
+    if (colunaPorCabecalho_(cab, c[1]) < 0) { aba.getRange(1, cab.length + 1).setValue(c[1]).setFontWeight("bold"); cab.push(c[1]); }
   });
   return { aba: aba, cab: cab };
 }
