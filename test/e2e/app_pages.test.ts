@@ -242,18 +242,20 @@ test("histórico desenha gráfico e tabela", async () => {
   assert.equal(await page.locator("#grafico .gfx-titulo").count(), 2);
   assert.equal(await page.locator("#grafico .gfx-def").count(), 1);
   assert.equal(await page.locator("#grafico .gfx-afd").count(), 1);
+  assert.equal(await page.locator("#grafico .gfx-cc").count(), 1, "linha da capacidade de campo");
+  assert.equal(await page.locator("#grafico .gfx-pmp").count(), 1, "linha do ponto de murcha no zero");
   assert.ok((await page.locator("#grafico .gfx-chuva").count()) > 0, "colunas de chuva");
-  assert.match((await page.locator("#grafico .gfx-rotulo").textContent())!, /\d+,\d mm hoje/);
-  assert.equal(await page.locator(".gfx-legenda span").count(), 9);
-  assert.equal(await page.locator("#grafico .gfx-cad").count(), 1, "linha do ponto de murcha (CAD)");
-  assert.match((await page.locator("#grafico .gfx-rotulo-cad").textContent())!, /ponto de murcha \(CAD \d+ mm\)/);
+  // água disponível = CAD − déficit: Pivô 2 com CAD 70 e déficit ~27 → ~43 mm
+  assert.match((await page.locator("#grafico .gfx-rotulo").textContent())!, /4\d mm hoje \(déficit 2\d,\d\)/);
+  assert.match((await page.locator("#grafico .gfx-rotulo-cc").textContent())!, /capacidade de campo \(CAD 70 mm\)/);
+  assert.equal(await page.locator(".gfx-legenda span").count(), 10);
   // crosshair + tooltip ao tocar no gráfico
   const hit = page.locator("#grafico .gfx-hit");
   const caixa = (await hit.boundingBox())!;
   await hit.dispatchEvent("pointermove", { clientX: caixa.x + caixa.width * 0.5, clientY: caixa.y + caixa.height * 0.3, bubbles: true });
   await page.locator("#grafico .gfx-tip").waitFor();
   const tip = await page.locator("#grafico .gfx-tip").innerText();
-  assert.match(tip, /\d\d\/\d\d\/2026 · \d+ DAS · R\d[\s\S]*\d+,\d mm\s+déficit[\s\S]*AFD \(limite de estresse\)[\s\S]*ponto de murcha \(CAD\)[\s\S]*consumo \(ETc\)/);
+  assert.match(tip, /\d\d\/\d\d\/2026 · \d+ DAS · R\d[\s\S]*\d+,\d mm\s+água disponível[\s\S]*déficit \(falta pra encher\)[\s\S]*capacidade de campo \(CAD\)[\s\S]*limite de estresse \(CAD − AFD\)[\s\S]*consumo \(ETc\)/);
   assert.equal(await page.locator("#grafico .gfx-cross.on").count(), 1, "crosshair visível");
   await hit.dispatchEvent("pointerleave", { bubbles: true });
   assert.equal(await page.locator("#grafico .gfx-tip").isHidden(), true);
@@ -261,6 +263,7 @@ test("histórico desenha gráfico e tabela", async () => {
   const resumo = await page.locator("#resumo-hist").innerText();
   assert.match(resumo, /Pivô 2 · 20 dias/);
   assert.match(resumo, /CONSUMO \(ETC\)\s+\d+/i);
+  assert.match(resumo, /ÁGUA NO SOLO AGORA\s+4\d\s+de 70 mm \(CAD\)/i);
   assert.match(resumo, /Pediu irrigação em \d+ dias?/);
   assert.match(resumo, /Cobertura: chuva \+ irrigação = \d+% do consumo/);
   assert.equal(await page.locator("#tab-hist thead th").count(), 8);

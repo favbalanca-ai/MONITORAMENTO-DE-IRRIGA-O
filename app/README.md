@@ -24,10 +24,10 @@ feitos sem internet.
   últimos lançamentos com quem lançou e botão **Apagar**.
 - **Histórico** — resumo do período (consumo ETc, chuva útil, irrigação em mm e m³, déficit e tendência, dias
   pedindo irrigação, dias em estresse, cobertura do consumo), gráfico em dois painéis com o mesmo eixo de datas
-  (15 a 120 dias): em cima o déficit com as faixas de atenção (entre a lâmina mínima e a AFD), estresse (acima da
-  AFD) e murcha (acima do ponto de murcha, que é a CAD), as linhas em cores distintas (déficit laranja, AFD roxa,
-  ponto de murcha vermelha tracejada, lâmina mínima azul-petróleo pontilhada), dias em estresse e medições
-  marcados e o valor de hoje; embaixo chuva e irrigação em colunas e o consumo
+  (15 a 120 dias): em cima a **água disponível no solo** (CAD − déficit), com a capacidade de campo em cima
+  (linha azul), a lâmina mínima ("irrigar abaixo daqui", azul-petróleo pontilhada), o limite de estresse
+  (CAD − AFD, roxo) e o ponto de murcha no zero (vermelho tracejado); faixas verde (ok), amarela (irrigar) e rosa
+  (estresse), dias em estresse e medições marcados e o valor de hoje com o déficit; embaixo chuva e irrigação em colunas e o consumo
   (ETc) em linha. Tocar ou passar o dedo mostra todos os números daquele dia (crosshair + balão), tabela com % da AFD e "Mais colunas" (DAS, estádio, Kc,
   ET₀, raiz, CAD) e **Baixar CSV**.
 - **Clima** — cartão **Estação agora**: última leitura com sensação, orvalho, vento e rajada (bússola), UV, radiação,

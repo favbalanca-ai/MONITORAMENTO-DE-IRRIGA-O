@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.14-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.14-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -813,7 +813,7 @@ function resumoHist(h) {
     '<div class="kpis kpis-hist"><div><small>Consumo (ETc)</small><b>' + br(etc, 0) + '</b><em>mm · ET₀ ' + br(et0, 0) + ' mm</em></div>' +
     '<div><small>Chuva útil</small><b>' + br(chuva, 0) + '</b><em>mm</em></div>' +
     '<div><small>Irrigação</small><b>' + br(irrig, 0) + '</b><em>mm líquidos em ' + diasIrrig + ' dia' + (diasIrrig === 1 ? '' : 's') + (m3 != null ? ' · ≈ ' + br(m3, 0) + ' m³ brutos' : '') + '</em></div>' +
-    '<div><small>Déficit agora</small><b>' + br(ult.deficit, 1) + '</b><em>mm · ' + (tend > 0.05 ? '↑ subiu ' : tend < -0.05 ? '↓ caiu ' : '→ estável ') + br(Math.abs(tend), 1) + ' no período</em></div></div>' +
+    '<div><small>Água no solo agora</small><b>' + (ult.cad > 0 ? br(Math.max(0, ult.cad - ult.deficit), 0) : '—') + '</b><em>' + (ult.cad > 0 ? 'de ' + br(ult.cad, 0) + ' mm (CAD) · ' : '') + 'déficit ' + br(ult.deficit, 1) + ' mm ' + (tend > 0.05 ? '↑ subiu ' : tend < -0.05 ? '↓ caiu ' : '→ estável ') + br(Math.abs(tend), 1) + '</em></div></div>' +
     '<div class="chips"><span class="chip">Pediu irrigação em <b>' + diasPedindo + '</b> dia' + (diasPedindo === 1 ? '' : 's') + '</span>' +
     '<span class="chip' + (diasEstresse ? ' chip-ruim' : '') + '">Estresse (déficit ≥ AFD) em <b>' + diasEstresse + '</b> dia' + (diasEstresse === 1 ? '' : 's') + '</span>' +
     (semDados ? '<span class="chip">Sem dados em <b>' + semDados + '</b> dia' + (semDados === 1 ? '' : 's') + '</span>' : '') +
@@ -854,62 +854,68 @@ function grafico(h) {
   const ls = h.linhas; if (!ls.length) return '<div class="vazio">Sem dados para este pivô.</div>';
   // largura real do cartão: no celular o gráfico ocupa a tela toda com texto legível, no computador fica mais largo
   const el = $('#grafico'), W = Math.max(300, Math.round(el && el.clientWidth ? el.clientWidth : 640)), mE = 38, mD = 12, w = W - mE - mD;
-  const T = { y0: 26, alt: W < 480 ? 150 : 170 }, B = { y0: T.y0 + T.alt + 46, alt: W < 480 ? 78 : 90 }, H = B.y0 + B.alt + 26;
+  const T = { y0: 26, alt: W < 480 ? 160 : 180 }, B = { y0: T.y0 + T.alt + 46, alt: W < 480 ? 78 : 90 }, H = B.y0 + B.alt + 26;
   const n = ls.length;
   const x = (i) => mE + (n === 1 ? w / 2 : (i * w) / (n - 1));
   const passoX = n > 1 ? w / (n - 1) : w;
-  // escalas: déficit/AFD em cima, entradas e consumo embaixo (eixos separados, cada um com sua unidade)
+  // painel de cima: ÁGUA DISPONÍVEL no solo (mm) = CAD − déficit. Capacidade de campo em cima, ponto de murcha embaixo (0).
+  // dia sem CAD (ex.: SEM DADOS) usa a CAD do dia vizinho pra linha não quebrar
+  let ultCad = 0; ls.forEach((l) => { if (l.cad > 0) ultCad = l.cad; else l._cad = ultCad; });
+  for (let k = ls.length - 1; k >= 0; k--) { if (ls[k].cad > 0) ultCad = ls[k].cad; else if (!ls[k]._cad) ls[k]._cad = ultCad; }
+  const cadDe = (l) => (l.cad > 0 ? l.cad : l._cad || 0);
+  const aguaDe = (l) => Math.max(0, cadDe(l) - (l.deficit || 0));
   const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1)))), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
-  const temCad = ls.some((l) => l.cad > 0);
-  let maxT = 10; ls.forEach((l) => { maxT = Math.max(maxT, l.deficit || 0, l.afd || 0, l.cad || 0); }); maxT = nice(maxT * 1.08);
+  let maxT = 10; ls.forEach((l) => { maxT = Math.max(maxT, cadDe(l)); }); maxT = nice(maxT * 1.08);
   let maxB = 5; ls.forEach((l) => { maxB = Math.max(maxB, (l.chuva || 0) + (l.irrigacao || 0), l.etc || 0); }); maxB = nice(maxB * 1.1);
   const yT = (v) => T.y0 + T.alt - (Math.max(0, Math.min(v, maxT)) / maxT) * T.alt;
   const yB = (v) => B.y0 + B.alt - (Math.max(0, Math.min(v, maxB)) / maxB) * B.alt;
   const lam = h.laminaMinimaMm != null ? h.laminaMinimaMm : null;
   const f1 = (v) => v.toFixed(1);
-  let s = '<svg class="gfx-svg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Gráfico do balanço hídrico: déficit, limites e água que entrou">';
-  // títulos dos painéis
-  s += '<text class="gfx-titulo" x="' + mE + '" y="14">Déficit de água no solo (mm)</text>';
+  let s = '<svg class="gfx-svg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Gráfico do balanço hídrico: água disponível no solo, limites e água que entrou">';
+  s += '<text class="gfx-titulo" x="' + mE + '" y="14">Água disponível no solo (mm) · ponto de murcha = 0</text>';
   s += '<text class="gfx-titulo" x="' + mE + '" y="' + (B.y0 - 12) + '">' + (W < 480 ? 'Chuva, irrigação e consumo (mm/dia)' : 'Água que entrou por dia (mm) e consumo da planta (ETc)') + '</text>';
-  // faixas do painel de cima: atenção (lâmina mínima → AFD), estresse (AFD → ponto de murcha) e murcha (acima da CAD)
-  const topo = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(l.afd || 0)));
-  const topoCad = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(l.cad || 0)));
+  // linhas de referência (variam com a raiz): CC = CAD, limite de estresse = CAD − AFD, irrigar = CAD − lâmina mínima
+  const pCC = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(cadDe(l))));
+  const pAfd = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(Math.max(0, cadDe(l) - (l.afd || 0)))));
+  const pLam = lam != null ? ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(Math.max(0, cadDe(l) - lam)))) : null;
+  const base = f1(T.y0 + T.alt);
   if (n > 1) {
-    if (temCad) {
-      s += '<path class="gfx-zona-murcha" d="M' + f1(mE) + ' ' + f1(T.y0) + ' L' + f1(W - mD) + ' ' + f1(T.y0) + ' L' + topoCad.slice().reverse().join(' L') + ' Z"/>';
-      s += '<path class="gfx-zona-estresse" d="M' + topoCad.join(' L') + ' L' + topo.slice().reverse().join(' L') + ' Z"/>';
-    } else s += '<path class="gfx-zona-estresse" d="M' + f1(mE) + ' ' + f1(T.y0) + ' L' + f1(W - mD) + ' ' + f1(T.y0) + ' L' + topo.slice().reverse().join(' L') + ' Z"/>';
-    if (lam != null) s += '<path class="gfx-zona-atencao" d="M' + topo.join(' L') + ' L' + f1(x(n - 1)) + ' ' + f1(yT(lam)) + ' L' + f1(x(0)) + ' ' + f1(yT(lam)) + ' Z"/>';
+    // faixas: ok (CC → lâmina mínima), atenção (lâmina mínima → limite de estresse), estresse (limite → murcha)
+    if (pLam) {
+      s += '<path class="gfx-zona-ok" d="M' + pCC.join(' L') + ' L' + pLam.slice().reverse().join(' L') + ' Z"/>';
+      s += '<path class="gfx-zona-atencao" d="M' + pLam.join(' L') + ' L' + pAfd.slice().reverse().join(' L') + ' Z"/>';
+    } else s += '<path class="gfx-zona-ok" d="M' + pCC.join(' L') + ' L' + pAfd.slice().reverse().join(' L') + ' Z"/>';
+    s += '<path class="gfx-zona-estresse" d="M' + pAfd.join(' L') + ' L' + f1(x(n - 1)) + ' ' + base + ' L' + f1(x(0)) + ' ' + base + ' Z"/>';
   }
-  // grades (hairline) e eixos
   const grade = (P, maxV, yf, casas) => { for (let g = 0; g <= 4; g++) { const v = (maxV * g) / 4, yy = yf(v); s += '<line class="gfx-grade" x1="' + mE + '" x2="' + (W - mD) + '" y1="' + f1(yy) + '" y2="' + f1(yy) + '"/><text class="gfx-eixo" x="' + (mE - 6) + '" y="' + f1(yy + 3.5) + '" text-anchor="end">' + br(v, casas) + '</text>'; } };
   grade(T, maxT, yT, 0); grade(B, maxB, yB, 0);
-  // linhas de referência
-  if (temCad) s += '<path class="gfx-cad" d="M' + topoCad.join(' L') + '"/>';
-  s += '<path class="gfx-afd" d="M' + topo.join(' L') + '"/>';
-  if (lam != null) s += '<line class="gfx-lamina" x1="' + mE + '" x2="' + (W - mD) + '" y1="' + f1(yT(lam)) + '" y2="' + f1(yT(lam)) + '"/>';
-  // déficit: área (wash) + linha
-  const pd = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(l.deficit || 0)));
-  s += '<path class="gfx-def-area" d="M' + f1(x(0)) + ' ' + f1(T.y0 + T.alt) + ' L' + pd.join(' L') + ' L' + f1(x(n - 1)) + ' ' + f1(T.y0 + T.alt) + ' Z"/>';
+  s += '<path class="gfx-cc" d="M' + pCC.join(' L') + '"/>';
+  s += '<path class="gfx-afd" d="M' + pAfd.join(' L') + '"/>';
+  if (pLam) s += '<path class="gfx-lamina" d="M' + pLam.join(' L') + '"/>';
+  s += '<line class="gfx-pmp" x1="' + mE + '" x2="' + (W - mD) + '" y1="' + base + '" y2="' + base + '"/>';
+  // água disponível: área (wash) + linha
+  const pd = ls.map((l, i) => f1(x(i)) + ' ' + f1(yT(aguaDe(l))));
+  s += '<path class="gfx-def-area" d="M' + f1(x(0)) + ' ' + base + ' L' + pd.join(' L') + ' L' + f1(x(n - 1)) + ' ' + base + ' Z"/>';
   s += '<path class="gfx-def" d="M' + pd.join(' L') + '"/>';
   // marcas só onde interessa: estresse, medição e o último dia (com o valor)
   ls.forEach((l, i) => {
     const estresse = l.afd > 0 && l.deficit >= l.afd, ult = i === n - 1;
-    if (estresse) s += '<circle class="gfx-pt gfx-estresse" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
-    if (l.medicao) s += '<circle class="gfx-pt gfx-medicao" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
-    if (ult && !estresse && !l.medicao) s += '<circle class="gfx-pt gfx-fim" cx="' + f1(x(i)) + '" cy="' + f1(yT(l.deficit || 0)) + '" r="4"/>';
+    if (estresse) s += '<circle class="gfx-pt gfx-estresse" cx="' + f1(x(i)) + '" cy="' + f1(yT(aguaDe(l))) + '" r="4"/>';
+    if (l.medicao) s += '<circle class="gfx-pt gfx-medicao" cx="' + f1(x(i)) + '" cy="' + f1(yT(aguaDe(l))) + '" r="4"/>';
+    if (ult && !estresse && !l.medicao) s += '<circle class="gfx-pt gfx-fim" cx="' + f1(x(i)) + '" cy="' + f1(yT(aguaDe(l))) + '" r="4"/>';
   });
-  const ult = ls[n - 1], yU = yT(ult.deficit || 0);
-  s += '<text class="gfx-rotulo" x="' + f1(x(n - 1) - 8) + '" y="' + f1(yU < T.y0 + 14 ? yU + 16 : yU - 8) + '" text-anchor="end">' + br(ult.deficit, 1) + ' mm hoje</text>';
-  if (lam != null) s += '<text class="gfx-rotulo-ref" x="' + (mE + 4) + '" y="' + f1(yT(lam) - 4) + '">lâmina mínima ' + br(lam, 0) + '</text>';
-  s += '<text class="gfx-rotulo-ref" x="' + (mE + 4) + '" y="' + f1(yT(ls[0].afd || 0) - 4) + '">AFD · acima = estresse</text>';
-  if (temCad) s += '<text class="gfx-rotulo-ref gfx-rotulo-cad" x="' + (mE + 4) + '" y="' + f1(yT(ls[0].cad || 0) - 4) + '">ponto de murcha (CAD ' + br(ls[n - 1].cad, 0) + ' mm)</text>';
+  const ult = ls[n - 1], yU = yT(aguaDe(ult));
+  s += '<text class="gfx-rotulo" x="' + f1(x(n - 1) - 8) + '" y="' + f1(yU > T.y0 + T.alt - 14 ? yU - 8 : yU + 16) + '" text-anchor="end">' + br(aguaDe(ult), 0) + ' mm hoje (déficit ' + br(ult.deficit, 1) + ')</text>';
+  s += '<text class="gfx-rotulo-ref gfx-rotulo-cc" x="' + (mE + 4) + '" y="' + f1(yT(cadDe(ls[0])) - 4) + '">capacidade de campo (CAD ' + br(cadDe(ult), 0) + ' mm)</text>';
+  if (pLam) s += '<text class="gfx-rotulo-ref gfx-rotulo-lam" x="' + (mE + 4) + '" y="' + f1(yT(Math.max(0, cadDe(ls[0]) - lam)) + 10) + '">irrigar abaixo daqui (lâmina mín. ' + br(lam, 0) + ')</text>';
+  s += '<text class="gfx-rotulo-ref gfx-rotulo-afd" x="' + (mE + 4) + '" y="' + f1(yT(Math.max(0, cadDe(ls[0]) - (ls[0].afd || 0))) + 10) + '">limite de estresse (AFD)</text>';
+  s += '<text class="gfx-rotulo-ref gfx-rotulo-pmp" x="' + (W - mD - 4) + '" y="' + f1(T.y0 + T.alt - 4) + '" text-anchor="end">ponto de murcha</text>';
   // painel de baixo: chuva e irrigação empilhadas (gap de 2 px), consumo (ETc) em linha
-  const bw = Math.max(3, Math.min(24, passoX * 0.6)), base = B.y0 + B.alt;
+  const bw = Math.max(3, Math.min(24, passoX * 0.6)), baseB = B.y0 + B.alt;
   ls.forEach((l, i) => {
-    const cx = x(i) - bw / 2; let topoY = base;
-    if (l.chuva > 0) { const hh = base - yB(l.chuva); s += '<rect class="gfx-chuva" x="' + f1(cx) + '" y="' + f1(base - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; topoY = base - hh; }
-    if (l.irrigacao > 0) { const hh = Math.max(0, base - yB(l.irrigacao) - (l.chuva > 0 ? 2 : 0)); s += '<rect class="gfx-irrig" x="' + f1(cx) + '" y="' + f1(topoY - (l.chuva > 0 ? 2 : 0) - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; }
+    const cx = x(i) - bw / 2; let topoY = baseB;
+    if (l.chuva > 0) { const hh = baseB - yB(l.chuva); s += '<rect class="gfx-chuva" x="' + f1(cx) + '" y="' + f1(baseB - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; topoY = baseB - hh; }
+    if (l.irrigacao > 0) { const hh = Math.max(0, baseB - yB(l.irrigacao) - (l.chuva > 0 ? 2 : 0)); s += '<rect class="gfx-irrig" x="' + f1(cx) + '" y="' + f1(topoY - (l.chuva > 0 ? 2 : 0) - hh) + '" width="' + f1(bw) + '" height="' + f1(hh) + '" rx="' + (hh > 4 ? 3 : 0) + '"/>'; }
   });
   s += '<path class="gfx-etc" d="M' + ls.map((l, i) => f1(x(i)) + ' ' + f1(yB(l.etc || 0))).join(' L') + '"/>';
   // eixo de datas (compartilhado)
@@ -922,10 +928,11 @@ function grafico(h) {
   s += '<g class="gfx-cross"><line x1="0" x2="0" y1="' + T.y0 + '" y2="' + (B.y0 + B.alt) + '"/><circle class="gfx-cross-pt" r="5"/></g>';
   s += '<rect class="gfx-hit" x="' + mE + '" y="' + T.y0 + '" width="' + w + '" height="' + (B.y0 + B.alt - T.y0) + '" fill="transparent"/>';
   s += '</svg>';
-  GFX = { h, xs: ls.map((_, i) => x(i)), yT, W, mE, w };
+  GFX = { h, xs: ls.map((_, i) => x(i)), yT, aguaDe, cadDe, W, mE, w };
   return '<div class="gfx">' + s + '<div class="gfx-tip" hidden></div></div>' +
-    '<div class="legenda gfx-legenda"><span class="lk" style="--c:var(--g-def)">Déficit</span><span class="lk" style="--c:var(--g-afd)">AFD (limite de estresse)</span><span class="lk" style="--c:var(--g-cad)">Ponto de murcha (CAD)</span><span class="lk lk-lam">Lâmina mínima</span>' +
-    '<span class="lq" style="--c:var(--g-chuva)">Chuva</span><span class="lq" style="--c:var(--g-irrig)">Irrigação</span><span class="lk lk-etc">Consumo (ETc)</span><span class="lp lp-estresse">Dia em estresse</span><span class="lp lp-medicao">Medição de umidade</span></div>';
+    '<div class="legenda gfx-legenda"><span class="lk" style="--c:var(--g-def)">Água disponível</span><span class="lk" style="--c:var(--g-cc)">Capacidade de campo</span><span class="lk lk-lam">Irrigar abaixo (lâmina mín.)</span><span class="lk" style="--c:var(--g-afd)">Limite de estresse (AFD)</span><span class="lk" style="--c:var(--g-cad)">Ponto de murcha</span>' +
+    '<span class="lq" style="--c:var(--g-chuva)">Chuva</span><span class="lq" style="--c:var(--g-irrig)">Irrigação</span><span class="lk lk-etc">Consumo (ETc)</span><span class="lp lp-estresse">Dia em estresse</span><span class="lp lp-medicao">Medição de umidade</span></div>' +
+    '<p class="muted" style="margin-top:8px">Como ler: a linha laranja é a água que a raiz ainda tem. Desce com o consumo, sobe com chuva ou irrigação. O ideal é irrigar quando ela entra na faixa amarela, antes de chegar na faixa rosa (estresse). Ponto de murcha = zero.</p>';
 }
 /** Crosshair + tooltip: o dedo acha a data, o balão mostra todas as séries daquele dia. */
 function ligarHoverGrafico() {
@@ -945,9 +952,11 @@ function ligarHoverGrafico() {
     const bd = document.createElement('span'); bd.className = 'badge ' + classeDec(l.decisao); bd.textContent = l.decisao === 'NÃO IRRIGAR' ? 'NÃO IRRIGAR' : l.decisao; cab.appendChild(bd);
     tip.appendChild(cab);
     const linha = (cor, rot, val, cls) => { const row = document.createElement('div'); row.className = 'gfx-tip-l' + (cls ? ' ' + cls : ''); const k = document.createElement('i'); if (cor) k.style.setProperty('--c', cor); const v = document.createElement('b'); v.textContent = val; const t = document.createElement('span'); t.textContent = rot; row.append(k, v, t); tip.appendChild(row); };
-    linha('var(--g-def)', 'déficit' + (estresse ? ' · ESTRESSE' : ''), br(l.deficit, 1) + ' mm', estresse ? 'ruim' : '');
-    linha('var(--g-afd)', 'AFD (limite de estresse)', br(l.afd, 1) + ' mm', 'ref');
-    if (l.cad > 0) linha('var(--g-cad)', 'ponto de murcha (CAD)' + (l.deficit >= l.cad ? ' · MURCHA' : ''), br(l.cad, 1) + ' mm', l.deficit >= l.cad ? 'ruim' : 'ref');
+    const cadL = GFX.cadDe(l), agua = GFX.aguaDe(l);
+    linha('var(--g-def)', 'água disponível' + (estresse ? ' · ESTRESSE' : '') + (cadL > 0 && l.deficit >= cadL ? ' · MURCHA' : ''), br(agua, 1) + ' mm', estresse ? 'ruim' : '');
+    linha('', 'déficit (falta pra encher)', br(l.deficit, 1) + ' mm', 'ref');
+    linha('var(--g-cc)', 'capacidade de campo (CAD)', br(cadL, 1) + ' mm', 'ref');
+    linha('var(--g-afd)', 'limite de estresse (CAD − AFD)', br(Math.max(0, cadL - (l.afd || 0)), 1) + ' mm', 'ref');
     if (l.chuva) linha('var(--g-chuva)', 'chuva', br(l.chuva, 1) + ' mm');
     if (l.irrigacao) linha('var(--g-irrig)', 'irrigação', br(l.irrigacao, 1) + ' mm');
     linha('', 'consumo (ETc)' + (l.kc != null ? ' · Kc ' + br(l.kc, 2) : ''), br(l.etc, 1) + ' mm', 'ref');
