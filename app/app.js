@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.14-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.14-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1091,10 +1091,12 @@ V.mapa_depois = function () {
     L.control.layers({ 'Satélite': sat, 'Mapa': ruas }, null, { position: 'topright' }).addTo(mapa);
     // NDVI por cima do satélite, ligado pelo cartão abaixo do mapa
     let ndvi = null;
+    const formas = [];   // contornos dos pivôs: com a camada de satélite ligada ficam sem preenchimento, pra não cobrir a imagem
     const aplicarNdvi = () => {
       const cfg = ndviCfg();
       if (ndvi) { mapa.removeLayer(ndvi); ndvi = null; }
       if (cfg.on) { ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); }
+      formas.forEach((f) => { f.setStyle(cfg.on ? { fillOpacity: 0, weight: 3, dashArray: '6 4' } : { fillOpacity: 0.35, weight: 2, dashArray: null }); f.bringToFront(); });
       const ctl = $('.ndvi-ctl'); if (ctl) ctl.hidden = !cfg.on;
       const idx = $('#ndvi-indices'); if (idx) idx.hidden = fonteNdvi() !== 'sentinel';
       const leg = $('#ndvi-legenda'); if (leg) leg.innerHTML = legendaIndice();
@@ -1119,9 +1121,10 @@ V.mapa_depois = function () {
       const forma = p.contorno ? L.polygon(p.contorno, estilo) : L.circle([p.lat, p.lon], Object.assign({ radius: p.raioM || 300 }, estilo));
       forma.bindPopup('<b>' + esc(p.nome) + '</b><br>' + esc(p.cultura) + (p.decisao ? '<br><b>' + esc(p.decisao) + '</b> · déficit ' + br(p.deficit, 1) + ' mm · AFD ' + br(p.afd, 1) + ' mm' +
         (p.rec && p.decisao === 'IRRIGAR' ? '<br>Percentímetro ' + br(p.rec.percentimetroPct, 0) + '% · volta ' + horas(p.rec.tempoVoltaH) : '') : '<br>' + esc(p.aviso || 'sem cálculo')));
-      forma.addTo(grupo);
+      forma.addTo(grupo); formas.push(forma);
       L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'rotulo-pivo', html: esc(p.nome), iconSize: null }), interactive: false }).addTo(grupo);
     });
+    aplicarNdvi();   // os contornos já existem: aplica o estilo certo pra chave que ficou salva
   }).catch((e) => { const el = $('#mapa'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; });
 };
 

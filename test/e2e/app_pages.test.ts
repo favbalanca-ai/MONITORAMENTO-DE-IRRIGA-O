@@ -539,6 +539,9 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   await page.waitForFunction(() => document.querySelectorAll(".leaflet-tile-pane img").length > 0);
   await page.waitForTimeout(300);
   assert.ok(ndviPedidos.length > 0, "pediu tiles do NDVI");
+  // com a camada ligada o pivô vira só contorno (sem preenchimento) pra não cobrir a imagem
+  assert.equal(await page.locator(".leaflet-interactive").first().getAttribute("fill-opacity"), "0");
+  assert.equal(await page.locator(".leaflet-interactive").first().getAttribute("stroke-dasharray"), "6 4");
   assert.match(ndviPedidos[0]!, /gibs\.earthdata\.nasa\.gov\/wms\/epsg3857\/best\/wms\.cgi\?.*MODIS_Terra_L3_NDVI_16Day/i);
   assert.doesNotMatch(ndviPedidos[0]!, /time=/i);
   await page.fill("#ndvi-data", "2026-02-05");
