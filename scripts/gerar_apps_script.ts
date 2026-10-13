@@ -22,6 +22,8 @@ export const ARQUIVOS = [
   "src/motor/previsao.ts",
   "src/motor/ciclo.ts",
   "src/motor/reservatorio.ts",
+  "src/push/p256.ts",
+  "src/push/vapid.ts",
   "src/coletor/tempo.ts",
   "src/coletor/ecowitt.ts",
   "src/coletor/lacunas.ts",
@@ -35,7 +37,7 @@ export function gerarMotorGs(raiz = "."): string {
   const partes = ARQUIVOS.map((arq) => {
     const fonte = readFileSync(`${raiz}/${arq}`, "utf8");
     const js = ts.transpileModule(fonte, {
-      compilerOptions: { target: ts.ScriptTarget.ES2019, module: ts.ModuleKind.ESNext, removeComments: false },
+      compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext, removeComments: false },
     }).outputText;
     const limpo = js
       .replace(/^import\s[^;]*;\s*$/gm, "")

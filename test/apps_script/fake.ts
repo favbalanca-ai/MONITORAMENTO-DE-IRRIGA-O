@@ -154,6 +154,7 @@ export interface Ambiente {
   raiz: FakeFolder;
   pastaApp: FakeFolder;
   urls: string[];
+  pedidos: { url: string; opcoes?: unknown }[];
   alertas: string[];
   respostaHttp: (url: string) => { code: number; corpo: unknown };
   agoraMs: number | null;
@@ -175,6 +176,7 @@ export function criarAmbiente(): Ambiente {
     props: new Map<string, string>(),
     gatilhos: [] as Ambiente["gatilhos"],
     urls: [] as string[],
+    pedidos: [] as { url: string; opcoes?: unknown }[],
     alertas: [] as string[],
     respostaHttp: (() => ({ code: 500, corpo: {} })) as Ambiente["respostaHttp"],
     agoraMs: null as number | null,
@@ -209,8 +211,9 @@ export function criarAmbiente(): Ambiente {
     Date: DateFake,
     SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss, getUi: () => ss.getUi() },
     UrlFetchApp: {
-      fetch: (url: string) => {
+      fetch: (url: string, opcoes?: unknown) => {
         amb.urls.push(url);
+        amb.pedidos.push({ url, opcoes });
         const r = amb.respostaHttp(url);
         return { getResponseCode: () => r.code, getContentText: () => JSON.stringify(r.corpo) };
       },
@@ -235,8 +238,8 @@ export function criarAmbiente(): Ambiente {
       getUuid: () => randomUUID(),
       DigestAlgorithm: { SHA_256: "sha256" },
       Charset: { UTF_8: "utf8" },
-      computeDigest: (alg: string, texto: string) => assinados(createHash(alg).update(texto, "utf8").digest()),
-      computeHmacSha256Signature: (texto: string, chave: string) => assinados(createHmac("sha256", chave).update(texto, "utf8").digest()),
+      computeDigest: (alg: string, texto: string | number[]) => assinados(createHash(alg).update(typeof texto === "string" ? Buffer.from(texto, "utf8") : Buffer.from(Uint8Array.from(texto, (x) => x & 255))).digest()),
+      computeHmacSha256Signature: (texto: string | number[], chave: string | number[]) => assinados(createHmac("sha256", typeof chave === "string" ? chave : Buffer.from(Uint8Array.from(chave, (x) => x & 255))).update(typeof texto === "string" ? Buffer.from(texto, "utf8") : Buffer.from(Uint8Array.from(texto, (x) => x & 255))).digest()),
       base64Encode: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64"),
       base64EncodeWebSafe: (b: number[] | string) => Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url") + "=".repeat((4 - (Buffer.from(typeof b === "string" ? Buffer.from(b) : Uint8Array.from(b, (x) => x & 255)).toString("base64url").length % 4)) % 4),
       base64DecodeWebSafe: (t: string) => assinados(Buffer.from(t.replace(/=+$/, ""), "base64url")),

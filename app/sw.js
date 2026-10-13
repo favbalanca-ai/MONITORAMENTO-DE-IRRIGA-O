@@ -2,7 +2,7 @@
    Todo arquivo vem SEMPRE da rede, então o app abre sempre na versão publicada mais nova.
    O worker existe para o app ser "instalável" e para avisar com clareza quando não há internet.
    Os dados e a fila de lançamentos ficam no localStorage, não aqui. */
-const VERSAO = 'nocache-v2';   // mudar este texto força os aparelhos a trocarem o worker
+const VERSAO = 'nocache-v3';   // mudar este texto força os aparelhos a trocarem o worker
 
 self.addEventListener('install', () => { self.skipWaiting(); });
 
@@ -42,4 +42,40 @@ self.addEventListener('notificationclick', (e) => {
     for (const c of lista) { if ('focus' in c) { try { await c.navigate(url); } catch (err) {} return c.focus(); } }
     return self.clients.openWindow(url);
   })());
+});
+
+/* ---- Web Push: a planilha manda um push vazio; aqui buscamos o alerta do dia e mostramos ---- */
+function idbExec() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('manejo-irrigacao', 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('cfg'); };
+      req.onerror = () => resolve('');
+      req.onsuccess = () => {
+        try {
+          const tx = req.result.transaction('cfg', 'readonly'), g = tx.objectStore('cfg').get('exec');
+          g.onsuccess = () => resolve(g.result || ''); g.onerror = () => resolve('');
+        } catch (e) { resolve(''); }
+      };
+    } catch (e) { resolve(''); }
+  });
+}
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    let titulo = '💧 Manejo de irrigação', corpo = 'Abra o app para ver o manejo de hoje.', tag = 'manejo', url = './#/hoje';
+    try {
+      const exec = await idbExec();
+      const sub = await self.registration.pushManager.getSubscription();
+      if (exec && sub) {
+        const r = await fetch(exec + '?acao=alerta&endpoint=' + encodeURIComponent(sub.endpoint), { cache: 'no-store' });
+        const j = await r.json();
+        if (j && j.ok && j.titulo) { titulo = j.titulo; corpo = j.corpo || ''; tag = j.tag || tag; }
+      }
+    } catch (err) { /* mostra o aviso genérico */ }
+    await self.registration.showNotification(titulo, { body: corpo, tag, icon: 'icon-192.png', badge: 'icon-192.png', data: { url } });
+  })());
+});
+// o serviço de push trocou a inscrição: o app refaz na próxima abertura (o service worker não tem a sessão)
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => cs.forEach((c) => c.postMessage({ tipo: 'reinscrever' }))));
 });

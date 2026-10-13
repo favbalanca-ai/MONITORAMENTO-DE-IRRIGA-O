@@ -23,6 +23,7 @@ var ABA = {
   FAZENDAS: "FAZENDAS",
   RESERVATORIOS: "RESERVATORIOS",
   NIVEIS: "NIVEL RESERVATORIO",
+  PUSH: "PUSH",
   CACHE: "CACHE",
   USUARIOS: "USUÁRIOS APP",
   CONFIG_APP: "CONFIG APP",
@@ -135,6 +136,7 @@ var CABECALHOS = {
   IRRIGACOES: ["Data", "Pivô", "Lâmina líquida aplicada (mm)", "Obs.", "Por", "ID"],
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
   NIVEIS: ["Data", "Reservatório", "Nível (%)", "Obs.", "Por", "ID", "Fazenda"],
+  PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
@@ -199,6 +201,7 @@ function instalar() {
   criarAbaSeFaltar_(ss, ABA.UMIDADE, CABECALHOS.UMIDADE);
   criarAbaSeFaltar_(ss, ABA.RESERVATORIOS, COLUNAS_RESERVATORIOS.map(function (c) { return c[1]; }));
   criarAbaSeFaltar_(ss, ABA.NIVEIS, CABECALHOS.NIVEIS);
+  criarAbaSeFaltar_(ss, ABA.PUSH, CABECALHOS.PUSH).hideSheet();
   criarAbaSeFaltar_(ss, ABA.BALANCO, CABECALHOS.BALANCO);
   criarAbaSeFaltar_(ss, ABA.CLIMA, CABECALHOS.CLIMA);
   var lei = criarAbaSeFaltar_(ss, ABA.LEITURAS, CABECALHOS.LEITURAS);
@@ -1438,6 +1441,9 @@ function calcularEEnviar_(dia, forcar) {
     }
   });
   r.pdfUrl = r.fazendas[0].pdfUrl;
+  // notificação no celular (Web Push), uma vez por dia, para todos os aparelhos inscritos
+  if (!forcar && jaEnviado_(r.dia, "push")) log_("push", "já enviado", "", r.dia);
+  else enviarPush_(r.dia);
   return r;
 }
 
@@ -1622,11 +1628,11 @@ function aviso_(texto) {
  * O endereço /exec vai na tela ⚙️ Sincronizar do app (nunca no GitHub).
  *
  * doGet  ?acao=dados | hash | historico&pivo=&dias= | usuarios     (&s=<sessão>)
- * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__previsao} {__pivo} {__reservatorio} {__usuario} {__trocarPin}
+ * doPost {__login} {__lancamento} {__apagar} {__recalcular} {__previsao} {__pivo} {__reservatorio} {__usuario} {__trocarPin} {__push} {__pushSair}
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.14-1";
+var VERSAO_SERVIDOR = "2026.10.15-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1646,6 +1652,7 @@ function doGet(e) {
 
 function doGet_(p) {
   var acao = p.acao || "dados";
+  if (acao === "alerta") return alertaPush_(String(p.endpoint || ""));   // chamado pelo service worker, sem sessão: o endpoint é a chave
   var u = usuarioDaSessao_(p.s);
   if (u && u.erro) return { login: true, erro: u.erro };
   if (!u && loginExigido_()) return { login: true, erro: "Entre com seu login e PIN." };
@@ -1701,6 +1708,8 @@ function doPost(e) {
     if (tipo === "__lancamento") return json_(gravarLancamento_(d, u));
     if (tipo === "__apagar") return json_(apagarLancamento_(d.id, u));
     if (tipo === "__recalcular") return json_(recalcularApp_());
+    if (tipo === "__push") return json_(inscreverPush_(d.inscricao || {}, u));
+    if (tipo === "__pushSair") return json_(sairPush_(String(d.endpoint || "")));
     if (tipo === "__previsao") {
       exigirAdmin_(u);
       var okPrev = atualizarPrevisao();
@@ -1867,6 +1876,7 @@ function dadosApp_(u) {
       camadas: { ndvi: configApp_("COPERNICUS CAMADA NDVI") || "VEGETATION_INDEX", ndmi: configApp_("COPERNICUS CAMADA NDMI") || "MOISTURE_INDEX",
         cir: configApp_("COPERNICUS CAMADA INFRAVERMELHO") || "COLOR_INFRARED", cor: configApp_("COPERNICUS CAMADA COR NATURAL") || "TRUE_COLOR" } },
     logPrevisao: ultimoLog_("previsão"),
+    push: { publica: vapidPublica_() },
     resumo: resumo,
     previsao: f0.previsao,
     vento24h: f0.vento24h,
@@ -2291,6 +2301,104 @@ function apagarReservatorio_(nome, fazenda) {
   }
   log_("app", "piscinão apagado", alvo.nome);
   return cadastroPivos_();
+}
+
+/* ----------------------------------- Web Push ----------------------------------- */
+/*
+ * Notificação direto no app (celular), com o app fechado: a planilha é o "servidor de push".
+ * Cada aparelho se inscreve no app (aba PUSH guarda o endpoint); às 18h a planilha manda um push
+ * vazio assinado com VAPID (chave ES256 gerada aqui, nas propriedades do script); o service worker
+ * do app acorda, busca `?acao=alerta&endpoint=…` e mostra o aviso do dia.
+ */
+function bytesDe_(arr) { var u = new Uint8Array(arr.length); for (var i = 0; i < arr.length; i++) u[i] = arr[i] & 255; return u; }
+function hmacSha256_(chave, dados) { return bytesDe_(Utilities.computeHmacSha256Signature(Array.from(dados), Array.from(chave))); }
+function sha256_(dados) { return bytesDe_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Array.from(dados))); }
+
+/** Chave privada VAPID (32 bytes), criada uma vez e guardada fora da planilha. */
+function vapidPrivada_() {
+  var p = PropertiesService.getScriptProperties();
+  var t = p.getProperty("VAPID_PRIVADA");
+  if (!t) {
+    var semente = sha256_(Motor.utf8(Utilities.getUuid() + Utilities.getUuid() + Date.now() + Math.random()));
+    t = Motor.base64url(Motor.chavePrivadaDe(semente));
+    p.setProperty("VAPID_PRIVADA", t);
+  }
+  return Motor.deBase64url(t);
+}
+function vapidPublica_() {
+  try { return Motor.base64url(Motor.chavePublica(vapidPrivada_())); } catch (e) { return ""; }
+}
+
+function abaPush_() { return criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PUSH, CABECALHOS.PUSH); }
+function linhasPush_() {
+  var aba = abaPush_();
+  if (aba.getLastRow() < 2) return [];
+  return aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.PUSH.length).getValues().map(function (l, i) {
+    return { linha: i + 2, endpoint: String(l[0]), p256dh: String(l[1]), auth: String(l[2]), login: String(l[3]), criadoEm: String(l[4]), ultimoEnvio: String(l[5]), falhas: Number(l[6]) || 0 };
+  });
+}
+
+/** Guarda (ou atualiza) a inscrição de um aparelho. */
+function inscreverPush_(ins, u) {
+  var endpoint = String(ins.endpoint || "");
+  if (!/^https:\/\/[^\s]{10,}$/.test(endpoint)) throw new Error("Inscrição de push inválida.");
+  var keys = ins.keys || {};
+  var aba = abaPush_();
+  var atual = linhasPush_().filter(function (l) { return l.endpoint === endpoint; })[0];
+  var agora = Motor.paraLocal(Date.now(), lerEstacao_().fuso);
+  var linha = [endpoint, String(keys.p256dh || ""), String(keys.auth || ""), u ? u.login : "", atual ? atual.criadoEm : agora, atual ? atual.ultimoEnvio : "", 0];
+  aba.getRange(atual ? atual.linha : aba.getLastRow() + 1, 1, 1, linha.length).setValues([linha]);
+  log_("push", "inscrito", (u ? u.login : "?") + " · " + endpoint.slice(0, 60) + "…");
+  return { ok: true, inscrito: true };
+}
+function sairPush_(endpoint) {
+  var aba = abaPush_();
+  linhasPush_().filter(function (l) { return l.endpoint === endpoint; }).reverse().forEach(function (l) { aba.deleteRows(l.linha, 1); });
+  return { ok: true, inscrito: false };
+}
+
+/** O que o service worker mostra: resumo do último cálculo para as fazendas do usuário daquele aparelho. */
+function alertaPush_(endpoint) {
+  var ins = linhasPush_().filter(function (l) { return l.endpoint === endpoint; })[0];
+  if (!ins) return { ok: false, erro: "Aparelho não inscrito." };
+  var u = ins.login ? usuarios_().filter(function (x) { return x.login === ins.login; })[0] : null;
+  var permitidas = fazendasDoUsuario_(u);
+  var r = lerResumo_();
+  if (!r) return { ok: true, titulo: "💧 Manejo de irrigação", corpo: "Abra o app para ver o manejo de hoje.", url: APP_URL };
+  var pivos = (r.pivos || []).filter(function (p) { return !permitidas || permitidas.indexOf(p.chaveFazenda) >= 0; });
+  var irrigar = pivos.filter(function (p) { return p.decisao === "IRRIGAR"; });
+  var res = (r.reservatorios || []).filter(function (b) { return (!permitidas || permitidas.indexOf(b.chaveFazenda) >= 0) && b.semaforo === "ruim"; });
+  var varias = lerFazendas_().length > 1;
+  var dia = String(r.dia).split("-").reverse().slice(0, 2).join("/");
+  var linhas = irrigar.map(function (p) { return (varias ? p.fazenda + ": " : "") + p.nome + (p.rec ? " " + Math.round(p.rec.percentimetroPct) + "%" : "") + " (" + Math.round(p.deficit) + " mm)"; });
+  res.forEach(function (b) { linhas.push("🏞 " + b.nome + ": " + (b.alertas && b.alertas[0] ? b.alertas[0] : "água no limite")); });
+  var atencao = pivos.filter(function (p) { return p.decisao !== "IRRIGAR" && p.laminaMinimaMm > 0 && p.deficit / p.laminaMinimaMm >= 0.7; }).length;
+  var titulo = irrigar.length ? "🚿 Irrigar " + (irrigar.length === 1 ? "1 pivô" : irrigar.length + " pivôs") + " · " + dia
+    : res.length ? "🏞 Piscinão no limite · " + dia : "✅ Nenhum pivô pra irrigar · " + dia;
+  if (!irrigar.length && !res.length) linhas.push(atencao ? atencao + " em atenção (déficit chegando na lâmina mínima)." : "Balanço em dia. Toque pra ver os detalhes.");
+  return { ok: true, titulo: titulo, corpo: linhas.join("\n"), url: APP_URL, tag: "manejo-" + r.dia };
+}
+
+/** Manda o push (sem conteúdo, assinado) para cada aparelho inscrito. Endpoint morto (404/410) é apagado. */
+function enviarPush_(dia) {
+  var lista = linhasPush_();
+  if (!lista.length) return;
+  var priv;
+  try { priv = vapidPrivada_(); } catch (e) { log_("push", "erro", "chave VAPID: " + e.message, dia); return; }
+  var emails = lerEstacao_().emails, assunto = emails.length ? "mailto:" + emails[0] : "mailto:fazenda@exemplo.com";
+  var aba = abaPush_(), ok = 0, erros = [], mortos = [];
+  lista.forEach(function (ins) {
+    try {
+      var cab = Motor.cabecalhoVapid(ins.endpoint, assunto, priv, hmacSha256_, sha256_, Date.now());
+      var resp = UrlFetchApp.fetch(ins.endpoint, { method: "post", headers: { Authorization: cab.Authorization, TTL: "86400", Urgency: "high", "Content-Length": "0" }, payload: "", muteHttpExceptions: true });
+      var code = resp.getResponseCode();
+      if (code === 201 || code === 200 || code === 202) { ok++; aba.getRange(ins.linha, 6, 1, 2).setValues([[Motor.paraLocal(Date.now(), lerEstacao_().fuso), 0]]); }
+      else if (code === 404 || code === 410) mortos.push(ins);
+      else { erros.push("HTTP " + code + " " + String(resp.getContentText()).slice(0, 80)); aba.getRange(ins.linha, 7).setValue(ins.falhas + 1); }
+    } catch (e) { erros.push(e.message); }
+  });
+  mortos.reverse().forEach(function (ins) { aba.deleteRows(ins.linha, 1); });
+  log_("push", erros.length ? (ok ? "parcial" : "erro") : "enviado", ok + " aparelho(s)" + (mortos.length ? ", " + mortos.length + " removido(s)" : "") + (erros.length ? " | " + erros.join(" | ") : ""), dia);
 }
 
 /* ----------------------------------- Telegram ----------------------------------- */

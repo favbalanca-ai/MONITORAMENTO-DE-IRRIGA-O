@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.15-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.15-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1530,17 +1530,46 @@ function avisarSePrecisa() {
   const titulo = pivos.length ? '🚿 Irrigar ' + (pivos.length === 1 ? '1 pivô' : pivos.length + ' pivôs') + ' · ' + dataBr(r.dia) : '🏞 Piscinão no limite · ' + dataBr(r.dia);
   notificar(titulo, linhas.join('\n'), 'manejo-' + r.dia);
 }
+/** Guarda o endereço /exec no IndexedDB: o service worker (que não lê o localStorage) usa pra buscar o alerta. */
+function guardarExecIdb() {
+  try {
+    const req = indexedDB.open('manejo-irrigacao', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('cfg'); };
+    req.onsuccess = () => { try { req.result.transaction('cfg', 'readwrite').objectStore('cfg').put(syncUrl(), 'exec'); } catch (e) {} };
+  } catch (e) { /* sem IndexedDB */ }
+}
+function pushSuportado() { return 'serviceWorker' in navigator && 'PushManager' in window && avisosSuportado(); }
+function b64urlParaBytes(s) { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); }
+/** Inscreve este aparelho no push da planilha (a chave pública vem com os dados). */
+async function inscreverPush() {
+  if (!pushSuportado()) return { ok: false, erro: 'Este navegador não recebe push. No iPhone, instale o app na tela de início e abra por lá.' };
+  const publica = DADOS && DADOS.push && DADOS.push.publica;
+  if (!publica) return { ok: false, erro: 'A planilha ainda não tem a chave de push (atualize o Code.gs e faça Puxar agora).' };
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlParaBytes(publica) });
+  guardarExecIdb();
+  const r = await chamar('POST', null, { __push: { inscricao: sub.toJSON ? sub.toJSON() : { endpoint: sub.endpoint } } });
+  if (!r || !r.ok) return { ok: false, erro: (r && r.erro) || 'A planilha não respondeu.' };
+  return { ok: true };
+}
+async function sairPush() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) { await chamar('POST', null, { __pushSair: { endpoint: sub.endpoint } }); await sub.unsubscribe(); }
+  } catch (e) { /* já saiu */ }
+}
 function cardAvisos() {
   const cfg = avisosCfg(), sup = avisosSuportado(), perm = sup ? Notification.permission : 'unsupported';
   const estado = !sup ? 'Este navegador não mostra notificações. No iPhone, instale o app na tela de início (Compartilhar → Adicionar à Tela de Início) e abra por lá.'
     : perm === 'denied' ? 'Notificações bloqueadas pelo celular. Libere nas configurações do navegador/site e volte aqui.'
-    : cfg.on && perm === 'granted' ? 'Ligado: quando o app sincroniza e encontra pivô pedindo irrigação (ou piscinão no vermelho) num dia novo, avisa aqui no celular.'
-    : 'Desligado. Com o app aberto ou instalado na tela de início, ele avisa quando um pivô pede irrigação.';
+    : cfg.on && perm === 'granted' ? (cfg.push ? 'Ligado: todo dia, depois das 18h, a planilha manda o aviso pra este celular, mesmo com o app fechado. E sempre que o app sincroniza um dia novo com pivô pedindo irrigação, avisa também.' : 'Ligado só com o app aberto (este navegador não recebe push com o app fechado).')
+    : 'Desligado. Ligando, este celular recebe o aviso do manejo todo dia depois das 18h, com o app fechado' + (pushSuportado() ? '.' : ' (neste navegador, só com o app aberto).');
   return '<div class="card"><div class="row"><h2>' + ico('alerta') + ' Avisos no celular</h2>' +
     (sup && perm !== 'denied' ? '<label class="chave"><input type="checkbox" id="avisos-on"' + (cfg.on && perm === 'granted' ? ' checked' : '') + '><span></span></label>' : '') + '</div>' +
     '<p class="muted" style="margin-top:6px" id="avisos-estado">' + esc(estado) + '</p>' +
     (sup && perm === 'granted' && cfg.on ? '<div class="toolbar"><button type="button" class="btn btn-outline btn-sm" data-act="avisos-teste">Testar aviso</button></div>' : '') +
-    '<p class="muted">Limite: o aviso só sai quando o app está aberto ou rodando em segundo plano. Pra receber com o app fechado, use o alerta por Telegram (menu 💧 Manejo → 📲 Telegram, na planilha).</p></div>';
+    '<p class="muted">No iPhone: instale o app na tela de início (Compartilhar → Adicionar à Tela de Início) e ligue por lá. Cada celular liga o seu.</p></div>';
 }
 V.sync = function () {
   const u = sessUsuario(), f = fila(), log = ler(LOG_KEY, []);
@@ -1562,16 +1591,20 @@ V.sync = function () {
 };
 
 /* ================= ENTRAR / CONTA / USUÁRIOS ================= */
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (ev) => { if (ev.data && ev.data.tipo === 'reinscrever' && avisosCfg().push) inscreverPush().catch(() => {}); });
 V.sync_depois = function () {
+  guardarExecIdb();
   const av = $('#avisos-on');
   if (av) av.addEventListener('change', async () => {
     if (av.checked) {
       let perm = Notification.permission;
       if (perm !== 'granted') { try { perm = await Notification.requestPermission(); } catch (e) { perm = 'denied'; } }
       if (perm !== 'granted') { av.checked = false; toast('O celular não liberou as notificações.', true); route({ manterRolagem: true }); return; }
-      grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: true, ultimo: '' }));
-      toast('Avisos ligados.'); route({ manterRolagem: true }); avisarSePrecisa();
-    } else { grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: false })); route({ manterRolagem: true }); }
+      let push = false;
+      try { const r = await inscreverPush(); push = r.ok; if (!r.ok && pushSuportado()) toast(r.erro, true); } catch (e) { toast('Push não ligou: ' + e.message, true); }
+      grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: true, push, ultimo: '' }));
+      toast(push ? 'Avisos ligados neste celular.' : 'Avisos ligados (só com o app aberto).'); route({ manterRolagem: true }); avisarSePrecisa();
+    } else { grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: false, push: false })); await sairPush(); route({ manterRolagem: true }); }
   });
 };
 V.login = function () {

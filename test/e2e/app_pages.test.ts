@@ -246,12 +246,20 @@ test("avisos no celular: liga em Ajustes e, ao sincronizar um dia com pivô pedi
     Object.defineProperty(Fake, "permission", { get: () => "granted" });
     (Fake as unknown as { requestPermission: () => Promise<string> }).requestPermission = () => Promise.resolve("granted");
     w.Notification = Fake; void Orig;
-    navigator.serviceWorker.getRegistration = () => Promise.resolve(undefined);
+    // serviço de push simulado: a inscrição "chega" com um endpoint do FCM
+    const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/e2e-aparelho", unsubscribe: () => Promise.resolve(true), toJSON: () => ({ endpoint: "https://fcm.googleapis.com/fcm/send/e2e-aparelho", keys: { p256dh: "pk", auth: "au" } }) };
+    let inscrito: typeof sub | null = null;
+    const reg = { pushManager: { getSubscription: () => Promise.resolve(inscrito), subscribe: (o: { applicationServerKey: Uint8Array }) => { if (!o.applicationServerKey || o.applicationServerKey.length !== 65) return Promise.reject(new Error("chave VAPID ruim")); inscrito = sub; return Promise.resolve(sub); } },
+      showNotification: (t: string, o: { body?: string }) => { w.__notifs.push(t + " | " + (o && o.body)); return Promise.resolve(); } };
+    Object.defineProperty(navigator.serviceWorker, "ready", { get: () => Promise.resolve(reg) });
+    navigator.serviceWorker.getRegistration = () => Promise.resolve(reg as unknown as ServiceWorkerRegistration);
   });
   await page.goto(base + "#/sync");
   await page.getByText("Avisos no celular").waitFor();
   await page.locator("#avisos-on + span").click();
-  await page.getByText("Avisos ligados.").waitFor();
+  await page.getByText("Avisos ligados neste celular.").waitFor();
+  await page.getByText(/a planilha manda o aviso pra este celular, mesmo com o app fechado/).waitFor();
+  assert.deepEqual(amb.aba("PUSH").objetos().map((l) => [l["Endpoint"], l["Login"]]), [["https://fcm.googleapis.com/fcm/send/e2e-aparelho", "jose"]]);
   await page.waitForFunction(() => ((window as unknown as { __notifs: string[] }).__notifs || []).length > 0);
   const notifs = await page.evaluate(() => (window as unknown as { __notifs: string[] }).__notifs);
   assert.match(notifs[0]!, /🚿 Irrigar 1 pivô · 08\/02 \| Pivô 2 \d+% \(2\d mm\)/);
@@ -259,6 +267,11 @@ test("avisos no celular: liga em Ajustes e, ao sincronizar um dia com pivô pedi
   await page.getByRole("button", { name: /Puxar agora/ }).click();
   await page.waitForTimeout(500);
   assert.equal((await page.evaluate(() => (window as unknown as { __notifs: string[] }).__notifs)).length, 1);
+  // desligar tira a inscrição da planilha
+  await page.locator("#avisos-on + span").click();
+  await page.waitForFunction(() => !document.querySelector("#avisos-on:checked"));
+  await page.waitForTimeout(300);
+  assert.equal(amb.aba("PUSH").objetos().length, 0);
   await ctx.close();
 });
 

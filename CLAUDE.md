@@ -15,7 +15,8 @@ percentímetro, em quanto tempo e a que custo. Mesma arquitetura do **PLANEJAMEN
   como Web App. É a ponte app ↔ planilha e também faz o trabalho automático (coleta a cada 10 min,
   recuperação de buracos, relatório das 18h por e-mail, backup).
 - `src/motor/` — o cálculo em TypeScript, com testes. **`sync/Motor.gs` é gerado dele**
-  (`npm run gerar:apps-script`) — nunca editar o `Motor.gs` à mão.
+  (`npm run gerar:apps-script`) — nunca editar o `Motor.gs` à mão. `src/push/` (P-256/ES256 e VAPID para o
+  Web Push, em BigInt, porque o Apps Script não tem WebCrypto) também entra no `Motor.gs`.
 
 A dona do projeto **não é programadora profissional**. Explique o que mudou em linguagem simples ao
 final de cada tarefa, em português do Brasil, informal e direto.
@@ -42,7 +43,7 @@ final de cada tarefa, em português do Brasil, informal e direto.
 
 - [ ] Mudou `app/app.js`? Suba a `APP_VERSION` (formato `AAAA.MM.DD-N`) e o `app/version.json`.
 - [ ] Mudou `app/sw.js`? Troque o texto de `VERSAO`.
-- [ ] Mudou `src/motor/`, `src/coletor/` ou `src/job/mensagem.ts`? Rode `npm run gerar:apps-script`.
+- [ ] Mudou `src/motor/`, `src/push/`, `src/coletor/` ou `src/job/mensagem.ts`? Rode `npm run gerar:apps-script`.
 - [ ] Mudou `sync/Code.gs` ou `sync/Motor.gs`? Suba `VERSAO_SERVIDOR` e avise no final: **a dona precisa
       colar o arquivo no Apps Script e criar uma Nova versão em Implantar → Gerenciar implantações**.
 - [ ] `npm run check` passando (tipos + testes, inclusive os do navegador em `test/e2e/`).

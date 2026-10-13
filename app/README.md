@@ -62,9 +62,12 @@ feitos sem internet.
   que o administrador liberou para ele (Ajustes → Usuários).
 - **Ajustes** — endereço da planilha (/exec), puxar/enviar agora, lançamentos recusados, conta,
   usuários (administrador) e o registro das conversas com a planilha. **Avisos no celular**: chave que pede
-  permissão de notificação; depois, sempre que o app sincroniza e encontra pivô pedindo irrigação (ou piscinão no
-  vermelho) num dia novo, mostra a notificação (uma vez por dia). Só com o app aberto ou instalado em segundo plano;
-  com o app fechado, use o alerta por Telegram da planilha.
+  permissão de notificação e inscreve o aparelho no push da planilha (Web Push com VAPID, sem Firebase nem
+  serviço de terceiros). Todo dia, depois das 18h, a planilha manda um push vazio assinado; o service worker
+  acorda, busca `?acao=alerta&endpoint=…` e mostra "Irrigar N pivôs · dd/mm" com percentímetro e déficit de cada
+  um (ou piscinão no vermelho, ou "nenhum pivô pra irrigar"), mesmo com o app fechado. Toque abre a tela Hoje.
+  Além disso, quando o app sincroniza um dia novo com pivô pedindo irrigação, avisa na hora. No iPhone precisa
+  instalar o app na tela de início (iOS 16.4+). Cada celular liga o seu; desligar tira a inscrição.
 - **Entrar** — login + PIN. **Minha conta** — trocar PIN, sair.
 
 ## Sincronização

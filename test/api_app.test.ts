@@ -587,3 +587,63 @@ test("cabeçalho editado à mão (espaço, acento, maiúscula) ainda é reconhec
   r = amb.post({ s: adm, __previsao: {} });
   assert.match(r.log.detalhe, /Lido: latitude="sul 14", longitude=-46\.24/);
 });
+
+test("Web Push: aparelho se inscreve, recebe o push assinado (VAPID) às 18h e busca o alerta do dia; endpoint morto some", async () => {
+  const { createPublicKey, verify } = await import("node:crypto");
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const d0 = amb.get({ acao: "dados", s: adm });
+  const publica: string = d0.push.publica;
+  assert.match(publica, /^[A-Za-z0-9_-]{86,88}$/, "chave pública VAPID (65 bytes em base64url)");
+  assert.equal(amb.get({ acao: "dados", s: adm }).push.publica, publica, "a chave não muda entre chamadas");
+  // inscrição (precisa de sessão) e inscrição inválida
+  assert.match(amb.post({ s: adm, __push: { inscricao: { endpoint: "nada" } } }).erro, /inválida/);
+  let r = amb.post({ s: adm, __push: { inscricao: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123", keys: { p256dh: "pk", auth: "au" } } } });
+  assert.equal(r.ok, true, r.erro);
+  r = amb.post({ s: adm, __push: { inscricao: { endpoint: "https://web.push.apple.com/xyz", keys: { p256dh: "pk2", auth: "au2" } } } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.aba("PUSH").objetos().length, 2);
+  assert.equal(amb.aba("PUSH").objetos()[0]!["Login"], "fabiana");
+  // mesma inscrição de novo não duplica
+  amb.post({ s: adm, __push: { inscricao: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123", keys: { p256dh: "pk", auth: "au" } } } });
+  assert.equal(amb.aba("PUSH").objetos().length, 2);
+
+  // 18h: um push por aparelho, vazio, com Authorization vapid válido; o da Apple responde 410 e é apagado
+  amb.respostaHttp = (url) => (url.includes("web.push.apple.com") ? { code: 410, corpo: {} } : url.includes("fcm.googleapis.com") ? { code: 201, corpo: {} } : { code: 500, corpo: {} });
+  amb.chamar("calcularEEnviar_", "2026-02-08", false);
+  const envios = amb.pedidos.filter((p) => /fcm\.googleapis|web\.push\.apple/.test(p.url));
+  assert.equal(envios.length, 2);
+  const op = envios[0]!.opcoes as { method: string; headers: Record<string, string>; payload: string };
+  assert.equal(op.method, "post");
+  assert.equal(op.payload, "");
+  assert.equal(op.headers.TTL, "86400");
+  const m = /^vapid t=([^,]+), k=([A-Za-z0-9_-]+)$/.exec(op.headers.Authorization)!;
+  assert.ok(m, op.headers.Authorization);
+  assert.equal(m[2], publica);
+  const [cab, corpo, sig] = m[1]!.split(".");
+  const claims = JSON.parse(Buffer.from(corpo!, "base64url").toString());
+  assert.equal(claims.aud, "https://fcm.googleapis.com");
+  const pub = Buffer.from(publica, "base64url");
+  const chave = createPublicKey({ key: { kty: "EC", crv: "P-256", x: pub.subarray(1, 33).toString("base64url"), y: pub.subarray(33, 65).toString("base64url") }, format: "jwk" });
+  assert.equal(verify("sha256", Buffer.from(cab + "." + corpo), { key: chave, dsaEncoding: "ieee-p1363" }, Buffer.from(sig!, "base64url")), true, "assinatura ES256 válida");
+  assert.deepEqual(amb.aba("PUSH").objetos().map((l) => l["Endpoint"]), ["https://fcm.googleapis.com/fcm/send/abc123"]);
+  const log = amb.aba("LOG").dados.filter((l) => String(l[1]) === "push").pop()!;
+  assert.equal(log[2], "enviado");
+  assert.match(String(log[3]), /1 aparelho\(s\), 1 removido\(s\)/);
+  // segunda vez no dia não reenvia
+  amb.pedidos.length = 0;
+  amb.chamar("calcularEEnviar_", "2026-02-08", false);
+  assert.equal(amb.pedidos.filter((p) => /fcm\.googleapis/.test(p.url)).length, 0);
+
+  // o service worker busca o alerta pelo endpoint, sem sessão
+  const al = amb.get({ acao: "alerta", endpoint: "https://fcm.googleapis.com/fcm/send/abc123" });
+  assert.equal(al.ok, true, al.erro);
+  assert.match(al.titulo, /🚿 Irrigar 1 pivô · 08\/02/);
+  assert.match(al.corpo, /Pivô 2 \d+% \(2\d mm\)/);
+  assert.equal(al.tag, "manejo-2026-02-08");
+  assert.match(amb.get({ acao: "alerta", endpoint: "https://web.push.apple.com/xyz" }).erro, /não inscrito/);
+  // sair
+  r = amb.post({ s: adm, __pushSair: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" } });
+  assert.equal(r.ok, true);
+  assert.equal(amb.aba("PUSH").objetos().length, 0);
+});

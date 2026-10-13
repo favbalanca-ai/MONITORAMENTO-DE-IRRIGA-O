@@ -19,7 +19,7 @@ var Motor = (function () {
       }
       return null;
   }
-  const unidade = (u) => (u !== null && u !== void 0 ? u : "").trim().toLowerCase().replace(/[º˚]/g, "°");
+  const unidade = (u) => (u ?? "").trim().toLowerCase().replace(/[º˚]/g, "°");
   class UnidadeDesconhecida extends Error {
       constructor(grandeza, u) {
           super(`Unidade de ${grandeza} desconhecida: "${u}"`);
@@ -95,7 +95,7 @@ var Motor = (function () {
           return { valor: v * 1.609344, unidade: "km" };
       if (x === "ft" || x === "feet")
           return { valor: v * 0.3048, unidade: "m" };
-      return { valor: v, unidade: u !== null && u !== void 0 ? u : "" };
+      return { valor: v, unidade: u ?? "" };
   }
   /** Leitura média em W/m² → MJ/m²/dia. */
   const wm2ParaMJDia = (wm2) => (wm2 * 86400) / 1e6;
@@ -154,11 +154,10 @@ var Motor = (function () {
   const RAD_SOL_WM2 = 120;
   /** Horas de sol efetivo: leituras com radiação acima do limiar, cada uma valendo o seu intervalo. */
   function horasDeSol(janela) {
-      var _a;
       let min = 0;
       for (const l of janela)
           if (l.radWm2 !== null && l.radWm2 > RAD_SOL_WM2)
-              min += (_a = l.intervaloMin) !== null && _a !== void 0 ? _a : 10;
+              min += l.intervaloMin ?? 10;
       return Math.round((min / 60) * 10) / 10;
   }
   /**
@@ -171,7 +170,7 @@ var Motor = (function () {
   function fatiasCobertas(janela, ini, fim) {
       const tFim = Date.parse(fim + "Z");
       const tramos = janela
-          .map((l) => { var _a; const a = Date.parse(l.quando + "Z"); return [a, Math.min(tFim, a + ((_a = l.intervaloMin) !== null && _a !== void 0 ? _a : 10) * 60000)]; })
+          .map((l) => { const a = Date.parse(l.quando + "Z"); return [a, Math.min(tFim, a + (l.intervaloMin ?? 10) * 60000)]; })
           .sort((a, b) => a[0] - b[0]);
       let coberto = 0, ate = Date.parse(ini + "Z");
       for (const [a, b] of tramos) {
@@ -213,14 +212,13 @@ var Motor = (function () {
       if (!brutos.some((b) => CAMPOS.every((c) => valido(b.dia, c))))
           return [];
       return brutos.map(({ data, dia }, i) => {
-          var _a;
           const r = dia ? { ...dia } : { data, tmax: NaN, tmin: NaN, tmed: NaN, ur: NaN, vento: NaN, rad: NaN, chuva: 0, n: 0 };
           const estimados = [];
           for (const c of CAMPOS) {
               if (Number.isFinite(r[c]))
                   continue;
-              const fonte = (_a = brutos.slice(0, i).reverse().find((b) => valido(b.dia, c))) !== null && _a !== void 0 ? _a : brutos.slice(i + 1).find((b) => valido(b.dia, c));
-              if (!(fonte === null || fonte === void 0 ? void 0 : fonte.dia))
+              const fonte = brutos.slice(0, i).reverse().find((b) => valido(b.dia, c)) ?? brutos.slice(i + 1).find((b) => valido(b.dia, c));
+              if (!fonte?.dia)
                   continue; // impossível: há ao menos um dia completo
               r[c] = fonte.dia[c];
               estimados.push(c);
@@ -454,16 +452,14 @@ var Motor = (function () {
    * uma equação por DAE é esticada/encolhida na mesma proporção. Ciclo vazio/igual devolve a própria cultura.
    */
   function comCiclo(cultura, cicloDias) {
-      var _a;
-      const padrao = (_a = cultura.cicloPadraoDias) !== null && _a !== void 0 ? _a : cultura.cicloDias;
+      const padrao = cultura.cicloPadraoDias ?? cultura.cicloDias;
       if (!cicloDias || cicloDias === cultura.cicloDias)
           return cultura;
       return { ...cultura, cicloDias, cicloPadraoDias: padrao };
   }
   /** Último DAS do ciclo (emergência + ciclo). Depois disso o Kc fica parado no final e o balanço avisa. */
   function fimDoCicloDas(cultura) {
-      var _a;
-      return ((_a = cultura.emergenciaDias) !== null && _a !== void 0 ? _a : 0) + cultura.cicloDias;
+      return (cultura.emergenciaDias ?? 0) + cultura.cicloDias;
   }
   /** Kc de cada dia, do plantio até o fim do ciclo (para desenhar a curva). */
   function curvaKc(cultura, palhada) {
@@ -475,8 +471,7 @@ var Motor = (function () {
   }
   /** Dias após a emergência (antes da emergência conta como 0). Sem `emergenciaDias`, é o próprio DAS. */
   function dae(cultura, diasAposSemeadura) {
-      var _a;
-      return Math.max(0, diasAposSemeadura - ((_a = cultura.emergenciaDias) !== null && _a !== void 0 ? _a : 0));
+      return Math.max(0, diasAposSemeadura - (cultura.emergenciaDias ?? 0));
   }
   /**
    * Fração do ciclo já percorrida. Por dias corridos (DAE/ciclo) ou, quando o pivô tem os graus-dia da
@@ -493,20 +488,18 @@ var Motor = (function () {
   }
   /** Estádio pela fração do ciclo. Depois do fim do ciclo, fica no último estádio. */
   function estadioPorDas(cultura, diasAposSemeadura, fracao) {
-      var _a;
-      const f = fracao !== null && fracao !== void 0 ? fracao : dae(cultura, diasAposSemeadura) / cultura.cicloDias;
-      const e = (_a = cultura.estadios.find((x) => f <= x.ateFracao)) !== null && _a !== void 0 ? _a : cultura.estadios[cultura.estadios.length - 1];
+      const f = fracao ?? dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+      const e = cultura.estadios.find((x) => f <= x.ateFracao) ?? cultura.estadios[cultura.estadios.length - 1];
       if (!e)
           throw new Error(`Cultura ${cultura.nome} sem estádios cadastrados.`);
       return e;
   }
   /** Kc sem a correção da palhada: equação, reta dentro do estádio ou degrau. */
   function kcBase(cultura, estadio, diasAposSemeadura, fracao) {
-      var _a;
-      const f = fracao !== null && fracao !== void 0 ? fracao : dae(cultura, diasAposSemeadura) / cultura.cicloDias;
+      const f = fracao ?? dae(cultura, diasAposSemeadura) / cultura.cicloDias;
       if (cultura.kcEquacao) {
           const [a, b, c] = cultura.kcEquacao;
-          const padrao = (_a = cultura.cicloPadraoDias) !== null && _a !== void 0 ? _a : cultura.cicloDias;
+          const padrao = cultura.cicloPadraoDias ?? cultura.cicloDias;
           const x = Math.min(1, f) * padrao; // "dia equivalente" no ciclo padrão da equação
           return a * x * x + b * x + c;
       }
@@ -559,7 +552,7 @@ var Motor = (function () {
           return 0.5;
       return 0.4;
   }
-  const fatorDeplecao = (solo, et0) => { var _a; return (_a = solo.fatorDeplecaoFixo) !== null && _a !== void 0 ? _a : fatorDeplecaoPorEt0(et0); };
+  const fatorDeplecao = (solo, et0) => solo.fatorDeplecaoFixo ?? fatorDeplecaoPorEt0(et0);
   /** Déficit (mm) correspondente a uma umidade medida θ (%). Nunca negativo. */
   const deficitDaUmidade = (solo, thetaPct, zCm) => Math.max(0, ((solo.cc - thetaPct) / 100) * zCm * 10);
   // ---- src/motor/equipamento.ts ----
@@ -632,10 +625,9 @@ var Motor = (function () {
       return chuvaMm < minimoMm ? 0 : chuvaMm;
   }
   const somaPorData = (itens) => {
-      var _a;
       const m = new Map();
       for (const i of itens)
-          m.set(i.data, ((_a = m.get(i.data)) !== null && _a !== void 0 ? _a : 0) + i.mm);
+          m.set(i.data, (m.get(i.data) ?? 0) + i.mm);
       return m;
   };
   /**
@@ -648,7 +640,6 @@ var Motor = (function () {
    * O balanço continua andando em dias SEM DADOS (com o clima que houver), mas a decisão fica bloqueada.
    */
   function simularBalanco({ pivo, estacao, dias, irrigacoes = [], ajustes = [], chuvaMinimaMm = CHUVA_MINIMA_EFETIVA_MM, ponta = PONTA_PADRAO, previsao = [] }) {
-      var _a, _b;
       const { solo, cultura } = pivo;
       const irrigPorDia = somaPorData(irrigacoes);
       const ajustePorDia = new Map(ajustes.map((a) => [a.data, a]));
@@ -672,14 +663,14 @@ var Motor = (function () {
           const cadMm = cad(solo, raizCm);
           const semLeituras = dia.n < MIN_LEITURAS;
           const et0Externa = semLeituras && dia.et0Externa !== undefined && Number.isFinite(dia.et0Externa) ? dia.et0Externa : null;
-          const et0 = et0Externa !== null && et0Externa !== void 0 ? et0Externa : et0PenmanMonteith(dia, estacao);
+          const et0 = et0Externa ?? et0PenmanMonteith(dia, estacao);
           const hs = et0Hargreaves(dia, estacao);
           const f = fatorDeplecao(solo, et0);
           const afdMm = cadMm * f;
           const etc = et0 * kc;
-          const irrigacao = (_a = irrigPorDia.get(dia.data)) !== null && _a !== void 0 ? _a : 0;
+          const irrigacao = irrigPorDia.get(dia.data) ?? 0;
           const chuva = chuvaEfetiva(dia.chuva, chuvaMinimaMm);
-          const inicial = anterior !== null && anterior !== void 0 ? anterior : deficitDaUmidade(solo, pivo.umidadeInicialPct, raizCm);
+          const inicial = anterior ?? deficitDaUmidade(solo, pivo.umidadeInicialPct, raizCm);
           let deficit = Math.max(0, inicial + etc - chuva - irrigacao);
           const ajuste = ajustePorDia.get(dia.data);
           if (ajuste) {
@@ -691,7 +682,7 @@ var Motor = (function () {
           const alertas = [];
           if (et0Externa !== null)
               alertas.push(`Estação com só ${dia.n} leituras: ET₀ do dia veio do Open-Meteo (${et0Externa.toFixed(2)} mm).`);
-          else if ((_b = dia.estimados) === null || _b === void 0 ? void 0 : _b.length)
+          else if (dia.estimados?.length)
               alertas.push(`Clima estimado pelo dia vizinho (sem leitura de: ${dia.estimados.join(", ")}).`);
           if (semLeituras && et0Externa === null)
               alertas.push(`Só ${dia.n} leituras na janela (mínimo ${MIN_LEITURAS}).`);
@@ -703,16 +694,16 @@ var Motor = (function () {
               alertas.push(`ET₀ Penman-Monteith (${et0.toFixed(2)}) diverge mais de 35% da Hargreaves (${hs.toFixed(2)}).`);
           if (deficit >= afdMm)
               alertas.push(`Déficit de ${deficit.toFixed(1)} mm passou da AFD (${afdMm.toFixed(1)} mm): risco de estresse.`);
-          if ((ajuste === null || ajuste === void 0 ? void 0 : ajuste.umidadeProfundaPct) !== undefined) {
+          if (ajuste?.umidadeProfundaPct !== undefined) {
               const limiteSeco = solo.cc - f * (solo.cc - solo.pmp);
               if (ajuste.umidadeProfundaPct >= solo.cc)
                   alertas.push("Camada profunda na capacidade de campo: risco de percolação.");
               else if (ajuste.umidadeProfundaPct <= limiteSeco)
                   alertas.push("Camada profunda muito seca.");
           }
-          if ((ajuste === null || ajuste === void 0 ? void 0 : ajuste.tensaoKpa) !== undefined && ajuste.tensaoKpa <= pivo.tensaoIrrigarKpa)
+          if (ajuste?.tensaoKpa !== undefined && ajuste.tensaoKpa <= pivo.tensaoIrrigarKpa)
               alertas.push(`Tensiômetro em ${ajuste.tensaoKpa} kPa (limite ${pivo.tensaoIrrigarKpa} kPa): irrigar.`);
-          const diasSemMedicao = das(dia.data, ultimaMedicao !== null && ultimaMedicao !== void 0 ? ultimaMedicao : dias[0].data);
+          const diasSemMedicao = das(dia.data, ultimaMedicao ?? dias[0].data);
           if (diasSemMedicao > DIAS_MEDICAO_VELHA)
               alertas.push(`Última medição de umidade há ${diasSemMedicao} dias.`);
           const passouCiclo = d - fimDoCicloDas(cultura);
@@ -804,20 +795,18 @@ var Motor = (function () {
   }
   /** Confere o cadastro e devolve a lista de problemas (vazia = ok). */
   function validarCadastro(c, fusoValido = fusoValidoIntl) {
-      var _a, _b, _c, _d, _e, _f;
       const erros = [];
       const num = (v, onde, min = -Infinity, max = Infinity) => {
           if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max)
               erros.push(`${onde}: número inválido (${v})`);
       };
-      num((_a = c.estacao) === null || _a === void 0 ? void 0 : _a.latitude, "estacao.latitude", -90, 90);
-      num((_b = c.estacao) === null || _b === void 0 ? void 0 : _b.altitude, "estacao.altitude", -500, 6000);
-      num((_c = c.estacao) === null || _c === void 0 ? void 0 : _c.alturaAnemometro, "estacao.alturaAnemometro", 0.5, 20);
-      if (!((_d = c.estacao) === null || _d === void 0 ? void 0 : _d.fuso) || !fusoValido(c.estacao.fuso))
-          erros.push(`estacao.fuso: fuso desconhecido (${(_e = c.estacao) === null || _e === void 0 ? void 0 : _e.fuso})`);
+      num(c.estacao?.latitude, "estacao.latitude", -90, 90);
+      num(c.estacao?.altitude, "estacao.altitude", -500, 6000);
+      num(c.estacao?.alturaAnemometro, "estacao.alturaAnemometro", 0.5, 20);
+      if (!c.estacao?.fuso || !fusoValido(c.estacao.fuso))
+          erros.push(`estacao.fuso: fuso desconhecido (${c.estacao?.fuso})`);
       const nomes = new Set();
-      ((_f = c.pivos) !== null && _f !== void 0 ? _f : []).forEach((p, i) => {
-          var _a, _b, _c, _d, _e, _f, _g;
+      (c.pivos ?? []).forEach((p, i) => {
           const o = `pivos[${i}] (${p.nome})`;
           if (!p.nome)
               erros.push(`pivos[${i}]: falta o nome`);
@@ -830,19 +819,19 @@ var Motor = (function () {
               num(p.cicloDias, `${o}.cicloDias`, 30, 400);
           if (p.grausDiaCiclo != null)
               num(p.grausDiaCiclo, `${o}.grausDiaCiclo`, 200, 6000);
-          if (!DATA.test((_a = p.plantio) !== null && _a !== void 0 ? _a : ""))
+          if (!DATA.test(p.plantio ?? ""))
               erros.push(`${o}: plantio deve ser AAAA-MM-DD`);
           if (p.inicioBalanco !== undefined && !DATA.test(p.inicioBalanco))
               erros.push(`${o}: inicioBalanco deve ser AAAA-MM-DD`);
           num(p.umidadeInicialPct, `${o}.umidadeInicialPct`, 0, 100);
-          num((_b = p.solo) === null || _b === void 0 ? void 0 : _b.cc, `${o}.solo.cc`, 0, 100);
-          num((_c = p.solo) === null || _c === void 0 ? void 0 : _c.pmp, `${o}.solo.pmp`, 0, 100);
+          num(p.solo?.cc, `${o}.solo.cc`, 0, 100);
+          num(p.solo?.pmp, `${o}.solo.pmp`, 0, 100);
           if (p.solo && p.solo.pmp >= p.solo.cc)
               erros.push(`${o}: PMP precisa ser menor que a CC`);
-          num((_d = p.solo) === null || _d === void 0 ? void 0 : _d.raizIniCm, `${o}.solo.raizIniCm`, 0, 300);
-          num((_e = p.solo) === null || _e === void 0 ? void 0 : _e.raizMaxCm, `${o}.solo.raizMaxCm`, 0, 300);
-          num((_f = p.solo) === null || _f === void 0 ? void 0 : _f.diasRaiz, `${o}.solo.diasRaiz`, 1, 400);
-          if (((_g = p.solo) === null || _g === void 0 ? void 0 : _g.fatorDeplecaoFixo) != null)
+          num(p.solo?.raizIniCm, `${o}.solo.raizIniCm`, 0, 300);
+          num(p.solo?.raizMaxCm, `${o}.solo.raizMaxCm`, 0, 300);
+          num(p.solo?.diasRaiz, `${o}.solo.diasRaiz`, 1, 400);
+          if (p.solo?.fatorDeplecaoFixo != null)
               num(p.solo.fatorDeplecaoFixo, `${o}.solo.fatorDeplecaoFixo`, 0.05, 1);
           num(p.laminaMinimaMm, `${o}.laminaMinimaMm`, 0, 100);
           num(p.tensaoIrrigarKpa, `${o}.tensaoIrrigarKpa`, -1500, 0);
@@ -882,27 +871,23 @@ var Motor = (function () {
   };
   /** Resposta do Open-Meteo (`daily.time[]` + séries) → um item por dia. */
   function lerOpenMeteo(json) {
-      const d = json === null || json === void 0 ? void 0 : json.daily;
+      const d = json?.daily;
       if (!d || !Array.isArray(d["time"]))
           throw new Error("Open-Meteo: resposta sem a série diária.");
-      return d["time"].map((t, i) => {
-          var _a, _b, _c, _d, _e;
-          return ({
-              data: String(t).slice(0, 10),
-              chuvaMm: num((_a = d["precipitation_sum"]) === null || _a === void 0 ? void 0 : _a[i]),
-              probPct: num((_b = d["precipitation_probability_max"]) === null || _b === void 0 ? void 0 : _b[i]),
-              tmax: num((_c = d["temperature_2m_max"]) === null || _c === void 0 ? void 0 : _c[i]),
-              tmin: num((_d = d["temperature_2m_min"]) === null || _d === void 0 ? void 0 : _d[i]),
-              et0Mm: num((_e = d["et0_fao_evapotranspiration"]) === null || _e === void 0 ? void 0 : _e[i]),
-          });
-      });
+      return d["time"].map((t, i) => ({
+          data: String(t).slice(0, 10),
+          chuvaMm: num(d["precipitation_sum"]?.[i]),
+          probPct: num(d["precipitation_probability_max"]?.[i]),
+          tmax: num(d["temperature_2m_max"]?.[i]),
+          tmin: num(d["temperature_2m_min"]?.[i]),
+          et0Mm: num(d["et0_fao_evapotranspiration"]?.[i]),
+      }));
   }
   /**
    * Resposta do INMET (`{ "<ibge>": { "dd/mm/aaaa": { manha, tarde, noite } | {...} } }`) → um item por dia,
    * com o resumo por turno. Os dois primeiros dias vêm por turno; os demais, inteiros.
    */
   function lerInmet(json) {
-      var _a;
       const raiz = json;
       const porCidade = raiz && Object.values(raiz)[0];
       if (!porCidade || typeof porCidade !== "object")
@@ -917,8 +902,8 @@ var Motor = (function () {
           const partes = turnos.length ? turnos.map((t) => v[t]) : [v];
           const rotulo = { manha: "manhã", tarde: "tarde", noite: "noite" };
           const resumo = turnos.length
-              ? turnos.map((t, i) => { var _a; return `${rotulo[t]}: ${String((_a = partes[i]["resumo"]) !== null && _a !== void 0 ? _a : "").toLowerCase()}`; }).join("; ")
-              : String((_a = v["resumo"]) !== null && _a !== void 0 ? _a : "").toLowerCase();
+              ? turnos.map((t, i) => `${rotulo[t]}: ${String(partes[i]["resumo"] ?? "").toLowerCase()}`).join("; ")
+              : String(v["resumo"] ?? "").toLowerCase();
           const tmaxs = partes.map((p) => num(p["temp_max"])).filter((x) => x !== null);
           const tmins = partes.map((p) => num(p["temp_min"])).filter((x) => x !== null);
           dias.push({
@@ -954,13 +939,12 @@ var Motor = (function () {
   }
   /** Chuva prevista (mm) e probabilidade máxima nos próximos `dias` depois de `hoje`. */
   function chuvaPrevista(previsao, hoje, dias = 2) {
-      var _a;
       const prox = previsao.filter((d) => d.data > hoje).slice(0, dias);
       let mm = 0, prob = null;
       for (const d of prox) {
-          mm += (_a = d.chuvaMm) !== null && _a !== void 0 ? _a : 0;
+          mm += d.chuvaMm ?? 0;
           if (d.probPct !== null)
-              prob = Math.max(prob !== null && prob !== void 0 ? prob : 0, d.probPct);
+              prob = Math.max(prob ?? 0, d.probPct);
       }
       return { mm: Math.round(mm * 10) / 10, probPct: prob, ate: prox.length ? prox[prox.length - 1].data : null };
   }
@@ -984,21 +968,18 @@ var Motor = (function () {
           "&wind_speed_unit=ms&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
   }
   function lerOpenMeteoHoras(json) {
-      const h = json === null || json === void 0 ? void 0 : json.hourly;
+      const h = json?.hourly;
       if (!h || !Array.isArray(h["time"]))
           throw new Error("Open-Meteo: resposta sem a série horária.");
-      return h["time"].map((t, i) => {
-          var _a, _b, _c, _d, _e, _f;
-          return ({
-              quando: String(t).slice(0, 13) + ":00",
-              tempC: num((_a = h["temperature_2m"]) === null || _a === void 0 ? void 0 : _a[i]),
-              urPct: num((_b = h["relative_humidity_2m"]) === null || _b === void 0 ? void 0 : _b[i]),
-              ventoMs: num((_c = h["wind_speed_10m"]) === null || _c === void 0 ? void 0 : _c[i]),
-              rajadaMs: num((_d = h["wind_gusts_10m"]) === null || _d === void 0 ? void 0 : _d[i]),
-              chuvaMm: num((_e = h["precipitation"]) === null || _e === void 0 ? void 0 : _e[i]),
-              probPct: num((_f = h["precipitation_probability"]) === null || _f === void 0 ? void 0 : _f[i]),
-          });
-      });
+      return h["time"].map((t, i) => ({
+          quando: String(t).slice(0, 13) + ":00",
+          tempC: num(h["temperature_2m"]?.[i]),
+          urPct: num(h["relative_humidity_2m"]?.[i]),
+          ventoMs: num(h["wind_speed_10m"]?.[i]),
+          rajadaMs: num(h["wind_gusts_10m"]?.[i]),
+          chuvaMm: num(h["precipitation"]?.[i]),
+          probPct: num(h["precipitation_probability"]?.[i]),
+      }));
   }
   /** Temperatura de bulbo úmido (°C) por T e UR — Stull (2011). */
   function bulboUmido(tempC, urPct) {
@@ -1063,12 +1044,11 @@ var Motor = (function () {
   }
   /** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
   function aplicacaoPorHora(horas) {
-      var _a, _b;
       const out = [];
       for (const h of horas) {
           if (h.tempC === null || h.urPct === null)
               continue;
-          const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2 || ((_b = h.probPct) !== null && _b !== void 0 ? _b : 0) >= 60 });
+          const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: (h.chuvaMm ?? 0) >= 0.2 || (h.probPct ?? 0) >= 60 });
           out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
       }
       return out;
@@ -1100,10 +1080,9 @@ var Motor = (function () {
    * (desempate pela maior UR). Devolve null se todas as horas têm chuva.
    */
   function horaMenosRuim(horas, apartirDe) {
-      var _a;
       let melhor = null;
       for (const h of horas) {
-          if (h.quando < apartirDe || ((_a = h.chuvaMm) !== null && _a !== void 0 ? _a : 0) >= 0.2)
+          if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2)
               continue;
           if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct))
               melhor = h;
@@ -1120,7 +1099,6 @@ var Motor = (function () {
   const TEMP_DIA_QUENTE = 32;
   const TEMP_DIA_FRIO = 10;
   function resumoCiclo(cultura, plantio, ate, latitude, clima, et0PorDia, grausDiaCiclo) {
-      var _a, _b, _c;
       const porData = new Map(clima.map((d) => [d.data, d]));
       const serie = [];
       let gdAcum = 0, foto = 0, sol = 0, temSol = false, chuva = 0, diasChuva = 0, et0 = 0, tmaxAbs = -Infinity, tminAbs = Infinity, somaT = 0, nT = 0, quentes = 0, frios = 0, comClima = 0;
@@ -1144,7 +1122,7 @@ var Motor = (function () {
           chuva += d.chuva;
           if (d.chuva >= 1)
               diasChuva++;
-          const e = (_a = et0PorDia.get(data)) !== null && _a !== void 0 ? _a : 0;
+          const e = et0PorDia.get(data) ?? 0;
           et0 += e;
           if (d.tmax > tmaxAbs)
               tmaxAbs = d.tmax;
@@ -1156,16 +1134,16 @@ var Motor = (function () {
               quentes++;
           if (d.tmin <= TEMP_DIA_FRIO)
               frios++;
-          serie.push({ data, gd: Math.round(gd * 10) / 10, gdAcum: Math.round(gdAcum), fotoperiodo: Math.round(fp * 100) / 100, horasSol: (_b = d.horasSol) !== null && _b !== void 0 ? _b : null, chuva: d.chuva, et0: Math.round(e * 100) / 100, tmax: d.tmax, tmin: d.tmin });
+          serie.push({ data, gd: Math.round(gd * 10) / 10, gdAcum: Math.round(gdAcum), fotoperiodo: Math.round(fp * 100) / 100, horasSol: d.horasSol ?? null, chuva: d.chuva, et0: Math.round(e * 100) / 100, tmax: d.tmax, tmin: d.tmin });
       }
       const fim = fimDoCicloDas(cultura);
       const dias = das(ate, plantio) + 1;
       return {
           plantio, ate, dias, diasComClima: comClima,
           grausDia: Math.round(gdAcum),
-          grausDiaCiclo: grausDiaCiclo !== null && grausDiaCiclo !== void 0 ? grausDiaCiclo : null,
+          grausDiaCiclo: grausDiaCiclo ?? null,
           fracaoGrausDia: grausDiaCiclo ? Math.round((gdAcum / grausDiaCiclo) * 1000) / 1000 : null,
-          tBaseC: (_c = cultura.tBaseC) !== null && _c !== void 0 ? _c : null,
+          tBaseC: cultura.tBaseC ?? null,
           fotoperiodoHojeH: Math.round(fotoHoje * 100) / 100,
           fotoperiodoAcumH: Math.round(foto),
           horasSolAcumH: temSol ? Math.round(sol) : null,
@@ -1194,9 +1172,8 @@ var Motor = (function () {
       return (liquidaMm / ef) * p.areaHa * 10;
   }
   function balancoReservatorio(r, niveis, retiradas, pivos, dia, previsao = [], chuvaMinimaMm = CHUVA_MINIMA_EFETIVA_MM) {
-      var _a, _b, _c;
       const reposicaoDiaM3 = Math.max(0, r.bombaM3h) * Math.max(0, r.horasBombaDia);
-      const ultimo = (_a = niveis.filter((n) => n.data <= dia).sort((a, b) => (a.data < b.data ? -1 : 1)).pop()) !== null && _a !== void 0 ? _a : null;
+      const ultimo = niveis.filter((n) => n.data <= dia).sort((a, b) => (a.data < b.data ? -1 : 1)).pop() ?? null;
       let volumeM3 = null, reposicao = 0, retirado = 0, diasDesde = null;
       if (ultimo) {
           diasDesde = das(dia, ultimo.data);
@@ -1204,7 +1181,7 @@ var Motor = (function () {
           retirado = retiradas.filter((x) => x.data > ultimo.data && x.data <= dia).reduce((t, x) => t + x.m3, 0);
           volumeM3 = Math.min(r.volumeUtilM3, Math.max(0, (ultimo.pct / 100) * r.volumeUtilM3 + reposicao - retirado));
       }
-      const demandaDiaM3 = pivos.reduce((t, p) => { var _a; return t + retiradaM3(p, (_a = p.etcMm) !== null && _a !== void 0 ? _a : 0); }, 0);
+      const demandaDiaM3 = pivos.reduce((t, p) => t + retiradaM3(p, p.etcMm ?? 0), 0);
       const pedidoHojeM3 = pivos.reduce((t, p) => t + (p.pedidoBrutoMm ? p.pedidoBrutoMm * p.areaHa * 10 : 0), 0);
       const areaHa = pivos.reduce((t, p) => t + p.areaHa, 0);
       const disponivel = volumeM3 === null ? null : Math.max(0, volumeM3 - r.reservaMinM3);
@@ -1224,17 +1201,17 @@ var Motor = (function () {
       const projecao = [];
       let vol = volumeM3, chegaNaReservaEm = null;
       for (const d of prox) {
-          const chuva = chuvaEfetiva((_b = d.chuvaMm) !== null && _b !== void 0 ? _b : 0, chuvaMinimaMm);
-          const consumo = pivos.reduce((t, p) => { var _a; return t + retiradaM3(p, Math.max(0, ((_a = p.kc) !== null && _a !== void 0 ? _a : 0) * d.et0Mm - chuva)); }, 0);
+          const chuva = chuvaEfetiva(d.chuvaMm ?? 0, chuvaMinimaMm);
+          const consumo = pivos.reduce((t, p) => t + retiradaM3(p, Math.max(0, (p.kc ?? 0) * d.et0Mm - chuva)), 0);
           if (vol !== null) {
               vol = Math.min(r.volumeUtilM3, Math.max(0, vol + reposicaoDiaM3 - consumo));
               if (chegaNaReservaEm === null && vol <= r.reservaMinM3)
                   chegaNaReservaEm = d.data;
           }
-          projecao.push({ data: d.data, consumoM3: r0(consumo), entradaM3: r0(reposicaoDiaM3), volumeM3: vol === null ? null : r0(vol), chuvaMm: (_c = d.chuvaMm) !== null && _c !== void 0 ? _c : 0 });
+          projecao.push({ data: d.data, consumoM3: r0(consumo), entradaM3: r0(reposicaoDiaM3), volumeM3: vol === null ? null : r0(vol), chuvaMm: d.chuvaMm ?? 0 });
       }
       const consumoPrevistoDiaM3 = projecao.length ? r0(projecao.reduce((t, d) => t + d.consumoM3, 0) / projecao.length) : null;
-      const base = consumoPrevistoDiaM3 !== null && consumoPrevistoDiaM3 !== void 0 ? consumoPrevistoDiaM3 : demandaDiaM3;
+      const base = consumoPrevistoDiaM3 ?? demandaDiaM3;
       const horasBombaSugeridas = r.bombaM3h > 0 ? Math.min(24, r1(base / r.bombaM3h)) : null;
       let sugestao = "";
       if (!pivos.length)
@@ -1294,6 +1271,204 @@ var Motor = (function () {
   }
   function n0_(x) {
       return Math.round(x).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+  // ---- src/push/p256.ts ----
+  /**
+   * Curva P-256 (secp256r1) em BigInt, só o necessário para o VAPID do Web Push: chave pública a partir
+   * da privada e assinatura ECDSA (ES256) com k determinístico (RFC 6979). O Apps Script (V8) não tem
+   * WebCrypto, então isto roda lá; o SHA-256 e o HMAC vêm de fora (Utilities no Apps Script, crypto no Node).
+   */
+  const P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn;
+  const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const A = P - 3n;
+  const B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604bn;
+  const GX = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n;
+  const GY = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n;
+  const mod = (a, m = P) => ((a % m) + m) % m;
+  function modInv(a, m = P) {
+      let [g, x, x1, b] = [mod(a, m), 1n, 0n, m];
+      while (b !== 0n) {
+          const q = g / b;
+          [g, b] = [b, g - q * b];
+          [x, x1] = [x1, x - q * x1];
+      }
+      if (g !== 1n)
+          throw new Error("sem inverso");
+      return mod(x, m);
+  }
+  function soma(p, q) {
+      if (!p)
+          return q;
+      if (!q)
+          return p;
+      if (p.x === q.x) {
+          if (mod(p.y + q.y) === 0n)
+              return null;
+          return dobra(p);
+      }
+      const l = mod((q.y - p.y) * modInv(q.x - p.x));
+      const x = mod(l * l - p.x - q.x);
+      return { x, y: mod(l * (p.x - x) - p.y) };
+  }
+  function dobra(p) {
+      if (!p)
+          return null;
+      const l = mod((3n * p.x * p.x + A) * modInv(2n * p.y));
+      const x = mod(l * l - 2n * p.x);
+      return { x, y: mod(l * (p.x - x) - p.y) };
+  }
+  function mult(k, p) {
+      let r = null, q = p;
+      while (k > 0n) {
+          if (k & 1n)
+              r = soma(r, q);
+          q = dobra(q);
+          k >>= 1n;
+      }
+      return r;
+  }
+  function naCurva(p) {
+      return mod(p.y * p.y - (p.x * p.x * p.x + A * p.x + B)) === 0n;
+  }
+  const bytesParaBigInt = (b) => b.reduce((t, v) => (t << 8n) | BigInt(v), 0n);
+  function bigIntParaBytes(n, tam = 32) {
+      const out = new Uint8Array(tam);
+      for (let i = tam - 1; i >= 0; i--) {
+          out[i] = Number(n & 0xffn);
+          n >>= 8n;
+      }
+      return out;
+  }
+  /** Chave pública (ponto descomprimido, 65 bytes: 0x04 ‖ X ‖ Y) a partir da privada (32 bytes). */
+  function chavePublica(privada) {
+      const d = bytesParaBigInt(privada);
+      if (d <= 0n || d >= N)
+          throw new Error("chave privada fora da faixa");
+      const q = mult(d, { x: GX, y: GY });
+      const out = new Uint8Array(65);
+      out[0] = 4;
+      out.set(bigIntParaBytes(q.x), 1);
+      out.set(bigIntParaBytes(q.y), 33);
+      return out;
+  }
+  /** Chave privada válida a partir de 32+ bytes aleatórios (reduz módulo n−1 e soma 1). */
+  function chavePrivadaDe(aleatorio) {
+      return bigIntParaBytes((bytesParaBigInt(aleatorio) % (N - 1n)) + 1n);
+  }
+  /** k determinístico (RFC 6979, SHA-256) — sem depender de aleatoriedade boa no Apps Script. */
+  function kDeterministico(hash, d, hmac) {
+      const x = bigIntParaBytes(d), h1 = hash.slice(0, 32);
+      let v = new Uint8Array(32).fill(1), k = new Uint8Array(32);
+      const cat = (...p) => { const t = new Uint8Array(p.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of p) {
+          t.set(a, o);
+          o += a.length;
+      } return t; };
+      k = hmac(k, cat(v, new Uint8Array([0]), x, h1));
+      v = hmac(k, v);
+      k = hmac(k, cat(v, new Uint8Array([1]), x, h1));
+      v = hmac(k, v);
+      for (;;) {
+          v = hmac(k, v);
+          const cand = bytesParaBigInt(v);
+          if (cand > 0n && cand < N)
+              return cand;
+          k = hmac(k, cat(v, new Uint8Array([0])));
+          v = hmac(k, v);
+      }
+  }
+  /** Assinatura ECDSA do hash (SHA-256 da mensagem), formato cru r‖s (64 bytes), como o JWS ES256 pede. */
+  function assinar(hash, privada, hmac) {
+      const d = bytesParaBigInt(privada), z = bytesParaBigInt(hash.slice(0, 32)) % N;
+      for (let tentativa = 0; tentativa < 10; tentativa++) {
+          const k = kDeterministico(hash, d + BigInt(tentativa), hmac);
+          const p = mult(k, { x: GX, y: GY });
+          const r = p.x % N;
+          if (r === 0n)
+              continue;
+          let s = mod(modInv(k, N) * (z + r * d), N);
+          if (s === 0n)
+              continue;
+          if (s > N / 2n)
+              s = N - s; // forma baixa (aceita em todo lugar)
+          const out = new Uint8Array(64);
+          out.set(bigIntParaBytes(r), 0);
+          out.set(bigIntParaBytes(s), 32);
+          return out;
+      }
+      throw new Error("não consegui assinar");
+  }
+  // ---- src/push/vapid.ts ----
+  /**
+   * VAPID (RFC 8292): o cabeçalho Authorization que o serviço de push (Google, Apple, Mozilla) exige
+   * para entregar uma notificação. JWT assinado com ES256 pela chave privada da planilha.
+   */
+  
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  /** Base64 URL-safe sem padding, em JS puro (o Apps Script não tem btoa nem Buffer). */
+  function base64url(b) {
+      let s = "";
+      for (let i = 0; i < b.length; i += 3) {
+          const n = (b[i] << 16) | ((b[i + 1] ?? 0) << 8) | (b[i + 2] ?? 0);
+          s += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < b.length ? B64[(n >> 6) & 63] : "") + (i + 2 < b.length ? B64[n & 63] : "");
+      }
+      return s;
+  }
+  function deBase64url(s) {
+      const limpo = s.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+      const out = [];
+      let acc = 0, bits = 0;
+      for (const ch of limpo) {
+          const v = B64.indexOf(ch);
+          if (v < 0)
+              continue;
+          acc = (acc << 6) | v;
+          bits += 6;
+          if (bits >= 8) {
+              bits -= 8;
+              out.push((acc >> bits) & 255);
+          }
+      }
+      return new Uint8Array(out);
+  }
+  /** UTF-8 em JS puro (o Apps Script não tem TextEncoder). */
+  function utf8(t) {
+      const out = [];
+      for (let i = 0; i < t.length; i++) {
+          let c = t.charCodeAt(i);
+          if (c >= 0xd800 && c < 0xdc00 && i + 1 < t.length) {
+              c = 0x10000 + ((c - 0xd800) << 10) + (t.charCodeAt(++i) - 0xdc00);
+          }
+          if (c < 0x80)
+              out.push(c);
+          else if (c < 0x800)
+              out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+          else if (c < 0x10000)
+              out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+          else
+              out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      }
+      return new Uint8Array(out);
+  }
+  /** Origem (https://host) do endpoint — o `aud` do VAPID. */
+  function origemDe(endpoint) {
+      const m = /^(https?:\/\/[^/?#]+)/i.exec(endpoint);
+      if (!m)
+          throw new Error("endpoint de push inválido");
+      return m[1].toLowerCase();
+  }
+  /**
+   * Cabeçalho `Authorization: vapid t=<jwt>, k=<pública>` para um endpoint.
+   * `aud` é a origem do endpoint (https://fcm.googleapis.com, https://web.push.apple.com…).
+   */
+  function cabecalhoVapid(endpoint, assunto, privada, hmac, sha256, agoraMs = Date.now()) {
+      const aud = origemDe(endpoint);
+      const exp = Math.floor(agoraMs / 1000) + 12 * 3600; // máximo permitido: 24 h
+      const cab = base64url(utf8(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+      const corpo = base64url(utf8(JSON.stringify({ aud, exp, sub: assunto })));
+      const entrada = cab + "." + corpo;
+      const sig = assinar(sha256(utf8(entrada)), privada, hmac);
+      const pub = base64url(chavePublica(privada));
+      return { Authorization: "vapid t=" + entrada + "." + base64url(sig) + ", k=" + pub };
   }
   // ---- src/coletor/tempo.ts ----
   const formatadores = new Map();
@@ -1358,41 +1533,39 @@ var Motor = (function () {
       return new URLSearchParams({ application_key: cfg.applicationKey, api_key: cfg.apiKey, mac: cfg.mac, ...UNIDADES });
   }
   async function chamar(fetchFn, url) {
-      var _a;
       const resp = await fetchFn(url);
       if (!resp.ok)
           throw new ErroEcowitt(`HTTP ${resp.status} da Ecowitt`);
       const corpo = (await resp.json());
       if (corpo.code !== 0)
-          throw new ErroEcowitt(`Ecowitt recusou: ${(_a = corpo.msg) !== null && _a !== void 0 ? _a : "sem mensagem"} (code ${corpo.code})`, corpo.code);
+          throw new ErroEcowitt(`Ecowitt recusou: ${corpo.msg ?? "sem mensagem"} (code ${corpo.code})`, corpo.code);
       return corpo.data;
   }
-  const grupoChuva = (d, cfg) => { var _a, _b, _c; return (_c = (_b = d[(_a = cfg.grupoChuva) !== null && _a !== void 0 ? _a : "rainfall"]) !== null && _b !== void 0 ? _b : d.rainfall) !== null && _c !== void 0 ? _c : d.rainfall_piezo; };
+  const grupoChuva = (d, cfg) => d[cfg.grupoChuva ?? "rainfall"] ?? d.rainfall ?? d.rainfall_piezo;
   function converter(v, conv) {
-      const x = numero(v === null || v === void 0 ? void 0 : v.value);
-      return x === null ? null : conv(x, v === null || v === void 0 ? void 0 : v.unit);
+      const x = numero(v?.value);
+      return x === null ? null : conv(x, v?.unit);
   }
   /** Resposta do tempo real → uma leitura. O horário é o da medição na estação, não o da consulta. */
   function leituraDoTempoReal(data, cfg) {
-      var _a, _b, _c, _d, _e, _f;
       if (!data || typeof data !== "object" || Array.isArray(data))
           throw new ErroEcowitt("Ecowitt retornou dados vazios.");
       const d = data;
       const campos = {
-          temp: (_a = d.outdoor) === null || _a === void 0 ? void 0 : _a.temperature,
-          ur: (_b = d.outdoor) === null || _b === void 0 ? void 0 : _b.humidity,
-          rad: (_c = d.solar_and_uvi) === null || _c === void 0 ? void 0 : _c.solar,
-          chuva: (_d = grupoChuva(d, cfg)) === null || _d === void 0 ? void 0 : _d.daily,
-          vento: (_e = d.wind) === null || _e === void 0 ? void 0 : _e.wind_speed,
+          temp: d.outdoor?.temperature,
+          ur: d.outdoor?.humidity,
+          rad: d.solar_and_uvi?.solar,
+          chuva: grupoChuva(d, cfg)?.daily,
+          vento: d.wind?.wind_speed,
       };
-      const tempos = Object.values(campos).map((c) => Number(c === null || c === void 0 ? void 0 : c.time)).filter((t) => Number.isFinite(t) && t > 0);
+      const tempos = Object.values(campos).map((c) => Number(c?.time)).filter((t) => Number.isFinite(t) && t > 0);
       if (tempos.length === 0)
           throw new ErroEcowitt("Resposta da Ecowitt sem horário de medição.");
       return {
           quando: paraLocal(Math.max(...tempos) * 1000, cfg.fuso),
           chuvaAcumDia: converter(campos.chuva, paraMm),
           tempC: converter(campos.temp, paraCelsius),
-          urPct: numero((_f = campos.ur) === null || _f === void 0 ? void 0 : _f.value),
+          urPct: numero(campos.ur?.value),
           radWm2: converter(campos.rad, paraWm2),
           ventoMs: converter(campos.vento, paraMs),
           intervaloMin: 10,
@@ -1407,17 +1580,16 @@ var Motor = (function () {
           if (!campos || typeof campos !== "object")
               continue;
           for (const [campo, v] of Object.entries(campos)) {
-              const x = numero(v === null || v === void 0 ? void 0 : v.value);
+              const x = numero(v?.value);
               if (x === null)
                   continue;
-              out[`${grupo}.${campo}`] = Math.round(paraSI(x, v === null || v === void 0 ? void 0 : v.unit).valor * 100) / 100;
+              out[`${grupo}.${campo}`] = Math.round(paraSI(x, v?.unit).valor * 100) / 100;
           }
       }
       return out;
   }
   /** Resposta do histórico → leituras, uma por instante, juntando as séries pelo timestamp. */
   function leiturasDoHistorico(data, cfg, ciclo) {
-      var _a, _b, _c, _d, _e, _f, _g, _h;
       if (!data || typeof data !== "object" || Array.isArray(data))
           return []; // período sem dados vem como []
       const d = data;
@@ -1436,18 +1608,17 @@ var Motor = (function () {
           return l;
       };
       const serie = (s, campo, conv) => {
-          var _a;
-          for (const [ts, bruto] of Object.entries((_a = s === null || s === void 0 ? void 0 : s.list) !== null && _a !== void 0 ? _a : {})) {
+          for (const [ts, bruto] of Object.entries(s?.list ?? {})) {
               const x = numero(bruto);
               if (x !== null && Number.isFinite(Number(ts)))
-                  leitura(ts)[campo] = conv(x, s === null || s === void 0 ? void 0 : s.unit);
+                  leitura(ts)[campo] = conv(x, s?.unit);
           }
       };
-      serie((_a = d.outdoor) === null || _a === void 0 ? void 0 : _a.temperature, "tempC", paraCelsius);
-      serie((_b = d.outdoor) === null || _b === void 0 ? void 0 : _b.humidity, "urPct", (x) => x);
-      serie((_c = d.solar_and_uvi) === null || _c === void 0 ? void 0 : _c.solar, "radWm2", paraWm2);
-      serie((_g = ((_f = (_e = d[(_d = cfg.grupoChuva) !== null && _d !== void 0 ? _d : "rainfall"]) !== null && _e !== void 0 ? _e : d.rainfall) !== null && _f !== void 0 ? _f : d.rainfall_piezo)) === null || _g === void 0 ? void 0 : _g.daily, "chuvaAcumDia", paraMm);
-      serie((_h = d.wind) === null || _h === void 0 ? void 0 : _h.wind_speed, "ventoMs", paraMs);
+      serie(d.outdoor?.temperature, "tempC", paraCelsius);
+      serie(d.outdoor?.humidity, "urPct", (x) => x);
+      serie(d.solar_and_uvi?.solar, "radWm2", paraWm2);
+      serie((d[cfg.grupoChuva ?? "rainfall"] ?? d.rainfall ?? d.rainfall_piezo)?.daily, "chuvaAcumDia", paraMm);
+      serie(d.wind?.wind_speed, "ventoMs", paraMs);
       return [...porInstante.values()].sort((a, b) => (a.quando < b.quando ? -1 : 1));
   }
   class ClienteEcowitt {
@@ -1462,12 +1633,11 @@ var Motor = (function () {
       }
       /** Datas no formato que a API espera ("YYYY-MM-DD HH:MM:SS"). */
       async historico(ini, fim, ciclo) {
-          var _a;
           const p = credenciais(this.cfg);
           p.set("start_date", ini.replace("T", " "));
           p.set("end_date", fim.replace("T", " "));
           p.set("cycle_type", ciclo);
-          p.set("call_back", ["outdoor", "solar_and_uvi", (_a = this.cfg.grupoChuva) !== null && _a !== void 0 ? _a : "rainfall", "wind"].join(","));
+          p.set("call_back", ["outdoor", "solar_and_uvi", this.cfg.grupoChuva ?? "rainfall", "wind"].join(","));
           return leiturasDoHistorico(await chamar(this.fetchFn, `${URL_BASE}/device/history?${p}`), this.cfg, ciclo);
       }
   }
@@ -1475,7 +1645,7 @@ var Motor = (function () {
   /** Folga além do intervalo esperado antes de considerar que faltou leitura. */
   const TOLERANCIA = 1.5;
   const INTERVALO_PADRAO = 10;
-  const limite = (a, b) => { var _a, _b; return TOLERANCIA * Math.max((_a = a === null || a === void 0 ? void 0 : a.intervaloMin) !== null && _a !== void 0 ? _a : INTERVALO_PADRAO, (_b = b === null || b === void 0 ? void 0 : b.intervaloMin) !== null && _b !== void 0 ? _b : INTERVALO_PADRAO); };
+  const limite = (a, b) => TOLERANCIA * Math.max(a?.intervaloMin ?? INTERVALO_PADRAO, b?.intervaloMin ?? INTERVALO_PADRAO);
   /**
    * Buracos na série entre `ini` e `fim`. Um buraco é um espaço entre leituras maior que 1,5× o
    * intervalo delas (15 min para leituras ao vivo, 45 min para histórico de 30 min).
@@ -1512,13 +1682,12 @@ var Motor = (function () {
   }
   /** Mesmo semáforo do app: vermelho irrigar, amarelo déficit ≥ 70 % da lâmina mínima, verde ok, cinza sem dados. */
   function semaforoDoItem(it) {
-      var _a;
       const x = it.linha;
       if (!x || x.decisao === "SEM DADOS")
           return "sem";
       if (x.decisao === "IRRIGAR")
           return "ruim";
-      const lm = (_a = it.pivo.laminaMinimaMm) !== null && _a !== void 0 ? _a : 0;
+      const lm = it.pivo.laminaMinimaMm ?? 0;
       return lm > 0 && x.deficit / lm >= 0.7 ? "atencao" : "bom";
   }
   const SEM_EMOJI = { ruim: "🔴", atencao: "🟡", bom: "🟢", sem: "⚫" };
@@ -1526,13 +1695,12 @@ var Motor = (function () {
   const areaHa = (eq) => (eq ? (Math.PI * eq.raioM ** 2 * (eq.anguloGraus / 360)) / 10000 : 0);
   /** Totais do dia: pivôs em cada estado, água e energia das irrigações recomendadas. */
   function resumoDoDia(itens) {
-      var _a, _b;
       const cont = { ruim: 0, atencao: 0, bom: 0, sem: 0 };
       let aguaM3 = 0, kwh = 0, custo = 0, ha = 0;
       for (const it of itens) {
           cont[semaforoDoItem(it)]++;
-          const r = (_a = it.linha) === null || _a === void 0 ? void 0 : _a.recomendacao;
-          if (((_b = it.linha) === null || _b === void 0 ? void 0 : _b.decisao) === "IRRIGAR" && r) {
+          const r = it.linha?.recomendacao;
+          if (it.linha?.decisao === "IRRIGAR" && r) {
               const a = areaHa(it.pivo.equipamento);
               aguaM3 += r.laminaBrutaMm * a * 10; // mm × ha × 10 = m³
               ha += a;
@@ -1545,8 +1713,7 @@ var Motor = (function () {
   /** Texto do relatório do dia — cabe no WhatsApp, com *negrito* no estilo do WhatsApp. */
   /** Linha do ciclo para o relatório: graus-dia, luz, chuva e ET₀ acumulados desde o plantio. */
   function linhaCiclo(c) {
-      var _a;
-      const gd = `${n0(c.grausDia)} GD` + (c.grausDiaCiclo ? ` de ${n0(c.grausDiaCiclo)} (${n0(((_a = c.fracaoGrausDia) !== null && _a !== void 0 ? _a : 0) * 100)}%)` : c.tBaseC !== null ? ` (base ${c.tBaseC} °C)` : "");
+      const gd = `${n0(c.grausDia)} GD` + (c.grausDiaCiclo ? ` de ${n0(c.grausDiaCiclo)} (${n0((c.fracaoGrausDia ?? 0) * 100)}%)` : c.tBaseC !== null ? ` (base ${c.tBaseC} °C)` : "");
       const luz = `luz ${n1(c.fotoperiodoHojeH)} h/dia (${n0(c.fotoperiodoAcumH)} h acum.)` + (c.horasSolAcumH !== null ? ` · sol ${n0(c.horasSolAcumH)} h` : "");
       return `Ciclo ${c.dias} d: ${gd} · ${luz} · chuva ${n1(c.chuvaMm)} mm em ${c.diasComChuva} d · ET₀ ${n0(c.et0Mm)} mm · ${n0(c.tminAbs)}–${n0(c.tmaxAbs)} °C` +
           (c.diasQuentes ? ` · ${c.diasQuentes} d > 32 °C` : "") + (c.diasFrios ? ` · ${c.diasFrios} d < 10 °C` : "") + (c.faltamDias >= 0 ? ` · faltam ${c.faltamDias} d` : ` · ciclo encerrado há ${-c.faltamDias} d`);
@@ -1554,9 +1721,8 @@ var Motor = (function () {
   const SEM_RES = { ruim: "🔴", atencao: "🟡", bom: "🟢", sem: "⚫" };
   /** Frases do reservatório para o relatório: volume, reposição, consumo e dias de irrigação. */
   function linhasReservatorio(b) {
-      var _a;
       const l = [];
-      const vol = b.volumeM3 === null ? "nível não lançado" : `${n0(b.volumeM3)} m³ (${n0((_a = b.pct) !== null && _a !== void 0 ? _a : 0)}% de ${n0(b.volumeUtilM3)} m³)`;
+      const vol = b.volumeM3 === null ? "nível não lançado" : `${n0(b.volumeM3)} m³ (${n0(b.pct ?? 0)}% de ${n0(b.volumeUtilM3)} m³)`;
       l.push(`${SEM_RES[b.semaforo]} *${b.nome}* — ${vol}${b.nivel ? ` · nível ${n0(b.nivel.pct)}% lançado ${br(b.nivel.data)}` : ""}`);
       l.push(`   Entra ${n0(b.reposicaoDiaM3)} m³/dia na bomba · ${b.pivos.length ? `${b.pivos.join(", ")} ${b.pivos.length === 1 ? "consome" : "consomem"} ${n0(b.demandaDiaM3)} m³/dia` : "nenhum pivô ligado"}` +
           (b.pedidoHojeM3 > 0 ? ` · hoje pedem ${n0(b.pedidoHojeM3)} m³` : ""));
@@ -1578,8 +1744,7 @@ var Motor = (function () {
       return l;
   }
   function montarMensagem(data, clima, itens, previsao = [], nomeFazenda = "", reservatorios = []) {
-      var _a, _b, _c, _d, _e;
-      const irrigar = itens.filter((i) => { var _a; return ((_a = i.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; }).length;
+      const irrigar = itens.filter((i) => i.linha?.decisao === "IRRIGAR").length;
       const assunto = `Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}: ${irrigar ? `irrigar ${irrigar} pivô(s)` : "nenhum pivô para irrigar"}`;
       const rs = resumoDoDia(itens);
       const l = [
@@ -1591,14 +1756,14 @@ var Motor = (function () {
           l.push(`Hoje: ${n0(rs.aguaM3)} m³ de água em ${n1(rs.ha)} ha · ${n0(rs.kwh)} kWh · R$ ${n2(rs.custo)}`);
       l.push(`ET₀ ${n1(clima.et0)} mm · chuva ${n1(clima.chuva)} mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s` +
           (clima.horasSol !== undefined ? ` · sol ${n1(clima.horasSol)} h` : "") + ` · ${clima.n} de 144 leituras`);
-      if ((_a = clima.estimados) === null || _a === void 0 ? void 0 : _a.length)
+      if (clima.estimados?.length)
           l.push(`⚠️ Estação sem dado de ${clima.estimados.join(", ")}: valores do dia vizinho.`);
       const prox = previsao.filter((d) => d.data > data).slice(0, 3);
       if (prox.length) {
           const p = chuvaPrevista(previsao, data, 2);
           l.push(`🌧 Previsão: ${prox.map((d) => `${br(d.data)} ${d.chuvaMm === null ? "?" : n1(d.chuvaMm)} mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")}` +
               ` — ${n1(p.mm)} mm em 2 dias`);
-          const r = (_b = prox[0]) === null || _b === void 0 ? void 0 : _b.resumo;
+          const r = prox[0]?.resumo;
           if (r)
               l.push(`   INMET amanhã: ${r}`);
       }
@@ -1610,7 +1775,7 @@ var Motor = (function () {
           l.push("");
           const x = it.linha;
           if (!x) {
-              l.push(`${it.pivo.semBalanco ? "🌱" : "⚫"} *${it.pivo.nome}* — ${it.pivo.cultura.nome}${it.pivo.semBalanco ? " (talhão)" : ""} — ${(_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo"}`);
+              l.push(`${it.pivo.semBalanco ? "🌱" : "⚫"} *${it.pivo.nome}* — ${it.pivo.cultura.nome}${it.pivo.semBalanco ? " (talhão)" : ""} — ${it.aviso ?? "sem cálculo"}`);
               if (it.ciclo)
                   l.push(`   ${linhaCiclo(it.ciclo)}`);
               continue;
@@ -1631,7 +1796,7 @@ var Motor = (function () {
                       l.push(`   Ligar às *${r.ponta.inicioSugerido}* (fora da ponta): ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)} — no começo da ponta sairia R$ ${n2(r.ponta.custoPiorRs)}`);
                   else
                       l.push(`   Energia ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
-                  if (((_d = x.projecao) === null || _d === void 0 ? void 0 : _d.deficitFimVoltaMm) !== undefined)
+                  if (x.projecao?.deficitFimVoltaMm !== undefined)
                       l.push(`   Déficit ao fim da volta ≈ ${n1(x.projecao.deficitFimVoltaMm)} mm`);
                   if (r.limitadoPelaLaminaMax)
                       l.push("   ⚠️ Uma volta no percentímetro mínimo não repõe tudo: vai precisar de outra.");
@@ -1644,7 +1809,7 @@ var Motor = (function () {
               l.push(`⛔ *SEM DADOS* — estação com poucas leituras; déficit estimado ${n1(x.deficit)} mm`);
           }
           else {
-              l.push(`✅ NÃO IRRIGAR — déficit ${n1(x.deficit)} mm (${pctAfd}% da AFD; lâmina mínima ${n1((_e = it.pivo.laminaMinimaMm) !== null && _e !== void 0 ? _e : 0)} mm)`);
+              l.push(`✅ NÃO IRRIGAR — déficit ${n1(x.deficit)} mm (${pctAfd}% da AFD; lâmina mínima ${n1(it.pivo.laminaMinimaMm ?? 0)} mm)`);
               const pj = x.projecao;
               if (pj && pj.horizonte > 0) {
                   l.push(pj.proximaIrrigacao
@@ -1669,10 +1834,9 @@ var Motor = (function () {
       l.push("", "Legenda: 🔴 irrigar · 🟡 déficit chegando na lâmina mínima · 🟢 ok · ⚫ sem dados. Chuva prevista não entra no balanço: só avisa.");
       return { assunto, texto: l.join("\n") };
   }
-  const h = (t) => String(t !== null && t !== void 0 ? t : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const h = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   /** Versão em HTML do mesmo relatório, para o e-mail (cores do semáforo e tabelinha por pivô). */
   function montarMensagemHtml(data, clima, itens, previsao = [], linkApp = "", nomeFazenda = "", reservatorios = []) {
-      var _a, _b, _c, _d, _e;
       const rs = resumoDoDia(itens);
       const prox = previsao.filter((d) => d.data > data).slice(0, 3);
       const p2 = chuvaPrevista(previsao, data, 2);
@@ -1685,10 +1849,10 @@ var Motor = (function () {
       if (rs.ha > 0)
           html += `<div style="margin-bottom:6px"><b>Hoje:</b> ${n0(rs.aguaM3)} m³ de água em ${n1(rs.ha)} ha · ${n0(rs.kwh)} kWh · R$ ${n2(rs.custo)}</div>`;
       html += `<div style="background:#f4f6f8;border-radius:10px;padding:8px 12px;margin-bottom:10px">ET₀ <b>${n1(clima.et0)}</b> mm · chuva <b>${n1(clima.chuva)}</b> mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s · ${clima.n}/144 leituras`;
-      if ((_a = clima.estimados) === null || _a === void 0 ? void 0 : _a.length)
+      if (clima.estimados?.length)
           html += `<br><span style="color:#b7791f">⚠️ Estação sem dado de ${h(clima.estimados.join(", "))}: valores do dia vizinho.</span>`;
       if (prox.length)
-          html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${((_b = prox[0]) === null || _b === void 0 ? void 0 : _b.resumo) ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
+          html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
       html += `</div>`;
       for (const b of reservatorios) {
           const cor = SEM_COR[b.semaforo];
@@ -1707,7 +1871,7 @@ var Motor = (function () {
           const fim = it.fimCicloDas !== undefined && x ? it.fimCicloDas - x.das : null;
           html += `<div style="display:flex;justify-content:space-between"><b style="font-size:15px;color:#16404d">${h(it.pivo.nome)}</b>${x ? chip(x.decisao, SEM_COR[sem]) : ""}</div>`;
           if (!x) {
-              html += `<div style="color:#64757d">${h(it.pivo.cultura.nome)}${it.pivo.semBalanco ? " · talhão" : ""} — ${h((_c = it.aviso) !== null && _c !== void 0 ? _c : "sem cálculo")}</div>`;
+              html += `<div style="color:#64757d">${h(it.pivo.cultura.nome)}${it.pivo.semBalanco ? " · talhão" : ""} — ${h(it.aviso ?? "sem cálculo")}</div>`;
               if (it.ciclo)
                   html += `<div style="font-size:13px;margin-top:6px">${h(linhaCiclo(it.ciclo))}</div>`;
               html += `</div>`;
@@ -1717,12 +1881,12 @@ var Motor = (function () {
           const pct = x.afdMm > 0 ? Math.min(100, (x.deficit / x.afdMm) * 100) : 0;
           html += `<div style="height:10px;background:#eef2f4;border-radius:6px;overflow:hidden;margin:4px 0"><div style="width:${pct.toFixed(0)}%;height:10px;background:#e65100"></div></div>`;
           html += `<table style="border-collapse:collapse;font-size:13px">`;
-          html += linha("Déficit", `<b>${n1(x.deficit)} mm</b> (${Math.round(pct)}% da AFD de ${n1(x.afdMm)} mm; lâmina mínima ${n1((_d = it.pivo.laminaMinimaMm) !== null && _d !== void 0 ? _d : 0)} mm)`);
+          html += linha("Déficit", `<b>${n1(x.deficit)} mm</b> (${Math.round(pct)}% da AFD de ${n1(x.afdMm)} mm; lâmina mínima ${n1(it.pivo.laminaMinimaMm ?? 0)} mm)`);
           const r = x.recomendacao;
           if (x.decisao === "IRRIGAR" && r) {
               html += linha("Ajuste", `Percentímetro <b>${n0(r.percentimetroPct)}%</b> · volta ${h(horas(r.tempoVoltaH))} · ${n1(r.laminaBrutaMm)} mm brutos (${n0(r.laminaBrutaMm * areaHa(it.pivo.equipamento) * 10)} m³)`);
               html += linha("Energia", r.ponta ? `Ligar às <b>${h(r.ponta.inicioSugerido)}</b>: ${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)} (na ponta: R$ ${n2(r.ponta.custoPiorRs)})` : `${n0(r.energiaKwh)} kWh · R$ ${n2(r.custoRs)}`);
-              if (((_e = x.projecao) === null || _e === void 0 ? void 0 : _e.deficitFimVoltaMm) !== undefined)
+              if (x.projecao?.deficitFimVoltaMm !== undefined)
                   html += linha("Fim da volta", `déficit ≈ ${n1(x.projecao.deficitFimVoltaMm)} mm`);
               const chuva = avisoChuva(x.deficit, previsao, data);
               if (chuva)
@@ -1755,10 +1919,9 @@ var Motor = (function () {
    * Telegram (*texto*). Sem nada para irrigar, uma linha só.
    */
   function montarAlerta(data, itens, reservatorios = [], nomeFazenda = "", linkApp = "") {
-      var _a;
       const rs = resumoDoDia(itens);
       const l = [`💧 *Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}*`];
-      const irrigar = itens.filter((it) => { var _a; return ((_a = it.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; });
+      const irrigar = itens.filter((it) => it.linha?.decisao === "IRRIGAR");
       if (irrigar.length) {
           l.push(`🚿 *IRRIGAR ${irrigar.length === 1 ? "1 pivô" : `${irrigar.length} pivôs`}* · ${n0(rs.aguaM3)} m³ · R$ ${n2(rs.custo)}`);
           for (const it of irrigar) {
@@ -1775,7 +1938,7 @@ var Motor = (function () {
           l.push(`⚫ ${rs.cont.sem} sem dados da estação`);
       for (const b of reservatorios) {
           if (b.semaforo === "ruim")
-              l.push(`🏞 *${b.nome}*: ${(_a = b.alertas[0]) !== null && _a !== void 0 ? _a : "água no limite"}`);
+              l.push(`🏞 *${b.nome}*: ${b.alertas[0] ?? "água no limite"}`);
           else if (b.semaforo === "atencao" && b.diasAutonomia !== null)
               l.push(`🏞 ${b.nome}: água pra ${n1(b.diasAutonomia)} dias`);
       }
@@ -1791,5 +1954,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

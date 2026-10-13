@@ -56,7 +56,11 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o
      **Instance ID** para a célula. Vazio = só o NDVI MODIS da NASA (250 m, sem cadastro). O Instance ID não é senha,
      mas gasta a cota mensal da sua conta: não publique.
-   - **Alerta no celular pelo Telegram** (opcional): no Telegram, fale com o **@BotFather**, mande `/newbot`, dê um nome
+   - **Aviso no celular pelo próprio app** (Web Push): nada a configurar na planilha. A chave VAPID é criada sozinha
+     nas propriedades do script (`VAPID_PRIVADA`); a aba oculta **PUSH** guarda os aparelhos inscritos (endpoint, login,
+     último envio, falhas). Às 18h, junto com o relatório, a planilha manda um push por aparelho; endpoint morto (404/410)
+     é apagado. O LOG registra "push · enviado · N aparelho(s)".
+   - **Alerta no celular pelo Telegram** (opcional, alternativa): no Telegram, fale com o **@BotFather**, mande `/newbot`, dê um nome
      e um usuário (termina em `bot`) e copie o **token**. Na planilha: **💧 Manejo → 📲 Telegram: configurar bot** e cole o
      token (fica nas propriedades do script, não na planilha). Abra o bot no Telegram e mande "oi" (ou coloque o bot num
      grupo da fazenda e mande uma mensagem lá). **📲 Telegram: descobrir chat ID** lista os chats; cole o ID na coluna
