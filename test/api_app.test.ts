@@ -617,11 +617,11 @@ test("Web Push: aparelho se inscreve, recebe o push assinado (VAPID) às 18h e b
   assert.equal(op.method, "post");
   assert.equal(op.payload, "");
   assert.equal(op.headers.TTL, "86400");
-  const m = /^vapid t=([^,]+), k=([A-Za-z0-9_-]+)$/.exec(op.headers.Authorization)!;
+  const m = /^vapid t=([^,]+), k=([A-Za-z0-9_-]+)$/.exec(op.headers.Authorization ?? "")!;
   assert.ok(m, op.headers.Authorization);
   assert.equal(m[2], publica);
   const [cab, corpo, sig] = m[1]!.split(".");
-  const claims = JSON.parse(Buffer.from(corpo!, "base64url").toString());
+  const claims = JSON.parse(Buffer.from(corpo ?? "", "base64url").toString());
   assert.equal(claims.aud, "https://fcm.googleapis.com");
   const pub = Buffer.from(publica, "base64url");
   const chave = createPublicKey({ key: { kty: "EC", crv: "P-256", x: pub.subarray(1, 33).toString("base64url"), y: pub.subarray(33, 65).toString("base64url") }, format: "jwk" });

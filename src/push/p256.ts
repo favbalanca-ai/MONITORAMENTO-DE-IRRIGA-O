@@ -67,7 +67,7 @@ export type Hmac = (chave: Uint8Array, dados: Uint8Array) => Uint8Array;
 /** k determinístico (RFC 6979, SHA-256) — sem depender de aleatoriedade boa no Apps Script. */
 function kDeterministico(hash: Uint8Array, d: bigint, hmac: Hmac): bigint {
   const x = bigIntParaBytes(d), h1 = hash.slice(0, 32);
-  let v = new Uint8Array(32).fill(1), k = new Uint8Array(32);
+  let v: Uint8Array = new Uint8Array(32).fill(1), k: Uint8Array = new Uint8Array(32);
   const cat = (...p: Uint8Array[]) => { const t = new Uint8Array(p.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of p) { t.set(a, o); o += a.length; } return t; };
   k = hmac(k, cat(v, new Uint8Array([0]), x, h1)); v = hmac(k, v);
   k = hmac(k, cat(v, new Uint8Array([1]), x, h1)); v = hmac(k, v);
