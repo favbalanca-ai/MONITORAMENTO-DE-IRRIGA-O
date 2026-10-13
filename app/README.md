@@ -42,7 +42,9 @@ feitos sem internet.
   satélite**: camada de vigor da vegetação do NASA GIBS (MODIS Terra, 250 m, composto de 16 dias), com data
   (vazio = mais recente) e transparência; gratuita e sem chave. Com o Instance ID do Copernicus na CONFIG APP da
   planilha aparece a segunda fonte, **Sentinel-2 10 m** (passagem mais recente com até 40 % de nuvem nos 30 dias
-  até a data escolhida).
+  até a data escolhida), com seletor de índice: **NDVI** (vigor), **NDMI** (umidade da folha, aviso cedo de estresse
+  hídrico), **Infravermelho colorido** e **Cor natural**, cada um com legenda e dica de leitura. Os IDs das camadas
+  vêm da CONFIG APP (padrão: VEGETATION_INDEX, MOISTURE_INDEX, COLOR_INFRARED, TRUE_COLOR).
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).

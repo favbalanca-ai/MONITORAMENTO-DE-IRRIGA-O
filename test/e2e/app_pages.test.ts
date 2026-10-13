@@ -562,9 +562,22 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   await page.waitForTimeout(300);
   const sentinel = ndviPedidos.find((u) => /sh\.dataspace\.copernicus\.eu\/ogc\/wms\/a1b2-c3d4\?/.test(u));
   assert.ok(sentinel, "pediu tiles ao Sentinel Hub");
-  assert.match(sentinel!, /layers=NDVI/i);
+  assert.match(sentinel!, /layers=VEGETATION_INDEX/i);
   assert.match(sentinel!, /time=2026-01-06%2F2026-02-05/i);
   assert.match(sentinel!, /maxcc=40/i);
+  // seletor de índice: NDMI troca a camada e a legenda
+  assert.deepEqual(await page.locator('[data-act="ndvi-indice"]').allTextContents(), ["NDVI", "NDMI", "Infravermelho", "Cor natural"]);
+  ndviPedidos.length = 0;
+  await page.locator('[data-act="ndvi-indice"][data-indice="ndmi"]').click();
+  await page.getByText(/folha cheia d'água/).waitFor();
+  await page.getByText(/Água dentro da planta/).waitFor();
+  await page.waitForTimeout(300);
+  assert.ok(ndviPedidos.some((u) => /layers=MOISTURE_INDEX/i.test(u)), "pediu a camada NDMI");
+  await page.locator('[data-act="ndvi-indice"][data-indice="cor"]').click();
+  assert.equal(await page.locator(".ndvi-legenda").count(), 0, "cor natural não tem legenda");
+  // no MODIS o seletor some
+  await page.locator('[data-act="ndvi-fonte"][data-fonte="modis"]').click();
+  assert.equal(await page.locator("#ndvi-indices").isHidden(), true);
   await page.screenshot({ path: PRINTS + "11_mapa_sentinel.png", fullPage: true });
 
   // cadastro de um pivô: KML de um desenho só

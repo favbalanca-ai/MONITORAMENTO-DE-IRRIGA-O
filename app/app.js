@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.13-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.14-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1029,7 +1029,8 @@ V.mapa = function () {
         : '<p class="muted" style="margin:0 0 8px">Quer 10 m de detalhe (Sentinel-2)? Crie uma conta gratuita em dataspace.copernicus.eu e cole o Instance ID na aba CONFIG APP da planilha (' + (ehAdmin() ? 'veja o sync/README' : 'peça ao administrador') + ').</p>') +
       '<div class="grid2"><div><label for="ndvi-data">Data (vazio = mais recente)</label><input type="date" id="ndvi-data" value="' + esc(nd.data || '') + '" max="' + hojeIso() + '"></div>' +
       '<div><label for="ndvi-op">Transparência</label><input type="range" id="ndvi-op" min="20" max="100" value="' + esc(nd.op || 75) + '"></div></div>' +
-      '<div class="ndvi-legenda"><span>solo nu</span><i></i><span>vigor alto</span></div><p class="muted" id="ndvi-info">' + esc(ndviPeriodo(nd.data)) + '</p></div></div>' : '') +
+      '<div class="seg seg-sub" id="ndvi-indices" role="tablist"' + (fonteNdvi() === 'sentinel' ? '' : ' hidden') + '>' + Object.keys(INDICES).map((k) => '<button type="button" data-act="ndvi-indice" data-indice="' + k + '" class="' + (indiceAtual() === k ? 'on' : '') + '">' + esc(INDICES[k].nome) + '</button>').join('') + '</div>' +
+      '<div id="ndvi-legenda">' + legendaIndice() + '</div><p class="muted" id="ndvi-info">' + esc(ndviPeriodo(nd.data)) + '</p></div></div>' : '') +
     '<div class="card"><div class="legenda">' + Object.keys(SEM_COR).map((k) => '<span style="--c:' + SEM_COR[k] + '">' + SEM_ROTULO[k] + '</span>').join('') + '</div>' +
     '<ul class="lista" style="margin-top:8px">' + com.map((p) => '<li><div class="t"><b style="color:' + SEM_COR[semaforo(p)] + '">●</b> ' + esc(p.nome) + ' <span class="muted">' + esc(p.cultura) + (p.decisao ? ' · déficit ' + br(p.deficit, 1) + ' mm' : '') + '</span></div>' +
       (p.decisao ? '<span class="badge ' + classeDec(p.decisao) + '">' + esc(p.decisao) + '</span>' : '') + '</li>').join('') + '</ul>' +
@@ -1037,7 +1038,16 @@ V.mapa = function () {
 };
 /* ---- NDVI: camada WMS do NASA GIBS (MODIS Terra, 16 dias, 250 m) ---- */
 const NDVI_KEY = 'irrigacao_ndvi';
-function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75, fonte: 'modis' }); }
+function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75, fonte: 'modis', indice: 'ndvi' }); }
+/** Índices do Sentinel-2 (camadas da configuração do Sentinel Hub): o que cada um mostra e a legenda. */
+const INDICES = {
+  ndvi: { nome: 'NDVI', titulo: 'Vigor (NDVI)', legenda: ['solo nu', 'vigor alto'], cor: 'linear-gradient(90deg,#8c6239,#d9c08a,#b8d46a,#4f9a3a,#1a5c1a)', dica: 'Quanta folha verde. Sobe do plantio ao fechamento do dossel e cai na maturação. Mancha clara no meio do verde = falha, praga ou falta d\'água.' },
+  ndmi: { nome: 'NDMI', titulo: 'Umidade da folha (NDMI)', legenda: ['folha seca', 'folha cheia d\'água'], cor: 'linear-gradient(90deg,#8b3a1e,#e0b070,#f2f2d0,#7fb7d6,#1f4e9a)', dica: 'Água dentro da planta. Cai antes de a folha mudar de cor: é o aviso mais cedo de estresse hídrico.' },
+  cir: { nome: 'Infravermelho', titulo: 'Infravermelho colorido', legenda: ['solo (cinza/azul)', 'vegetação (vermelho vivo)'], cor: 'linear-gradient(90deg,#6b7f8c,#c9c9c9,#e07a7a,#c81e1e)', dica: 'Vegetação vigorosa aparece em vermelho vivo; solo em cinza ou azulado. Bom pra achar falhas e manchas a olho.' },
+  cor: { nome: 'Cor natural', titulo: 'Cor natural', legenda: null, cor: '', dica: 'A foto como a gente vê. Serve pra conferir nuvem, solo molhado ou algo estranho na imagem.' },
+};
+function indiceAtual() { const i = ndviCfg().indice; return fonteNdvi() === 'sentinel' && INDICES[i] ? i : 'ndvi'; }
+function camadaSentinel(i) { const c = copernicus(); return (c && c.camadas && c.camadas[i]) || (i === 'ndvi' ? (c && c.camada) || 'NDVI' : { ndmi: 'MOISTURE_INDEX', cir: 'COLOR_INFRARED', cor: 'TRUE_COLOR' }[i]); }
 /** Sentinel-2 (10 m) pelo Sentinel Hub do Copernicus: só com o Instance ID na CONFIG APP da planilha. */
 function copernicus() { const c = DADOS && DADOS.copernicus; return c && c.instancia ? c : null; }
 function fonteNdvi() { const f = ndviCfg().fonte; return f === 'sentinel' && copernicus() ? 'sentinel' : 'modis'; }
@@ -1053,16 +1063,20 @@ function sentinelJanela(dataIso) {
   return { ini, fim };
 }
 function ndviPeriodo(dataIso) {
-  if (fonteNdvi() === 'sentinel') { const j = sentinelJanela(dataIso); return 'Sentinel-2, 10 m: a passagem mais recente com até 40% de nuvem entre ' + dataBrAno(j.ini) + ' e ' + dataBrAno(j.fim) + '.'; }
+  if (fonteNdvi() === 'sentinel') { const j = sentinelJanela(dataIso); return INDICES[indiceAtual()].dica + ' Sentinel-2, 10 m: a passagem mais recente com até 40% de nuvem entre ' + dataBrAno(j.ini) + ' e ' + dataBrAno(j.fim) + '.'; }
   if (!dataIso) return 'MODIS, 250 m: composto de 16 dias mais recente disponível (o satélite demora uns dias pra fechar o período).';
   const ini = ndviPeriodoInicio(dataIso), fim = new Date(Date.parse(ini + 'T00:00:00Z') + 15 * 86400000).toISOString().slice(0, 10);
   return 'MODIS, 250 m: composto de ' + dataBrAno(ini) + ' a ' + dataBrAno(fim) + '.';
+}
+function legendaIndice() {
+  const i = INDICES[indiceAtual()];
+  return i.legenda ? '<div class="ndvi-legenda"><span>' + esc(i.legenda[0]) + '</span><i style="background:' + i.cor + '"></i><span>' + esc(i.legenda[1]) + '</span></div>' : '';
 }
 function camadaNdvi(cfg) {
   const op = (cfg.op || 75) / 100;
   if (fonteNdvi() === 'sentinel') {
     const c = copernicus(), j = sentinelJanela(cfg.data);
-    return L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), { layers: c.camada || 'NDVI', format: 'image/png', transparent: true, version: '1.3.0', time: j.ini + '/' + j.fim, maxcc: 40, priority: 'mostRecent', showlogo: false, attribution: 'NDVI: Copernicus Sentinel-2', opacity: op, maxZoom: 18 });
+    return L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), { layers: camadaSentinel(indiceAtual()), format: 'image/png', transparent: true, version: '1.3.0', time: j.ini + '/' + j.fim, maxcc: 40, priority: 'mostRecent', showlogo: false, attribution: 'Copernicus Sentinel-2', opacity: op, maxZoom: 18 });
   }
   const ini = ndviPeriodoInicio(cfg.data);
   return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: op, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
@@ -1082,6 +1096,8 @@ V.mapa_depois = function () {
       if (ndvi) { mapa.removeLayer(ndvi); ndvi = null; }
       if (cfg.on) { ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); }
       const ctl = $('.ndvi-ctl'); if (ctl) ctl.hidden = !cfg.on;
+      const idx = $('#ndvi-indices'); if (idx) idx.hidden = fonteNdvi() !== 'sentinel';
+      const leg = $('#ndvi-legenda'); if (leg) leg.innerHTML = legendaIndice();
       const info = $('#ndvi-info'); if (info) info.textContent = ndviPeriodo(cfg.data);
     };
     window.aplicarNdvi = aplicarNdvi;
@@ -1567,6 +1583,7 @@ document.addEventListener('click', async (ev) => {
   }
   else if (act === 'lancar-nivel') { tipoLanc = 'nivel'; }
   else if (act === 'ndvi-fonte') { grava(NDVI_KEY, Object.assign(ndviCfg(), { fonte: a.dataset.fonte })); $$('[data-act="ndvi-fonte"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
+  else if (act === 'ndvi-indice') { grava(NDVI_KEY, Object.assign(ndviCfg(), { indice: a.dataset.indice })); $$('[data-act="ndvi-indice"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
   else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);

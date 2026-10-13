@@ -513,14 +513,16 @@ test("CONFIG APP: Instance ID do Copernicus chega ao app (vazio = só MODIS)", (
   const amb = pronto();
   const adm = entrar(amb, "fabiana", "1234").token;
   let d = amb.get({ acao: "dados", s: adm });
-  assert.deepEqual({ ...d.copernicus }, { instancia: "", camada: "NDVI" });
+  assert.equal(d.copernicus.instancia, "");
+  assert.deepEqual({ ...d.copernicus.camadas }, { ndvi: "VEGETATION_INDEX", ndmi: "MOISTURE_INDEX", cir: "COLOR_INFRARED", cor: "TRUE_COLOR" });
   const cfg = amb.aba("CONFIG APP");
   const linhas = cfg.dados.map((l) => String(l[0]));
   assert.ok(linhas.includes("COPERNICUS INSTANCE ID") && linhas.includes("COPERNICUS CAMADA NDVI"), "chaves criadas no instalar");
   cfg.set(linhas.indexOf("COPERNICUS INSTANCE ID") + 1, 2, " a1b2-c3d4 ");
   cfg.set(linhas.indexOf("COPERNICUS CAMADA NDVI") + 1, 2, "NDVI-FAZENDA");
   d = amb.get({ acao: "dados", s: adm });
-  assert.deepEqual({ ...d.copernicus }, { instancia: "a1b2-c3d4", camada: "NDVI-FAZENDA" });
+  assert.equal(d.copernicus.instancia, "a1b2-c3d4");
+  assert.equal(d.copernicus.camadas.ndvi, "NDVI-FAZENDA");
 });
 
 test("previsão pelo app: __previsao busca na hora e devolve o LOG; sem previsão o app recebe o motivo", () => {

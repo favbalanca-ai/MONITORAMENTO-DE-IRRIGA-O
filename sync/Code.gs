@@ -1610,7 +1610,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.13-2";
+var VERSAO_SERVIDOR = "2026.10.13-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1847,7 +1847,9 @@ function dadosApp_(u) {
     exigido: loginExigido_(),
     fazendas: fazendas.map(function (f) { return { nome: f.nome, chave: f.chave, temEstacao: !!f.temEstacao }; }),
     estacoes: estacoes,
-    copernicus: { instancia: configApp_("COPERNICUS INSTANCE ID").replace(/[^A-Za-z0-9_-]/g, ""), camada: configApp_("COPERNICUS CAMADA NDVI") || "NDVI" },
+    copernicus: { instancia: configApp_("COPERNICUS INSTANCE ID").replace(/[^A-Za-z0-9_-]/g, ""), camada: configApp_("COPERNICUS CAMADA NDVI") || "VEGETATION_INDEX",
+      camadas: { ndvi: configApp_("COPERNICUS CAMADA NDVI") || "VEGETATION_INDEX", ndmi: configApp_("COPERNICUS CAMADA NDMI") || "MOISTURE_INDEX",
+        cir: configApp_("COPERNICUS CAMADA INFRAVERMELHO") || "COLOR_INFRARED", cor: configApp_("COPERNICUS CAMADA COR NATURAL") || "TRUE_COLOR" } },
     logPrevisao: ultimoLog_("previsão"),
     resumo: resumo,
     previsao: f0.previsao,
@@ -2322,7 +2324,10 @@ function abaConfigApp_() {
 /** Chaves opcionais da CONFIG APP (criadas vazias no Instalar). */
 var CONFIG_APP_PADRAO = [
   ["COPERNICUS INSTANCE ID", "", "NDVI Sentinel-2 (10 m) no mapa do app: Instance ID de uma configuração do Sentinel Hub no dataspace.copernicus.eu (conta gratuita). Vazio = só o NDVI MODIS da NASA."],
-  ["COPERNICUS CAMADA NDVI", "NDVI", "Nome (ID) da camada NDVI dentro dessa configuração."],
+  ["COPERNICUS CAMADA NDVI", "VEGETATION_INDEX", "Nome (ID) da camada NDVI dentro dessa configuração."],
+  ["COPERNICUS CAMADA NDMI", "MOISTURE_INDEX", "ID da camada de umidade da vegetação (NDMI)."],
+  ["COPERNICUS CAMADA INFRAVERMELHO", "COLOR_INFRARED", "ID da camada infravermelho colorido (vegetação em vermelho)."],
+  ["COPERNICUS CAMADA COR NATURAL", "TRUE_COLOR", "ID da camada de cor natural."],
 ];
 
 /** Valor de uma chave da CONFIG APP (texto, "" se não existe). */
