@@ -61,7 +61,10 @@ feitos sem internet.
 - **Fazendas** — com mais de uma fazenda na planilha aparece um seletor no topo; cada usuário só vê as fazendas
   que o administrador liberou para ele (Ajustes → Usuários).
 - **Ajustes** — endereço da planilha (/exec), puxar/enviar agora, lançamentos recusados, conta,
-  usuários (administrador) e o registro das conversas com a planilha.
+  usuários (administrador) e o registro das conversas com a planilha. **Avisos no celular**: chave que pede
+  permissão de notificação; depois, sempre que o app sincroniza e encontra pivô pedindo irrigação (ou piscinão no
+  vermelho) num dia novo, mostra a notificação (uma vez por dia). Só com o app aberto ou instalado em segundo plano;
+  com o app fechado, use o alerta por Telegram da planilha.
 - **Entrar** — login + PIN. **Minha conta** — trocar PIN, sair.
 
 ## Sincronização

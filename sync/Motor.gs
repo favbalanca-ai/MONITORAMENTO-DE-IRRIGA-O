@@ -1750,6 +1750,39 @@ var Motor = (function () {
       html += `<div style="color:#64757d;font-size:12px">Legenda: vermelho irrigar · amarelo déficit chegando na lâmina mínima · verde ok · cinza sem dados. Chuva prevista não entra no balanço: só avisa.${linkApp ? ` <a href="${h(linkApp)}" style="color:#2e7d8c">Abrir o app</a>` : ""}</div></div>`;
       return html;
   }
+  /**
+   * Alerta curto para o celular (Telegram): só o que precisa de ação hoje. Negrito no estilo do
+   * Telegram (*texto*). Sem nada para irrigar, uma linha só.
+   */
+  function montarAlerta(data, itens, reservatorios = [], nomeFazenda = "", linkApp = "") {
+      var _a;
+      const rs = resumoDoDia(itens);
+      const l = [`💧 *Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}*`];
+      const irrigar = itens.filter((it) => { var _a; return ((_a = it.linha) === null || _a === void 0 ? void 0 : _a.decisao) === "IRRIGAR"; });
+      if (irrigar.length) {
+          l.push(`🚿 *IRRIGAR ${irrigar.length === 1 ? "1 pivô" : `${irrigar.length} pivôs`}* · ${n0(rs.aguaM3)} m³ · R$ ${n2(rs.custo)}`);
+          for (const it of irrigar) {
+              const x = it.linha, r = x.recomendacao;
+              l.push(`• *${it.pivo.nome}*: ${n1(x.deficit)} mm de déficit` + (r ? ` → percentímetro *${n0(r.percentimetroPct)}%*, volta ${horas(r.tempoVoltaH)}` + (r.ponta ? `, ligar às *${r.ponta.inicioSugerido}*` : "") : ""));
+          }
+      }
+      else
+          l.push(`✅ Nenhum pivô para irrigar hoje${rs.cont.atencao ? ` · 🟡 ${rs.cont.atencao} em atenção` : ""}`);
+      const estresse = itens.filter((it) => it.linha && it.linha.afdMm > 0 && it.linha.deficit >= it.linha.afdMm);
+      if (estresse.length)
+          l.push(`⚠️ Em estresse (déficit ≥ AFD): ${estresse.map((it) => it.pivo.nome).join(", ")}`);
+      if (rs.cont.sem)
+          l.push(`⚫ ${rs.cont.sem} sem dados da estação`);
+      for (const b of reservatorios) {
+          if (b.semaforo === "ruim")
+              l.push(`🏞 *${b.nome}*: ${(_a = b.alertas[0]) !== null && _a !== void 0 ? _a : "água no limite"}`);
+          else if (b.semaforo === "atencao" && b.diasAutonomia !== null)
+              l.push(`🏞 ${b.nome}: água pra ${n1(b.diasAutonomia)} dias`);
+      }
+      if (linkApp)
+          l.push(`App: ${linkApp}`);
+      return l.join("\n");
+  }
 
   // No Apps Script, a hora local vem do Utilities (independe do suporte a Intl).
   if (typeof Utilities !== "undefined") {
@@ -1758,5 +1791,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

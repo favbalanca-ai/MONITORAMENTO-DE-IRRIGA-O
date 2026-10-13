@@ -255,3 +255,35 @@ export function montarMensagemHtml(
   html += `<div style="color:#64757d;font-size:12px">Legenda: vermelho irrigar · amarelo déficit chegando na lâmina mínima · verde ok · cinza sem dados. Chuva prevista não entra no balanço: só avisa.${linkApp ? ` <a href="${h(linkApp)}" style="color:#2e7d8c">Abrir o app</a>` : ""}</div></div>`;
   return html;
 }
+
+/**
+ * Alerta curto para o celular (Telegram): só o que precisa de ação hoje. Negrito no estilo do
+ * Telegram (*texto*). Sem nada para irrigar, uma linha só.
+ */
+export function montarAlerta(
+  data: DataISO,
+  itens: ItemRelatorio[],
+  reservatorios: BalancoReservatorio[] = [],
+  nomeFazenda = "",
+  linkApp = "",
+): string {
+  const rs = resumoDoDia(itens);
+  const l: string[] = [`💧 *Manejo ${br(data)}${nomeFazenda ? ` · ${nomeFazenda}` : ""}*`];
+  const irrigar = itens.filter((it) => it.linha?.decisao === "IRRIGAR");
+  if (irrigar.length) {
+    l.push(`🚿 *IRRIGAR ${irrigar.length === 1 ? "1 pivô" : `${irrigar.length} pivôs`}* · ${n0(rs.aguaM3)} m³ · R$ ${n2(rs.custo)}`);
+    for (const it of irrigar) {
+      const x = it.linha!, r = x.recomendacao;
+      l.push(`• *${it.pivo.nome}*: ${n1(x.deficit)} mm de déficit` + (r ? ` → percentímetro *${n0(r.percentimetroPct)}%*, volta ${horas(r.tempoVoltaH)}` + (r.ponta ? `, ligar às *${r.ponta.inicioSugerido}*` : "") : ""));
+    }
+  } else l.push(`✅ Nenhum pivô para irrigar hoje${rs.cont.atencao ? ` · 🟡 ${rs.cont.atencao} em atenção` : ""}`);
+  const estresse = itens.filter((it) => it.linha && it.linha.afdMm > 0 && it.linha.deficit >= it.linha.afdMm);
+  if (estresse.length) l.push(`⚠️ Em estresse (déficit ≥ AFD): ${estresse.map((it) => it.pivo.nome).join(", ")}`);
+  if (rs.cont.sem) l.push(`⚫ ${rs.cont.sem} sem dados da estação`);
+  for (const b of reservatorios) {
+    if (b.semaforo === "ruim") l.push(`🏞 *${b.nome}*: ${b.alertas[0] ?? "água no limite"}`);
+    else if (b.semaforo === "atencao" && b.diasAutonomia !== null) l.push(`🏞 ${b.nome}: água pra ${n1(b.diasAutonomia)} dias`);
+  }
+  if (linkApp) l.push(`App: ${linkApp}`);
+  return l.join("\n");
+}

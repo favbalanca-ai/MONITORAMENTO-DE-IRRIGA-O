@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.14-4';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.15-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -113,6 +113,7 @@ async function puxar(forcar) {
     if (!d.ok) throw new Error(d.erro || 'erro da planilha');
     DADOS = d; grava(DADOS_KEY, d);
     if (d.usuario) { const s = sessao(); if (s) { s.usuario = d.usuario; grava(SESS_KEY, s); } }
+    avisarSePrecisa();
     logAdd(true, 'Puxar planilha', d.resumo ? 'dia ' + d.resumo.dia : (d.erroCalculo || 'sem cálculo'));
     ocupado = false; setStatus('ok');
     if (!editando()) route({ manterRolagem: true });
@@ -1499,6 +1500,48 @@ V.pivos_depois = function () {
 };
 
 /* ================= AJUSTES (sincronizar) ================= */
+/* ================= AVISOS NO CELULAR (notificação local) ================= */
+const NOTIF_KEY = 'irrigacao_avisos';
+function avisosCfg() { return ler(NOTIF_KEY, { on: false, ultimo: '' }); }
+function avisosSuportado() { return 'Notification' in window; }
+function avisosPermitido() { return avisosSuportado() && Notification.permission === 'granted'; }
+/** Mostra uma notificação (pelo service worker quando há; senão direto). */
+async function notificar(titulo, corpo, tag) {
+  if (!avisosPermitido()) return false;
+  const opts = { body: corpo, tag: tag || 'manejo', icon: 'icon-192.png', badge: 'icon-192.png', data: { url: location.pathname + '#/hoje' } };
+  try {
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg && reg.showNotification) { await reg.showNotification(titulo, opts); return true; }
+  } catch (e) { /* cai no modo direto */ }
+  try { new Notification(titulo, opts); return true; } catch (e) { return false; }
+}
+/** Depois de cada sincronização: dia novo com pivô pedindo irrigação (ou piscinão no vermelho) → aviso. Uma vez por dia. */
+function avisarSePrecisa() {
+  const cfg = avisosCfg(); if (!cfg.on || !avisosPermitido() || !DADOS || !DADOS.resumo) return;
+  const r = DADOS.resumo, pivos = (r.pivos || []).filter((p) => p.decisao === 'IRRIGAR');
+  const res = (r.reservatorios || []).filter((b) => b.semaforo === 'ruim');
+  const chave = r.dia + '|' + pivos.map((p) => p.nome).join(',') + '|' + res.map((b) => b.nome).join(',');
+  if (chave === cfg.ultimo) return;
+  grava(NOTIF_KEY, Object.assign(cfg, { ultimo: chave }));
+  if (!pivos.length && !res.length) return;
+  const porFaz = {}; pivos.forEach((p) => { (porFaz[p.fazenda || ''] = porFaz[p.fazenda || ''] || []).push(p); });
+  const linhas = Object.keys(porFaz).map((f) => (fazendas().length > 1 && f ? f + ': ' : '') + porFaz[f].map((p) => p.nome + (p.rec ? ' ' + br(p.rec.percentimetroPct, 0) + '%' : '') + ' (' + br(p.deficit, 0) + ' mm)').join(', '));
+  res.forEach((b) => linhas.push('🏞 ' + b.nome + ': ' + (b.alertas && b.alertas[0] ? b.alertas[0] : 'água no limite')));
+  const titulo = pivos.length ? '🚿 Irrigar ' + (pivos.length === 1 ? '1 pivô' : pivos.length + ' pivôs') + ' · ' + dataBr(r.dia) : '🏞 Piscinão no limite · ' + dataBr(r.dia);
+  notificar(titulo, linhas.join('\n'), 'manejo-' + r.dia);
+}
+function cardAvisos() {
+  const cfg = avisosCfg(), sup = avisosSuportado(), perm = sup ? Notification.permission : 'unsupported';
+  const estado = !sup ? 'Este navegador não mostra notificações. No iPhone, instale o app na tela de início (Compartilhar → Adicionar à Tela de Início) e abra por lá.'
+    : perm === 'denied' ? 'Notificações bloqueadas pelo celular. Libere nas configurações do navegador/site e volte aqui.'
+    : cfg.on && perm === 'granted' ? 'Ligado: quando o app sincroniza e encontra pivô pedindo irrigação (ou piscinão no vermelho) num dia novo, avisa aqui no celular.'
+    : 'Desligado. Com o app aberto ou instalado na tela de início, ele avisa quando um pivô pede irrigação.';
+  return '<div class="card"><div class="row"><h2>' + ico('alerta') + ' Avisos no celular</h2>' +
+    (sup && perm !== 'denied' ? '<label class="chave"><input type="checkbox" id="avisos-on"' + (cfg.on && perm === 'granted' ? ' checked' : '') + '><span></span></label>' : '') + '</div>' +
+    '<p class="muted" style="margin-top:6px" id="avisos-estado">' + esc(estado) + '</p>' +
+    (sup && perm === 'granted' && cfg.on ? '<div class="toolbar"><button type="button" class="btn btn-outline btn-sm" data-act="avisos-teste">Testar aviso</button></div>' : '') +
+    '<p class="muted">Limite: o aviso só sai quando o app está aberto ou rodando em segundo plano. Pra receber com o app fechado, use o alerta por Telegram (menu 💧 Manejo → 📲 Telegram, na planilha).</p></div>';
+}
 V.sync = function () {
   const u = sessUsuario(), f = fila(), log = ler(LOG_KEY, []);
   return '<div class="card"><h2>Endereço da planilha</h2><p class="muted" style="margin-top:4px">Na planilha: menu 💧 Manejo → 📱 Endereço para o app. Termina em <b>/exec</b>.</p>' +
@@ -1509,6 +1552,7 @@ V.sync = function () {
     (syncUrl() ? '<p class="muted">🔎 Testar endereço abre a planilha numa aba nova. Certo = aparece um texto com <b>"login":true</b> ou <b>"ok":true</b>. Tela de login do Google = falta "Qualquer pessoa" na implantação. "Arquivo não existe" = endereço errado.</p>' : '') +
     '<p class="muted">Estado: ' + esc(estado.st === 'ok' ? 'sincronizado' : estado.st === 'err' ? 'erro — ' + (estado.msg || '') : estado.st === 'busy' ? 'sincronizando…' : 'parado') +
     (DADOS && DADOS.versao ? ' · planilha v' + esc(DADOS.versao) : '') + ' · app v' + APP_VERSION + '</p></div>' +
+    cardAvisos() +
     '<div class="card"><h2>Aparência</h2><div class="seg seg-3" role="tablist" style="margin-top:10px">' + [['claro', 'Claro'], ['escuro', 'Escuro'], ['auto', 'Automático']].map((t) => '<button type="button" data-act="tema" data-tema="' + t[0] + '" class="' + (temaAtual() === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div><p class="muted">Automático segue o ajuste do celular (escuro à noite).</p></div>' +
     (f.some((x) => x.erro) ? '<div class="card"><h2>Recusados pela planilha</h2><ul class="lista">' + f.filter((x) => x.erro).map((x) => '<li><div class="t">' + esc(x.op === 'apagar' ? 'Apagar ' + x.id : x.d.pivo + ' ' + dataBr(x.d.data)) + '<div class="muted" style="color:var(--red)">' + esc(x.erro) + '</div></div><button class="btn btn-danger btn-sm" data-act="descartar" data-id="' + esc(x.id) + '" data-op="' + esc(x.op) + '">Descartar</button></li>').join('') + '</ul></div>' : '') +
     '<div class="card"><h2>Conta</h2><div class="toolbar" style="margin-top:10px">' +
@@ -1518,6 +1562,18 @@ V.sync = function () {
 };
 
 /* ================= ENTRAR / CONTA / USUÁRIOS ================= */
+V.sync_depois = function () {
+  const av = $('#avisos-on');
+  if (av) av.addEventListener('change', async () => {
+    if (av.checked) {
+      let perm = Notification.permission;
+      if (perm !== 'granted') { try { perm = await Notification.requestPermission(); } catch (e) { perm = 'denied'; } }
+      if (perm !== 'granted') { av.checked = false; toast('O celular não liberou as notificações.', true); route({ manterRolagem: true }); return; }
+      grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: true, ultimo: '' }));
+      toast('Avisos ligados.'); route({ manterRolagem: true }); avisarSePrecisa();
+    } else { grava(NOTIF_KEY, Object.assign(avisosCfg(), { on: false })); route({ manterRolagem: true }); }
+  });
+};
 V.login = function () {
   return '<div class="entrar card"><div class="logo">💧</div><h2>Manejo de Irrigação</h2><p class="muted" style="text-align:center">Fazenda Água Viva</p>' +
     '<form id="f-login" autocomplete="on"><label for="lg-login">Login</label><input id="lg-login" autocomplete="username" autocapitalize="none" required>' +
@@ -1602,6 +1658,7 @@ document.addEventListener('click', async (ev) => {
     corpo.hidden = !ab; card.classList.toggle('aberto', ab); a.setAttribute('aria-expanded', ab ? 'true' : 'false');
   }
   else if (act === 'lancar-nivel') { tipoLanc = 'nivel'; }
+  else if (act === 'avisos-teste') { notificar('🚿 Teste do manejo', 'Assim chega o aviso de irrigar.', 'teste').then((ok) => toast(ok ? 'Aviso enviado.' : 'Não consegui mostrar o aviso.', !ok)); }
   else if (act === 'ndvi-fonte') { grava(NDVI_KEY, Object.assign(ndviCfg(), { fonte: a.dataset.fonte })); $$('[data-act="ndvi-fonte"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
   else if (act === 'ndvi-indice') { grava(NDVI_KEY, Object.assign(ndviCfg(), { indice: a.dataset.indice })); $$('[data-act="ndvi-indice"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }

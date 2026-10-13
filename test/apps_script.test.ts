@@ -320,3 +320,25 @@ test("sensor de solo da estação aparece no pivô; histórico traz o clima diá
   assert.equal(h.clima[h.clima.length - 1]!.data, "2026-02-08");
   assert.ok(h.clima[0]!.tmax > 20 && h.clima[0]!.et0 > 0);
 });
+
+test("alerta por Telegram: curto, uma vez por dia por fazenda, Markdown com recuo sem formatação", () => {
+  const amb = comLeiturasPivo2();
+  setFazenda(amb, "Telegram (chat ID)", "123456789, -1001234567");
+  amb.props.set("TELEGRAM_BOT_TOKEN", "123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  const pedidos: string[] = [];
+  amb.respostaHttp = (url) => { if (url.includes("api.telegram.org")) { pedidos.push(url); return { code: 200, corpo: { ok: true, result: {} } }; } return { code: 500, corpo: {} }; };
+  amb.chamar("calcularEEnviar_", "2026-02-08", false);
+  assert.equal(pedidos.length, 2, "um sendMessage por chat");
+  assert.ok(pedidos.every((u) => u.endsWith("/sendMessage")), "um sendMessage por chat");
+  const log = amb.aba("LOG").dados.filter((l) => String(l[1]) === "telegram");
+  assert.equal(log.length, 1);
+  assert.equal(log[0]![2], "enviado");
+  // segunda vez no mesmo dia: não repete
+  amb.chamar("calcularEEnviar_", "2026-02-08", false);
+  assert.equal(pedidos.length, 2);
+  assert.equal(amb.aba("LOG").dados.filter((l) => String(l[1]) === "telegram").pop()![2], "já enviado");
+  // texto do alerta
+  const texto = amb.chamar<string>("montarAlertaTeste_", "2026-02-08");
+  assert.match(texto, /^💧 \*Manejo 08\/02\*\n🚿 \*IRRIGAR 1 pivô\* · \d[\d.]* m³ · R\$ [\d.,]+\n• \*Pivô 2\*: 24,\d mm de déficit → percentímetro \*\d+%\*, volta \d+ h \d\d min/);
+  assert.match(texto, /App: https:\/\//);
+});

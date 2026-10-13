@@ -2,7 +2,7 @@
    Todo arquivo vem SEMPRE da rede, então o app abre sempre na versão publicada mais nova.
    O worker existe para o app ser "instalável" e para avisar com clareza quando não há internet.
    Os dados e a fila de lançamentos ficam no localStorage, não aqui. */
-const VERSAO = 'nocache-v1';   // mudar este texto força os aparelhos a trocarem o worker
+const VERSAO = 'nocache-v2';   // mudar este texto força os aparelhos a trocarem o worker
 
 self.addEventListener('install', () => { self.skipWaiting(); });
 
@@ -31,4 +31,15 @@ self.addEventListener('fetch', (e) => {
       return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
     })
   );
+});
+
+// toque na notificação: abre (ou traz pra frente) o app na tela Hoje
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './#/hoje';
+  e.waitUntil((async () => {
+    const lista = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of lista) { if ('focus' in c) { try { await c.navigate(url); } catch (err) {} return c.focus(); } }
+    return self.clients.openWindow(url);
+  })());
 });

@@ -50,6 +50,7 @@ var COLUNAS_FAZENDAS = [
   ["fuso", "Fuso horário"],
   ["grupoChuva", "Pluviômetro (rainfall/rainfall_piezo)"],
   ["emails", "E-mails do relatório"],
+  ["telegram", "Telegram (chat ID)"],
   ["ibge", "Município (código IBGE)"],
   ["chuvaMinima", "Chuva mínima que conta (mm)"],
   ["pontaInicio", "Ponta — início (h)"],
@@ -159,6 +160,10 @@ function onOpen() {
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
     .addItem("🌧 Atualizar previsão do tempo", "menuPrevisao")
     .addItem("📄 Relatório de hoje em PDF", "menuPdf")
+    .addSeparator()
+    .addItem("📲 Telegram: configurar bot", "menuTelegramToken")
+    .addItem("📲 Telegram: descobrir chat ID", "menuTelegramChats")
+    .addItem("📲 Telegram: enviar teste", "menuTelegramTeste")
     .addSeparator()
     .addItem("📱 Endereço para o app", "menuLinkApp")
     .addItem("👤 Criar administrador do app", "menuCriarAdmin")
@@ -320,6 +325,7 @@ function normalizarCfg_(cfg) {
   cfg.fuso = String(cfg.fuso || "America/Sao_Paulo").trim();
   cfg.grupoChuva = String(cfg.grupoChuva || "").trim() || "rainfall";
   cfg.emails = String(cfg.emails || "").split(/[,;\s]+/).filter(function (e) { return e.indexOf("@") > 0; });
+  cfg.telegram = String(cfg.telegram == null ? "" : cfg.telegram).split(/[,;\s]+/).filter(function (t) { return /^-?\d{5,}$/.test(t); });
   cfg.nome = String(cfg.nome || FAZENDA_PADRAO).trim() || FAZENDA_PADRAO;
   cfg.chave = chaveFazenda_(cfg.nome);
   cfg.mac = limparChave_(cfg.mac || "").toUpperCase();
@@ -1420,6 +1426,16 @@ function calcularEEnviar_(dia, forcar) {
         log_(canal, "erro", e.message, r.dia);
       }
     }
+    // alerta curto no celular (Telegram), uma vez por dia por fazenda
+    var canalTg = "telegram" + (varias ? " " + f.cfg.nome : "");
+    if (f.cfg.telegram.length && telegramToken_()) {
+      if (!forcar && jaEnviado_(r.dia, canalTg)) log_(canalTg, "já enviado", "", r.dia);
+      else {
+        var alerta = Motor.montarAlerta(r.dia, f.itens, f.reservatorios || [], varias ? f.cfg.nome : "", APP_URL);
+        var res = telegramEnviar_(f.cfg.telegram, alerta);
+        log_(canalTg, res.erros.length ? (res.ok ? "parcial" : "erro") : "enviado", res.erros.join(" | ") || f.cfg.telegram.join(", "), r.dia);
+      }
+    }
   });
   r.pdfUrl = r.fazendas[0].pdfUrl;
   return r;
@@ -1610,7 +1626,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.13-3";
+var VERSAO_SERVIDOR = "2026.10.14-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2275,6 +2291,87 @@ function apagarReservatorio_(nome, fazenda) {
   }
   log_("app", "piscinão apagado", alvo.nome);
   return cadastroPivos_();
+}
+
+/* ----------------------------------- Telegram ----------------------------------- */
+
+function telegramToken_() { return PropertiesService.getScriptProperties().getProperty("TELEGRAM_BOT_TOKEN") || ""; }
+
+/** Chamada à API do Bot. Nunca escreve o token em log. */
+function telegramApi_(metodo, payload) {
+  var token = telegramToken_();
+  if (!token) throw new Error("Bot do Telegram não configurado (menu 💧 Manejo → 📲 Telegram: configurar bot).");
+  var resp = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/" + metodo, {
+    method: "post", contentType: "application/json", payload: JSON.stringify(payload || {}), muteHttpExceptions: true,
+  });
+  var corpo;
+  try { corpo = JSON.parse(resp.getContentText()); } catch (e) { corpo = {}; }
+  if (resp.getResponseCode() !== 200 || !corpo.ok) throw new Error("Telegram " + metodo + ": " + (corpo.description || ("HTTP " + resp.getResponseCode())));
+  return corpo.result;
+}
+
+/** Manda o texto (com *negrito*) para cada chat. Se o Markdown falhar, manda sem formatação. */
+function telegramEnviar_(chats, texto) {
+  var erros = [], ok = false;
+  chats.forEach(function (chat) {
+    try {
+      telegramApi_("sendMessage", { chat_id: chat, text: texto, parse_mode: "Markdown", disable_web_page_preview: true });
+      ok = true;
+    } catch (e1) {
+      try {
+        telegramApi_("sendMessage", { chat_id: chat, text: texto.replace(/\*/g, ""), disable_web_page_preview: true });
+        ok = true;
+      } catch (e2) { erros.push(chat + ": " + e2.message); }
+    }
+  });
+  return { ok: ok, erros: erros };
+}
+
+/** Só para os testes: o texto do alerta do dia (primeira fazenda). */
+function montarAlertaTeste_(dia) {
+  var r = calcular_(dia), f = r.fazendas[0];
+  return Motor.montarAlerta(r.dia, f.itens, f.reservatorios || [], "", APP_URL);
+}
+
+function menuTelegramToken() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt("Telegram — token do bot", "Cole o token que o @BotFather deu (formato 123456789:AAAA...).\n(deixe em branco para manter o atual)", ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var t = limparChave_(r.getResponseText());
+  if (t) {
+    if (!/^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(t)) { aviso_("Isso não parece um token do BotFather (formato 123456789:AAAA...). Nada foi gravado."); return; }
+    PropertiesService.getScriptProperties().setProperty("TELEGRAM_BOT_TOKEN", t);
+  }
+  try {
+    var me = telegramApi_("getMe", {});
+    aviso_("Bot configurado: @" + me.username + ".\n\nAgora: 1) no Telegram, abra o bot e mande qualquer mensagem (ou coloque o bot num grupo e mande uma mensagem lá); 2) menu 📲 Telegram: descobrir chat ID; 3) cole o chat ID na coluna \"Telegram (chat ID)\" da aba FAZENDAS.");
+  } catch (e) { aviso_("Token guardado, mas o Telegram não respondeu: " + e.message); }
+}
+
+/** Lista os chats que já falaram com o bot (getUpdates), para copiar o chat ID. */
+function menuTelegramChats() {
+  try {
+    var ups = telegramApi_("getUpdates", { limit: 100 });
+    var vistos = {}, linhas = [];
+    ups.forEach(function (u) {
+      var m = u.message || u.channel_post || u.my_chat_member && { chat: u.my_chat_member.chat };
+      if (!m || !m.chat || vistos[m.chat.id]) return;
+      vistos[m.chat.id] = true;
+      linhas.push(String(m.chat.id) + "  →  " + (m.chat.title || ((m.chat.first_name || "") + " " + (m.chat.last_name || "")).trim() || m.chat.username || m.chat.type));
+    });
+    aviso_(linhas.length ? "Chats que falaram com o bot (ID → nome):\n\n" + linhas.join("\n") + "\n\nCopie o ID para a coluna \"Telegram (chat ID)\" da aba FAZENDAS (vários: separe por vírgula). Grupo tem ID negativo."
+      : "Nenhuma conversa ainda. No Telegram, abra o bot e mande \"oi\" (ou mande uma mensagem no grupo onde ele está) e tente de novo.");
+  } catch (e) { aviso_("Não consegui listar: " + e.message); }
+}
+
+function menuTelegramTeste() {
+  var fazendas = lerFazendas_(), res = [];
+  fazendas.forEach(function (f) {
+    if (!f.telegram.length) { res.push(f.nome + ": sem chat ID na aba FAZENDAS"); return; }
+    var r = telegramEnviar_(f.telegram, "✅ Teste do manejo de irrigação — " + f.nome + ". Os alertas chegam aqui todo dia depois das 18h.");
+    res.push(f.nome + ": " + (r.erros.length ? r.erros.join(" | ") : "enviado para " + f.telegram.join(", ")));
+  });
+  aviso_(res.join("\n"));
 }
 
 /* ------------------------------ login (PIN) e usuários ------------------------------ */

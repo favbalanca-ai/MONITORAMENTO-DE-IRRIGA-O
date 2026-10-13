@@ -56,6 +56,13 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o
      **Instance ID** para a célula. Vazio = só o NDVI MODIS da NASA (250 m, sem cadastro). O Instance ID não é senha,
      mas gasta a cota mensal da sua conta: não publique.
+   - **Alerta no celular pelo Telegram** (opcional): no Telegram, fale com o **@BotFather**, mande `/newbot`, dê um nome
+     e um usuário (termina em `bot`) e copie o **token**. Na planilha: **💧 Manejo → 📲 Telegram: configurar bot** e cole o
+     token (fica nas propriedades do script, não na planilha). Abra o bot no Telegram e mande "oi" (ou coloque o bot num
+     grupo da fazenda e mande uma mensagem lá). **📲 Telegram: descobrir chat ID** lista os chats; cole o ID na coluna
+     **Telegram (chat ID)** da linha da fazenda na aba FAZENDAS (vários IDs separados por vírgula; grupo tem ID negativo).
+     **📲 Telegram: enviar teste** confirma. Todo dia, junto com o relatório das 18h, chega um alerta curto: pivôs a
+     irrigar com percentímetro, volta e hora de ligar, pivôs em estresse, piscinão no vermelho e o link do app.
 8. Teste: **Coletar leitura agora** (mostra a leitura na tela e grava em LEITURAS; se der erro, mostra o motivo — use **Testar conexão Ecowitt** para ver o que a estação responde) e **Calcular agora (sem enviar)** (veja o PAINEL).
 9. Para trazer o histórico: **Recuperar buracos (período)** a partir de 08/02/2026, e/ou **Importar METEO de outra planilha** com o link da `MANEJO_IRRIGACAO_MASTER`.
 

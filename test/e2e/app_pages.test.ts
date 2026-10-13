@@ -232,6 +232,36 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
   await ctx.close();
 });
 
+test("avisos no celular: liga em Ajustes e, ao sincronizar um dia com pivô pedindo irrigação, mostra a notificação", async () => {
+  const amb = planilha();
+  const { ctx, page } = await abrir(amb);
+  await ctx.grantPermissions(["notifications"]);
+  await configurarEEntrar(page, "jose", "4321");
+  // registra as notificações mostradas (pelo service worker ou direto)
+  await page.evaluate(() => {
+    const w = window as unknown as { __notifs: string[]; Notification: typeof Notification };
+    w.__notifs = [];
+    const Orig = w.Notification;
+    const Fake = function (this: unknown, t: string, o: { body?: string }) { w.__notifs.push(t + " | " + (o && o.body)); } as unknown as typeof Notification;
+    Object.defineProperty(Fake, "permission", { get: () => "granted" });
+    (Fake as unknown as { requestPermission: () => Promise<string> }).requestPermission = () => Promise.resolve("granted");
+    w.Notification = Fake; void Orig;
+    navigator.serviceWorker.getRegistration = () => Promise.resolve(undefined);
+  });
+  await page.goto(base + "#/sync");
+  await page.getByText("Avisos no celular").waitFor();
+  await page.locator("#avisos-on + span").click();
+  await page.getByText("Avisos ligados.").waitFor();
+  await page.waitForFunction(() => ((window as unknown as { __notifs: string[] }).__notifs || []).length > 0);
+  const notifs = await page.evaluate(() => (window as unknown as { __notifs: string[] }).__notifs);
+  assert.match(notifs[0]!, /🚿 Irrigar 1 pivô · 08\/02 \| Pivô 2 \d+% \(2\d mm\)/);
+  // sincronizar de novo o mesmo dia não repete o aviso
+  await page.getByRole("button", { name: /Puxar agora/ }).click();
+  await page.waitForTimeout(500);
+  assert.equal((await page.evaluate(() => (window as unknown as { __notifs: string[] }).__notifs)).length, 1);
+  await ctx.close();
+});
+
 test("histórico desenha gráfico e tabela", async () => {
   const amb = planilha();
   const { ctx, page } = await abrir(amb);
