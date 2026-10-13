@@ -114,7 +114,11 @@ class FakeFolder {
   getName() { return this.nome; }
   getFoldersByName(n: string) { return iterador(this.pastas.filter((p) => p.nome === n)); }
   createFolder(n: string) { const p = new FakeFolder(n); this.pastas.push(p); return p; }
-  createFile(n: string | FakeBlob, c?: string) {
+  createFile(...args: [string | FakeBlob] | [string, string]) {
+    const [n, c] = args;
+    // como o Apps Script: createFile(blob) tem UM argumento; (blob, undefined) dá "Os parâmetros (Blob,null) não correspondem…"
+    if (n instanceof FakeBlob && args.length !== 1) throw new Error("Os parâmetros (Blob,null) não correspondem à assinatura de método para DriveApp.Folder.createFile.");
+    if (typeof n === "string" && (args.length !== 2 || typeof c !== "string")) throw new Error("Os parâmetros (String," + (c === undefined ? "null" : typeof c) + ") não correspondem à assinatura de método para DriveApp.Folder.createFile.");
     const f = n instanceof FakeBlob ? new FakeFile(n.getName(), n.getDataAsString(), this) : new FakeFile(n, c ?? "", this);
     this.arquivos.push(f); return f;
   }

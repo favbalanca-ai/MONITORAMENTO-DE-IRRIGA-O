@@ -1220,6 +1220,14 @@ function atualizarPrevisao() {
     var r = previsaoDaFazenda_(cfg);
     if (!r.previsao) { resumoLog.push(cfg.nome + ": ERRO " + r.erros.join(" | ")); falhou = true; return; }
     if (r.erros.length) falhou = true;
+    // horas (48 h) ou luz do dia que falharam nesta rodada: fica a rodada anterior, avisando
+    var anterior = mapa[cfg.chave];
+    if (anterior && (!r.previsao.horas || !r.previsao.horas.length) && anterior.horas && anterior.horas.length) {
+      r.previsao.horas = anterior.horas;
+      r.previsao.horasDe = anterior.horasDe || anterior.atualizadoEm;
+      r.erros.push("48 h: mantive as horas da rodada " + String(r.previsao.horasDe).slice(11, 16));
+    }
+    if (anterior && (!r.previsao.luz || !r.previsao.luz.length) && anterior.luz && anterior.luz.length) r.previsao.luz = anterior.luz;
     mapa[cfg.chave] = r.previsao;
     resumoLog.push(cfg.nome + ": " + r.previsao.fontes.join(", ") + (r.erros.length ? " | " + r.erros.join(" | ") : ""));
     var v = function (x) { return x === null || x === undefined ? "" : x; };
@@ -1298,11 +1306,20 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
   escreverTabela_(ABA.PREVISAO_HIST, cab, linhas);
 }
 
+/**
+ * GET + JSON. Em "muitos pedidos" (429) ou serviço ocupado (5xx) espera e tenta de novo (até 3 vezes):
+ * o Apps Script sai por endereços compartilhados do Google e o Open-Meteo limita por endereço.
+ */
 function buscarJson_(url) {
-  var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  var code = resp.getResponseCode();
-  if (code !== 200) throw new Error("HTTP " + code);
-  return JSON.parse(resp.getContentText());
+  var esperas = [1500, 3000, 6000], code = 0, resp;
+  for (var i = 0; i <= esperas.length; i++) {
+    resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    code = resp.getResponseCode();
+    if (code === 200) return JSON.parse(resp.getContentText());
+    if (code !== 429 && code < 500) break;
+    if (i < esperas.length) Utilities.sleep(esperas[i]);
+  }
+  throw new Error("HTTP " + code);
 }
 
 /** Previsões guardadas, por chave da fazenda. Versão anterior (uma só) vira a da primeira fazenda. */
@@ -1447,7 +1464,9 @@ function jaEnviado_(dia, canal) {
 function salvarNaPasta_(pasta, nome, conteudoOuBlob) {
   var antigos = pasta.getFilesByName(nome);
   while (antigos.hasNext()) antigos.next().setTrashed(true);
-  return pasta.createFile(conteudoOuBlob && typeof conteudoOuBlob === "object" ? conteudoOuBlob.setName(nome) : nome, typeof conteudoOuBlob === "string" ? conteudoOuBlob : undefined);
+  // Blob → createFile(blob) com UM argumento: com dois (blob, undefined) o Apps Script recusa ("Blob,null")
+  if (conteudoOuBlob && typeof conteudoOuBlob === "object") return pasta.createFile(conteudoOuBlob.setName(nome));
+  return pasta.createFile(nome, String(conteudoOuBlob === undefined || conteudoOuBlob === null ? "" : conteudoOuBlob));
 }
 
 /**
@@ -1717,7 +1736,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-3";
+var VERSAO_SERVIDOR = "2026.10.16-4";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

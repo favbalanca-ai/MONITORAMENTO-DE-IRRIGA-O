@@ -328,6 +328,37 @@ test("tendência: cada rodada vai para PREVISAO HISTORICO e o dia-alvo ganha 89%
   assert.match(rel.fazendas[0]!.texto, /Tendência amanhã: 20% → 20% → 20% · estável/);
 });
 
+test("Open-Meteo ocupado (429): a planilha espera e tenta de novo; se as 48 h falharem, ficam as da rodada anterior", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const time = [], temperature_2m = [], relative_humidity_2m = [], wind_speed_10m = [], wind_gusts_10m = [], precipitation = [], precipitation_probability = [];
+  for (let h = 0; h < 48; h++) { time.push("2026-02-0" + (h < 24 ? 8 : 9) + "T" + String(h % 24).padStart(2, "0") + ":00"); temperature_2m.push(24); relative_humidity_2m.push(70); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5); }
+  const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  // 1ª rodada: o diário dá 429 duas vezes e passa na terceira; as horas passam de primeira
+  let falhas = 2;
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: omHoras } : url.includes("open-meteo") ? (falhas-- > 0 ? { code: 429, corpo: {} } : { code: 200, corpo: om }) : { code: 500, corpo: {} });
+  let p = amb.chamar("atualizarPrevisao") as { horas: unknown[]; horasDe?: string; atualizadoEm: string; luz: unknown[] };
+  assert.equal(p.horas.length, 48);
+  assert.equal(amb.urls.filter((u) => u.includes("open-meteo") && !u.includes("hourly=")).length, 3);
+  const primeiro = amb.aba("LOG").objetos().filter((l) => l["Ação"] === "previsão").pop()!;
+  assert.doesNotMatch(String(primeiro["Detalhe"]), /429/); // repetiu em silêncio e conseguiu (só o INMET, sem resposta, fica no aviso)
+  // 2ª rodada: as horas falham de vez (429 sempre) → ficam as 48 h e a luz da rodada anterior, com aviso no LOG
+  amb.agoraMs! += 3 * 3600_000;
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 429, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  p = amb.chamar("atualizarPrevisao") as typeof p;
+  assert.equal(p.horas.length, 48);
+  assert.equal(p.luz.length, 4);
+  assert.equal(p.horasDe, "2026-02-08T19:00:00");
+  const ultimo = amb.aba("LOG").objetos().filter((l) => l["Ação"] === "previsão").pop()!;
+  assert.equal(ultimo["Status"], "parcial");
+  assert.match(String(ultimo["Detalhe"]), /Open-Meteo horas: HTTP 429 \| 48 h: mantive as horas da rodada 19:00/);
+  // erro que não adianta repetir (404) não insiste
+  amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 404, corpo: {} } : { code: 500, corpo: {} });
+  const antes = amb.urls.length;
+  amb.chamar("atualizarPrevisao");
+  assert.equal(amb.urls.slice(antes).filter((u) => u.includes("open-meteo") && !u.includes("hourly=") && u.includes("models=")).length, 1);
+});
+
 test("previsão com vários modelos: faixa e concordância vão para a aba e o app; se o pedido falhar, cai para o melhor ajuste", () => {
   const amb = pronto();
   const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
