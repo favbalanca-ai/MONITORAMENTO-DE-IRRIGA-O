@@ -1,7 +1,7 @@
 import type { LinhaBalanco } from "../motor/balanco.ts";
 import type { DataISO, DiaClima } from "../motor/tipos.ts";
 import { diaAnterior } from "../motor/agregacao.ts";
-import { avisoChuva, chuvaPrevista, type DiaPrevisao } from "../motor/previsao.ts";
+import { avisoChuva, chuvaPrevista, resumoPrevisao, type DiaPrevisao } from "../motor/previsao.ts";
 import type { ResumoCiclo } from "../motor/ciclo.ts";
 import type { BalancoReservatorio } from "../motor/reservatorio.ts";
 
@@ -129,6 +129,10 @@ export function montarMensagem(
     );
     const r = prox[0]?.resumo;
     if (r) l.push(`   INMET amanhã: ${r}`);
+    const f = prox[0]?.faixaChuva;
+    if (f) l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+    const r7 = resumoPrevisao(previsao, data, 7);
+    if (r7.et0Mm !== null && r7.dias >= 3) l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm`);
   }
   for (const b of reservatorios) { l.push(""); l.push(...linhasReservatorio(b)); }
 
@@ -208,6 +212,10 @@ export function montarMensagemHtml(
   html += `<div style="background:#f4f6f8;border-radius:10px;padding:8px 12px;margin-bottom:10px">ET₀ <b>${n1(clima.et0)}</b> mm · chuva <b>${n1(clima.chuva)}</b> mm · ${n0(clima.tmin)}–${n0(clima.tmax)} °C · UR ${n0(clima.ur)}% · vento ${n1(clima.vento)} m/s · ${clima.n}/144 leituras`;
   if (clima.estimados?.length) html += `<br><span style="color:#b7791f">⚠️ Estação sem dado de ${h(clima.estimados.join(", "))}: valores do dia vizinho.</span>`;
   if (prox.length) html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
+  const f1 = prox[0]?.faixaChuva;
+  if (f1) html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+  const r7 = resumoPrevisao(previsao, data, 7);
+  if (r7.et0Mm !== null && r7.dias >= 3) html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm</span>`;
   html += `</div>`;
   for (const b of reservatorios) {
     const cor = SEM_COR[b.semaforo];

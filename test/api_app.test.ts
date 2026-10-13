@@ -282,6 +282,41 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   assert.ok(amb.aba("LOG").objetos().some((l) => l["Ação"] === "previsão" && l["Status"] === "parcial" && /INMET: HTTP 503/.test(String(l["Detalhe"]))));
 });
 
+test("previsão com vários modelos: faixa e concordância vão para a aba e o app; se o pedido falhar, cai para o melhor ajuste", () => {
+  const amb = pronto();
+  const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("models=") ? { code: 200, corpo: omModelos } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  let p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; tempo?: string; faixaChuva?: { comChuva: number; modelos: number; minMm: number; maxMm: number }; modelos?: { nome: string }[] }[]; fontes: string[] };
+  assert.deepEqual([...p.fontes], ["Open-Meteo (6 modelos)", "INMET"]);
+  assert.equal(p.dias[8]!.tempo, "Pancadas de chuva fracas");
+  assert.deepEqual({ ...p.dias[8]!.faixaChuva }, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6 });
+  assert.equal(p.dias[8]!.modelos!.length, 6);
+  const linha = amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!;
+  assert.equal(linha["Tempo"], "Pancadas de chuva fracas");
+  assert.equal(linha["Chuva mín. modelos (mm)"], 0);
+  assert.equal(linha["Chuva máx. modelos (mm)"], 18.6);
+  assert.equal(linha["Modelos com chuva"], 5);
+  assert.equal(linha["Modelos"], 6);
+  assert.equal(linha["UR média (%)"], 67);
+  assert.equal(linha["Vento máx. (km/h)"], 12);
+  assert.equal(linha["ET₀ (mm)"], 4.1);
+  assert.equal(linha["Sol (h)"], 7.5);
+  assert.equal(linha["UV máx."], 11);
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const d = amb.get({ acao: "dados", s: adm });
+  assert.equal(d.previsao.dias[8].faixaChuva.comChuva, 5);
+
+  // pedido com modelos falha (HTTP 400) → repete só com o melhor ajuste e anota no LOG
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("models=") ? { code: 400, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  p = amb.chamar("atualizarPrevisao") as typeof p;
+  assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
+  assert.equal(p.dias[8]!.faixaChuva, undefined);
+  const log = amb.aba("LOG").objetos();
+  assert.ok(log.some((l) => /Open-Meteo modelos: HTTP 400 \(usei só o melhor ajuste\)/.test(String(l["Detalhe"]))));
+});
+
 test("pivô com latitude/longitude e contorno vai para o resumo; latitude sem longitude é recusada", () => {
   const amb = pronto();
   const adm = entrar(amb, "fabiana", "1234").token;

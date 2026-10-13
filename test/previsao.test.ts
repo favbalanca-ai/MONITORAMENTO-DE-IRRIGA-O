@@ -1,18 +1,67 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { avisoChuva, chuvaPrevista, juntarPrevisao, lerInmet, lerOpenMeteo, urlOpenMeteo } from "../src/motor/index.ts";
+import { avisoChuva, chuvaPrevista, descricaoTempo, iconeTempo, juntarPrevisao, lerInmet, lerOpenMeteo, resumoPrevisao, urlOpenMeteo } from "../src/motor/index.ts";
 import { montarMensagem } from "../src/job/mensagem.ts";
 
 const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
 const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
 
 test("Open-Meteo: um item por dia com mm, %, tmin e tmax", () => {
   const d = lerOpenMeteo(om);
   assert.equal(d.length, 14); // 7 passados + 7 à frente
-  assert.deepEqual(d[8], { data: "2026-02-09", chuvaMm: 12.4, probPct: 80, tmax: 28.4, tmin: 18.5, et0Mm: 4.1 });
+  assert.deepEqual(d[8], {
+    data: "2026-02-09", chuvaMm: 12.4, probPct: 80, tmax: 28.4, tmin: 18.5, et0Mm: 4.1,
+    codigoTempo: 80, tempo: "Pancadas de chuva fracas", urPct: 67, ventoKmh: 12, rajadaKmh: 25, radiacaoMJ: 18.5, solH: 7.5, uvMax: 11, horasChuva: 3,
+  });
+  // resposta antiga (sem os campos novos) continua valendo: só os 6 campos de sempre
+  const velho = lerOpenMeteo({ daily: { time: ["2026-02-09"], precipitation_sum: [1], precipitation_probability_max: [10], temperature_2m_max: [30], temperature_2m_min: [20], et0_fao_evapotranspiration: [4] } });
+  assert.deepEqual(velho, [{ data: "2026-02-09", chuvaMm: 1, probPct: 10, tmax: 30, tmin: 20, et0Mm: 4 }]);
   assert.throws(() => lerOpenMeteo({}), /série diária/);
-  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /latitude=-14\.9&longitude=-46\.25.*et0_fao_evapotranspiration.*timezone=America%2FSao_Paulo&forecast_days=7&past_days=7/);
+  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /latitude=-14\.9&longitude=-46\.25.*et0_fao_evapotranspiration,weather_code,relative_humidity_2m_mean,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum,sunshine_duration,uv_index_max,precipitation_hours&wind_speed_unit=kmh&timezone=America%2FSao_Paulo&forecast_days=14&past_days=7/);
+});
+
+test("vários modelos: o melhor ajuste é o principal, os outros entram em `modelos` com faixa e concordância", () => {
+  const d = lerOpenMeteo(omModelos);
+  assert.equal(d.length, 14);
+  const dia = d[8]!;
+  assert.equal(dia.chuvaMm, 12.4); // best_match
+  assert.equal(dia.tempo, "Pancadas de chuva fracas");
+  assert.deepEqual(dia.modelos!.map((m) => [m.nome, m.chuvaMm]), [["Melhor ajuste", 12.4], ["ECMWF", 14.9], ["GFS", 6.2], ["ICON", 12.4], ["GEM", 0], ["Météo-France", 18.6]]);
+  assert.deepEqual(dia.faixaChuva, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6 });
+  // modelos de horizonte curto somem nos dias que não cobrem (Météo-France: 4 dias; GEM: 3)
+  assert.deepEqual(d[12]!.modelos!.map((m) => m.nome), ["Melhor ajuste", "ECMWF", "GFS", "ICON"]);
+  assert.equal(d[12]!.faixaChuva!.modelos, 4);
+  // URL pede todos os modelos; sem modelos, não manda o parâmetro
+  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /&models=best_match,ecmwf_ifs025,gfs_seamless,icon_seamless,gem_seamless,meteofrance_seamless$/);
+  assert.doesNotMatch(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo", 14, 7, []), /models=/);
+  // um modelo só: nada de faixa
+  assert.equal(lerOpenMeteo(om)[8]!.modelos, undefined);
+  assert.equal(lerOpenMeteo(om)[8]!.faixaChuva, undefined);
+});
+
+test("tempo em português pelo código WMO e resumo dos próximos dias (chuva, ET₀, saldo)", () => {
+  assert.equal(descricaoTempo(0), "Sol");
+  assert.equal(descricaoTempo(3), "Nublado");
+  assert.equal(descricaoTempo(63), "Chuva moderada");
+  assert.equal(descricaoTempo(95), "Tempestade");
+  assert.equal(descricaoTempo(99), "Tempestade com granizo");
+  assert.equal(descricaoTempo(null), "");
+  assert.equal(iconeTempo(0), "☀️");
+  assert.equal(iconeTempo(81), "🌦️");
+  assert.equal(iconeTempo(undefined), "");
+  const r = resumoPrevisao(lerOpenMeteo(om), "2026-02-08", 7);
+  assert.equal(r.dias, 6); // a resposta guardada só tem 6 dias depois de 08/02
+  assert.equal(r.ate, "2026-02-14");
+  assert.equal(r.chuvaMm, 37.8);
+  assert.equal(r.et0Mm, 25.5);
+  assert.equal(r.saldoMm, 12.3);
+  assert.equal(r.diasComChuva, 4);
+  assert.equal(r.tmaxAbs, 31.5);
+  assert.equal(r.tminAbs, 18.1);
+  const vazio = resumoPrevisao([{ data: "2026-03-01", chuvaMm: 2, probPct: null, tmin: null, tmax: null }], "2026-02-28");
+  assert.deepEqual(vazio, { dias: 1, chuvaMm: 2, et0Mm: null, saldoMm: null, diasComChuva: 1, tmaxAbs: null, tminAbs: null, ate: "2026-03-01" });
 });
 
 test("INMET: data brasileira vira ISO, turnos viram resumo, dias inteiros também entram", () => {

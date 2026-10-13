@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-3';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -664,16 +664,83 @@ function semaforo(p) {
 const SEM_COR = { bom: '#2e7d32', atencao: '#f0b429', ruim: '#c62828', sem: '#9e9e9e' };
 const SEM_ROTULO = { bom: 'Bom', atencao: 'Atenção', ruim: 'Irrigar', sem: 'Sem dados' };
 
-/** Cartão "Próximos dias" com a previsão (Open-Meteo = mm e %, INMET = texto). */
+/** Ícone (emoji) para o código WMO do tempo — igual ao do motor. */
+function iconeTempo(c) {
+  if (c == null || !isFinite(c)) return '';
+  c = Math.round(c);
+  if (c === 0) return '☀️'; if (c === 1) return '🌤️'; if (c === 2) return '⛅'; if (c === 3) return '☁️';
+  if (c === 45 || c === 48) return '🌫️'; if (c >= 51 && c <= 57) return '🌦️'; if (c >= 61 && c <= 67) return '🌧️';
+  if (c >= 71 && c <= 77) return '🌨️'; if (c >= 80 && c <= 82) return '🌦️'; if (c === 85 || c === 86) return '🌨️';
+  return c >= 95 ? '⛈️' : '';
+}
+const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const diaSemana = (iso) => DIAS_SEMANA[new Date(iso + 'T12:00:00').getDay()] || '';
+/** Totais dos próximos dias (chuva, ET₀, saldo = chuva − ET₀). */
+function resumoPrevisao(dias, n) {
+  let chuva = 0, et0 = 0, temEt0 = false, comChuva = 0;
+  dias.slice(0, n).forEach((d) => { chuva += d.chuvaMm || 0; if ((d.chuvaMm || 0) >= 1) comChuva++; if (d.et0Mm != null) { et0 += d.et0Mm; temEt0 = true; } });
+  return { n: Math.min(n, dias.length), chuva, et0: temEt0 ? et0 : null, saldo: temEt0 ? chuva - et0 : null, comChuva };
+}
+/** Texto curto sobre a concordância dos modelos num dia. */
+function textoModelos(f) {
+  if (!f) return '';
+  if (f.comChuva === 0) return f.modelos + ' modelos: nenhum vê chuva';
+  if (f.comChuva === f.modelos) return 'todos os ' + f.modelos + ' modelos veem chuva (' + br(f.minMm, 0) + '–' + br(f.maxMm, 0) + ' mm)';
+  return f.comChuva + ' de ' + f.modelos + ' modelos veem chuva (' + br(f.minMm, 0) + '–' + br(f.maxMm, 0) + ' mm)';
+}
+/**
+ * Cartão "Próximos dias": 7 dias em destaque (tempo, chuva, chance, temperatura, faixa dos modelos) e, em
+ * "Detalhes", os 14 dias com UR, vento, ET₀, sol e UV, mais a comparação modelo a modelo.
+ * Fontes: Open-Meteo (melhor ajuste + ECMWF, GFS, ICON, GEM, Météo-France) e INMET (texto).
+ */
 function cardPrevisao(dia) {
   const pv = estacao().previsao; if (!pv || !pv.dias || !pv.dias.length) return '';
-  const prox = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 5);
-  if (!prox.length) return '';
-  const soma = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
-  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
-    '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + '"><small>' + esc(dataBr(d.data)) + '</small><b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
-      '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' + (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') + '</div>').join('') + '</div>' +
-    (prox[0].resumo ? '<p class="muted" style="margin-top:8px">INMET amanhã — ' + esc(prox[0].resumo) + '</p>' : '') +
+  const todos = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 14);
+  if (!todos.length) return '';
+  const prox = todos.slice(0, 7);
+  const soma2 = prox.slice(0, 2).reduce((t, d) => t + (d.chuvaMm || 0), 0);
+  const r7 = resumoPrevisao(todos, 7), r14 = resumoPrevisao(todos, 14);
+  const temModelos = todos.some((d) => d.faixaChuva);
+  const classe = (d) => ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + (d.faixaChuva && d.faixaChuva.modelos >= 3 && d.faixaChuva.comChuva > 0 && d.faixaChuva.comChuva < d.faixaChuva.modelos / 2 ? ' duvida' : '');
+  const tira = '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + classe(d) + '" title="' + esc((d.tempo || '') + (d.faixaChuva ? ' · ' + textoModelos(d.faixaChuva) : '')) + '">' +
+    '<small>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</small>' +
+    '<span class="prev-ico" aria-label="' + esc(d.tempo || '') + '">' + (iconeTempo(d.codigoTempo) || '·') + '</span>' +
+    '<b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
+    '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
+    (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
+    (d.faixaChuva ? '<span class="prev-mod">' + d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' ' + ico('chuva') + '</span>' : '') +
+    '</div>').join('') + '</div>';
+  const resumo = '<div class="prev-resumo">' +
+    '<span><small>2 dias</small><b>' + br(soma2, 1) + ' mm</b></span>' +
+    '<span><small>' + r7.n + ' dias</small><b>' + br(r7.chuva, 0) + ' mm</b>' + (r7.et0 != null ? '<em>ET₀ ' + br(r7.et0, 0) + ' mm · saldo ' + (r7.saldo >= 0 ? '+' : '') + br(r7.saldo, 0) + '</em>' : '') + '</span>' +
+    (r14.n > 7 ? '<span><small>' + r14.n + ' dias</small><b>' + br(r14.chuva, 0) + ' mm</b>' + (r14.et0 != null ? '<em>ET₀ ' + br(r14.et0, 0) + ' mm · saldo ' + (r14.saldo >= 0 ? '+' : '') + br(r14.saldo, 0) + '</em>' : '') + '</span>' : '') +
+    '</div>';
+  const amanha = prox[0];
+  const linhaAmanha = (amanha.tempo || amanha.faixaChuva ? '<p class="muted prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</p>' : '') +
+    (amanha.resumo ? '<p class="muted">INMET amanhã — ' + esc(amanha.resumo) + '</p>' : '');
+  const n = (x, c) => (x == null ? '–' : br(x, c));
+  const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
+    todos.map((d) => '<tr class="' + classe(d).trim() + '"><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td><td class="esq">' + iconeTempo(d.codigoTempo) + ' ' + esc(d.tempo || (d.resumo ? 'INMET: ' + d.resumo : '–')) + '</td>' +
+      '<td>' + n(d.chuvaMm, 1) + ' mm</td><td>' + (d.probPct == null ? '–' : br(d.probPct, 0) + '%') + '</td>' +
+      '<td>' + (d.faixaChuva ? d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' · ' + br(d.faixaChuva.minMm, 0) + '–' + br(d.faixaChuva.maxMm, 0) + ' mm' : '–') + '</td>' +
+      '<td>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°' : '–') + '</td>' +
+      '<td>' + (d.urPct == null ? '–' : br(d.urPct, 0) + '%') + '</td>' +
+      '<td>' + (d.ventoKmh == null ? '–' : br(d.ventoKmh, 0) + (d.rajadaKmh != null ? ' <small>(' + br(d.rajadaKmh, 0) + ')</small>' : '') + ' km/h') + '</td>' +
+      '<td>' + n(d.et0Mm, 1) + '</td><td>' + (d.solH == null ? '–' : br(d.solH, 1) + ' h') + '</td><td>' + n(d.uvMax, 0) + '</td></tr>').join('') +
+    '</tbody></table></div>';
+  let modelos = '';
+  if (temModelos) {
+    const nomes = []; todos.forEach((d) => (d.modelos || []).forEach((m) => { if (nomes.indexOf(m.nome) < 0) nomes.push(m.nome); }));
+    const cols = todos.slice(0, 10);
+    modelos = '<p class="muted" style="margin-top:10px"><b>Chuva por modelo (mm)</b> — cada linha é um centro de previsão diferente; quando todos batem, a chuva é mais certa.</p>' +
+      '<div class="tbl-wrap"><table class="prev-tab prev-modelos"><thead><tr><th>Modelo</th>' + cols.map((d) => '<th>' + esc(dataBr(d.data)) + '</th>').join('') + '</tr></thead><tbody>' +
+      nomes.map((nome) => '<tr><td>' + esc(nome) + '</td>' + cols.map((d) => { const m = (d.modelos || []).find((x) => x.nome === nome); return '<td class="' + (m && (m.chuvaMm || 0) >= 1 ? 'chuva' : '') + '">' + (m && m.chuvaMm != null ? br(m.chuvaMm, 0) : '–') + '</td>'; }).join('') + '</tr>').join('') +
+      '</tbody></table></div>';
+  }
+  const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + tabela + modelos +
+    '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p></details>';
+  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
+    tira + resumo + linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + '. A previsão não entra no balanço; só avisa.</p></div>';
 }
 

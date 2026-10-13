@@ -143,7 +143,8 @@ var CABECALHOS = {
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
   LOG: ["Quando", "Ação", "Status", "Detalhe", "Dia do relatório"],
-  PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes", "Fazenda"],
+  PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes", "Fazenda",
+    "Tempo", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Modelos com chuva", "Modelos", "UR média (%)", "Vento máx. (km/h)", "Rajada (km/h)", "ET₀ (mm)", "Radiação (MJ/m²)", "Sol (h)", "UV máx."],
 };
 var N_COLS_LEITURAS = 10;
 
@@ -1164,14 +1165,25 @@ function salvarResumo_(dia, fazendas, previsoes) {
 
 /* ------------------------------ previsão do tempo ------------------------------ */
 
-/** Busca a previsão de UMA fazenda: Open-Meteo (mm, %, ET₀, horas) e INMET (texto). */
+/**
+ * Busca a previsão de UMA fazenda: Open-Meteo com vários modelos (melhor ajuste + ECMWF, GFS, ICON, GEM,
+ * Météo-France: mm, %, ET₀, tempo, vento, UR, sol, UV), horas (pulverização) e INMET (texto).
+ * Se o pedido com vários modelos falhar, repete só com o melhor ajuste — a previsão nunca fica sem nada por isso.
+ */
 function previsaoDaFazenda_(cfg) {
   cfg = comCoordenadas_(cfg);
   var fontes = [], erros = [], om = [], inmet = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
-      om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
-      fontes.push("Open-Meteo");
+      try {
+        om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso)));
+        var nModelos = om.length && om[om.length - 1].modelos ? om.reduce(function (t, d) { return Math.max(t, d.modelos ? d.modelos.length : 0); }, 0) : 0;
+        fontes.push(nModelos > 1 ? "Open-Meteo (" + nModelos + " modelos)" : "Open-Meteo");
+      } catch (e1) {
+        om = Motor.lerOpenMeteo(buscarJson_(Motor.urlOpenMeteo(cfg.latitude, cfg.longitude, cfg.fuso, 14, 7, [])));
+        fontes.push("Open-Meteo");
+        erros.push("Open-Meteo modelos: " + e1.message + " (usei só o melhor ajuste)");
+      }
     } catch (e) { erros.push("Open-Meteo: " + e.message); }
   } else erros.push("Open-Meteo: preencha Latitude e Longitude na linha da fazenda \"" + cfg.nome + "\" (aba FAZENDAS), ou cadastre a posição de um pivô dela. Lido: latitude=" + JSON.stringify(cfg.latitudeBruta === undefined ? cfg.latitude : cfg.latitudeBruta) + ", longitude=" + JSON.stringify(cfg.longitudeBruta === undefined ? cfg.longitude : cfg.longitudeBruta) + ".");
   if (cfg.ibge) {
@@ -1202,9 +1214,12 @@ function atualizarPrevisao() {
     if (r.erros.length) falhou = true;
     mapa[cfg.chave] = r.previsao;
     resumoLog.push(cfg.nome + ": " + r.previsao.fontes.join(", ") + (r.erros.length ? " | " + r.erros.join(" | ") : ""));
+    var v = function (x) { return x === null || x === undefined ? "" : x; };
     r.previsao.dias.forEach(function (d) {
-      linhas.push([d.data, d.chuvaMm === null ? "" : d.chuvaMm, d.probPct === null ? "" : d.probPct, d.tmin === null ? "" : d.tmin,
-        d.tmax === null ? "" : d.tmax, d.resumo || "", r.previsao.atualizadoEm, r.previsao.fontes.join(", "), cfg.nome]);
+      var f = d.faixaChuva;
+      linhas.push([d.data, v(d.chuvaMm), v(d.probPct), v(d.tmin), v(d.tmax), d.resumo || "", r.previsao.atualizadoEm, r.previsao.fontes.join(", "), cfg.nome,
+        d.tempo || "", f ? f.minMm : "", f ? f.maxMm : "", f ? f.comChuva : "", f ? f.modelos : "",
+        v(d.urPct), v(d.ventoKmh), v(d.rajadaKmh), v(d.et0Mm), v(d.radiacaoMJ), v(d.solH), v(d.uvMax)]);
     });
   });
   var algum = fazendas.some(function (f) { return mapa[f.chave]; });
@@ -1636,7 +1651,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.15-4";
+var VERSAO_SERVIDOR = "2026.10.16-1";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

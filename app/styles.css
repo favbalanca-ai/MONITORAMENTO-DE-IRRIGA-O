@@ -269,13 +269,28 @@ svg text{fill:var(--muted);font-size:13px}
 
 .card.sem-bom{border-left:5px solid var(--sem-bom)}.card.sem-atencao{border-left:5px solid var(--sem-atencao)}
 .card.sem-ruim{border-left:5px solid var(--sem-ruim)}.card.sem-sem{border-left:5px solid var(--sem-sem)}
-.prev{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
-.prev-dia{background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center;font-size:12px;color:var(--muted);min-width:0}
+.prev{display:flex;gap:6px;margin-top:10px;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x proximity}
+.prev-dia{flex:1 0 64px;background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center;font-size:12px;color:var(--muted);min-width:0;scroll-snap-align:start}
 .prev-dia.chuva{background:var(--blue-soft)}
-.prev-dia small{display:block;font-weight:600}
+.prev-dia.duvida{box-shadow:inset 0 0 0 1px var(--amber,#f0b429)}
+.prev-dia small{display:block;font-weight:600;white-space:nowrap}
+.prev-ico{font-size:22px;line-height:1.3}
 .prev-dia b{display:block;font-size:16px;color:var(--blue);font-variant-numeric:tabular-nums}
 .prev-dia b em{font-style:normal;font-size:10px}
 .prev-dia span{display:block}
+.prev-mod{font-size:11px;margin-top:2px;opacity:.85}
+.prev-mod svg{width:11px;height:11px;vertical-align:-1px}
+.prev-resumo{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:13px}
+.prev-resumo span{display:flex;flex-direction:column}
+.prev-resumo small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.prev-resumo b{font-size:16px;color:var(--blue);font-variant-numeric:tabular-nums}
+.prev-resumo em{font-style:normal;font-size:11px;color:var(--muted)}
+.prev-amanha{margin-top:8px}
+.prev-det summary{margin-top:4px}
+.prev-tab td.esq{text-align:left;white-space:normal;min-width:120px}
+.prev-tab tr.chuva td{background:var(--blue-soft)}
+.prev-modelos td.chuva{color:var(--blue);font-weight:700}
+.prev-tab td small{color:var(--muted)}
 .mapa{height:min(70vh,560px);min-height:300px;background:#dfe7ea}
 .rotulo-pivo{background:rgba(22,64,77,.85);color:#fff;font-weight:700;font-size:12px;padding:2px 7px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-50%)}
 .kc-det{margin-top:10px}.kc-det summary{cursor:pointer;font-size:13px}

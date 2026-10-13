@@ -458,7 +458,7 @@ function kmzDe(kml: string): Buffer {
 
 test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   const amb = planilha();
-  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo.json", import.meta.url), "utf8"));
+  const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
   const inmet = JSON.parse(readFileSync(new URL("../fixtures/previsao_inmet.json", import.meta.url), "utf8"));
   // horas previstas a partir de agora (o app só mostra o futuro): madrugada boa, dia quente e seco
   const time: string[] = [], temperature_2m: number[] = [], relative_humidity_2m: number[] = [], wind_speed_10m: number[] = [], wind_gusts_10m: number[] = [], precipitation: number[] = [], precipitation_probability: number[] = [];
@@ -516,6 +516,14 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(j48, /Melhor hora pra aplicar: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
+  // cartão "Próximos dias": tempo, faixa dos modelos e, em detalhes, os 14 dias + comparação modelo a modelo
+  await page.getByText(/Amanhã: Pancadas de chuva fracas · 5 de 6 modelos veem chuva \(0–19 mm\)/).waitFor();
+  assert.equal(await page.locator(".prev-dia").count(), 6); // a resposta guardada só tem 6 dias depois de 08/02
+  await page.getByText(/Detalhes dos 6 dias e comparação dos modelos/).click();
+  await page.getByText("Chuva por modelo (mm)").waitFor();
+  assert.deepEqual(await page.locator(".prev-modelos tbody tr td:first-child").allInnerTexts(), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France"]);
+  const tabPrev = await page.locator(".prev-tab").first().innerText();
+  assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
   // rosa dos ventos 24 h: uma leitura ao vivo vinda de 135° (SE) a 11 km/h
   const rosa = await page.locator(".card.rosa24").innerText();
   assert.match(rosa, /Vento nas últimas 24 h\s+1 leituras/);
@@ -547,6 +555,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByText(/Próxima irrigação prevista: \d\d\/\d\d \(em \d+ dias?, sem chuva\)/).waitFor();
   await page.getByText("Detalhes").first().click();
   await page.getByText(/Déficit previsto \(sem chuva\):/).waitFor();
+  // cartão "Próximos dias": tempo, faixa dos modelos e a tabela com os 14 dias + comparação modelo a modelo
   await page.screenshot({ path: PRINTS + "10_previsao.png", fullPage: true });
   await ctx.close();
 });

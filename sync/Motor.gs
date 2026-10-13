@@ -887,30 +887,201 @@ var Motor = (function () {
       return erros;
   }
   // ---- src/motor/previsao.ts ----
+  /**
+   * Modelos numéricos pedidos ao Open-Meteo além do "melhor ajuste" (best_match, que o Open-Meteo escolhe
+   * para o lugar). Cada um vem de um centro meteorológico diferente — comparar ajuda a ver se a chuva é
+   * consenso ou chute de um modelo só.
+   */
+  const MODELOS_PREVISAO = [
+      { id: "best_match", nome: "Melhor ajuste", origem: "Open-Meteo" },
+      { id: "ecmwf_ifs025", nome: "ECMWF", origem: "Europa" },
+      { id: "gfs_seamless", nome: "GFS", origem: "EUA (NOAA)" },
+      { id: "icon_seamless", nome: "ICON", origem: "Alemanha (DWD)" },
+      { id: "gem_seamless", nome: "GEM", origem: "Canadá" },
+      { id: "meteofrance_seamless", nome: "Météo-France", origem: "França" },
+  ];
   const INMET_URL = "https://apiprevmet3.inmet.gov.br/previsao/";
-  /** Pede também os 7 dias passados: a ET₀ deles tapa dias em que a estação ficou sem leituras. */
-  function urlOpenMeteo(latitude, longitude, fuso, dias = 7, passados = 7) {
+  /**
+   * Pede 14 dias à frente (o máximo útil do Open-Meteo é 16) e os 7 passados: a ET₀ deles tapa dias em que a
+   * estação ficou sem leituras. Vento em km/h.
+   */
+  function urlOpenMeteo(latitude, longitude, fuso, dias = 14, passados = 7, modelos = MODELOS_PREVISAO.map((m) => m.id)) {
       return ("https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude +
           "&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration" +
-          "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados);
+          ",weather_code,relative_humidity_2m_mean,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum,sunshine_duration,uv_index_max,precipitation_hours" +
+          "&wind_speed_unit=kmh&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados +
+          (modelos.length > 1 ? "&models=" + modelos.join(",") : ""));
+  }
+  /** Faixa de chuva entre os modelos do dia (mediana, mínimo, máximo e quantos preveem ≥ 1 mm). */
+  function faixaChuva(modelos) {
+      const v = modelos.map((m) => m.chuvaMm).filter((x) => x !== null).sort((a, b) => a - b);
+      if (v.length < 2)
+          return undefined;
+      const r1 = (x) => Math.round(x * 10) / 10;
+      const meio = v.length / 2;
+      const mediana = v.length % 2 ? v[Math.floor(meio)] : (v[meio - 1] + v[meio]) / 2;
+      return { minMm: r1(v[0]), maxMm: r1(v[v.length - 1]), medianaMm: r1(mediana), comChuva: v.filter((x) => x >= 1).length, modelos: v.length };
+  }
+  /** Código WMO (Open-Meteo `weather_code`) → texto curto em português. */
+  function descricaoTempo(codigo) {
+      if (codigo === null || codigo === undefined || !Number.isFinite(codigo))
+          return "";
+      const c = Math.round(codigo);
+      if (c === 0)
+          return "Sol";
+      if (c === 1)
+          return "Sol com poucas nuvens";
+      if (c === 2)
+          return "Parcialmente nublado";
+      if (c === 3)
+          return "Nublado";
+      if (c === 45 || c === 48)
+          return "Nevoeiro";
+      if (c === 51 || c === 53 || c === 55)
+          return "Garoa";
+      if (c === 56 || c === 57)
+          return "Garoa gelada";
+      if (c === 61)
+          return "Chuva fraca";
+      if (c === 63)
+          return "Chuva moderada";
+      if (c === 65)
+          return "Chuva forte";
+      if (c === 66 || c === 67)
+          return "Chuva gelada";
+      if (c >= 71 && c <= 77)
+          return "Neve";
+      if (c === 80)
+          return "Pancadas de chuva fracas";
+      if (c === 81)
+          return "Pancadas de chuva";
+      if (c === 82)
+          return "Pancadas de chuva fortes";
+      if (c === 85 || c === 86)
+          return "Pancadas de neve";
+      if (c === 95)
+          return "Tempestade";
+      if (c === 96 || c === 99)
+          return "Tempestade com granizo";
+      return "";
+  }
+  /** Ícone (emoji) para o código WMO — o app e o relatório usam. */
+  function iconeTempo(codigo) {
+      if (codigo === null || codigo === undefined || !Number.isFinite(codigo))
+          return "";
+      const c = Math.round(codigo);
+      if (c === 0)
+          return "☀️";
+      if (c === 1)
+          return "🌤️";
+      if (c === 2)
+          return "⛅";
+      if (c === 3)
+          return "☁️";
+      if (c === 45 || c === 48)
+          return "🌫️";
+      if (c >= 51 && c <= 57)
+          return "🌦️";
+      if (c >= 61 && c <= 67)
+          return "🌧️";
+      if (c >= 71 && c <= 77)
+          return "🌨️";
+      if (c >= 80 && c <= 82)
+          return "🌦️";
+      if (c === 85 || c === 86)
+          return "🌨️";
+      if (c >= 95)
+          return "⛈️";
+      return "";
+  }
+  /** Totais dos próximos `n` dias depois de `hoje` (chuva, ET₀, saldo, extremos de temperatura). */
+  function resumoPrevisao(previsao, hoje, n = 7) {
+      const prox = previsao.filter((d) => d.data > hoje).slice(0, n);
+      let chuva = 0, et0 = 0, temEt0 = false, comChuva = 0;
+      let tmax = null, tmin = null;
+      for (const d of prox) {
+          chuva += d.chuvaMm ?? 0;
+          if ((d.chuvaMm ?? 0) >= 1)
+              comChuva++;
+          if (d.et0Mm !== null && d.et0Mm !== undefined) {
+              et0 += d.et0Mm;
+              temEt0 = true;
+          }
+          if (d.tmax !== null)
+              tmax = tmax === null ? d.tmax : Math.max(tmax, d.tmax);
+          if (d.tmin !== null)
+              tmin = tmin === null ? d.tmin : Math.min(tmin, d.tmin);
+      }
+      const r1 = (x) => Math.round(x * 10) / 10;
+      return {
+          dias: prox.length, chuvaMm: r1(chuva), et0Mm: temEt0 ? r1(et0) : null, saldoMm: temEt0 ? r1(chuva - et0) : null,
+          diasComChuva: comChuva, tmaxAbs: tmax, tminAbs: tmin, ate: prox.length ? prox[prox.length - 1].data : null,
+      };
   }
   const num = (v) => {
       const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.replace(",", ".")) : NaN;
       return Number.isFinite(n) ? n : null;
   };
-  /** Resposta do Open-Meteo (`daily.time[]` + séries) → um item por dia. */
+  /**
+   * Resposta do Open-Meteo (`daily.time[]` + séries) → um item por dia. Com vários modelos pedidos, cada
+   * série vem com o sufixo do modelo (`precipitation_sum_ecmwf_ifs025`); o "melhor ajuste" vira o valor
+   * principal e os demais entram em `modelos`.
+   */
   function lerOpenMeteo(json) {
-      const d = json?.daily;
-      if (!d || !Array.isArray(d["time"]))
+      const bruto = json?.daily;
+      if (!bruto || !Array.isArray(bruto["time"]))
           throw new Error("Open-Meteo: resposta sem a série diária.");
-      return d["time"].map((t, i) => ({
-          data: String(t).slice(0, 10),
-          chuvaMm: num(d["precipitation_sum"]?.[i]),
-          probPct: num(d["precipitation_probability_max"]?.[i]),
-          tmax: num(d["temperature_2m_max"]?.[i]),
-          tmin: num(d["temperature_2m_min"]?.[i]),
-          et0Mm: num(d["et0_fao_evapotranspiration"]?.[i]),
-      }));
+      const multi = !bruto["precipitation_sum"] && !!bruto["precipitation_sum_best_match"];
+      // d = séries principais (sem sufixo, ou as do best_match)
+      const d = multi
+          ? Object.fromEntries(Object.entries(bruto).map(([k, v]) => [k.replace(/_best_match$/, ""), v]))
+          : bruto;
+      const outros = multi
+          ? MODELOS_PREVISAO.filter((m) => m.id !== "best_match" && Array.isArray(bruto["precipitation_sum_" + m.id]))
+          : [];
+      const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
+      return d["time"].map((t, i) => {
+          const dia = {
+              data: String(t).slice(0, 10),
+              chuvaMm: num(d["precipitation_sum"]?.[i]),
+              probPct: num(d["precipitation_probability_max"]?.[i]),
+              tmax: num(d["temperature_2m_max"]?.[i]),
+              tmin: num(d["temperature_2m_min"]?.[i]),
+              et0Mm: num(d["et0_fao_evapotranspiration"]?.[i]),
+          };
+          // campos novos: só entram quando a resposta os traz (respostas antigas guardadas continuam valendo)
+          const cod = num(d["weather_code"]?.[i]);
+          if (cod !== null) {
+              dia.codigoTempo = cod;
+              dia.tempo = descricaoTempo(cod);
+          }
+          if (d["relative_humidity_2m_mean"])
+              dia.urPct = num(d["relative_humidity_2m_mean"]?.[i]);
+          if (d["wind_speed_10m_max"])
+              dia.ventoKmh = num(d["wind_speed_10m_max"]?.[i]);
+          if (d["wind_gusts_10m_max"])
+              dia.rajadaKmh = num(d["wind_gusts_10m_max"]?.[i]);
+          if (d["shortwave_radiation_sum"])
+              dia.radiacaoMJ = num(d["shortwave_radiation_sum"]?.[i]);
+          if (d["sunshine_duration"])
+              dia.solH = r1(num(d["sunshine_duration"]?.[i]) === null ? null : num(d["sunshine_duration"]?.[i]) / 3600);
+          if (d["uv_index_max"])
+              dia.uvMax = num(d["uv_index_max"]?.[i]);
+          if (d["precipitation_hours"])
+              dia.horasChuva = num(d["precipitation_hours"]?.[i]);
+          if (outros.length) {
+              const modelos = [{ nome: MODELOS_PREVISAO[0].nome, chuvaMm: dia.chuvaMm, tmax: dia.tmax, tmin: dia.tmin }];
+              for (const m of outros) {
+                  modelos.push({ nome: m.nome, chuvaMm: num(bruto["precipitation_sum_" + m.id]?.[i]), tmax: num(bruto["temperature_2m_max_" + m.id]?.[i]), tmin: num(bruto["temperature_2m_min_" + m.id]?.[i]) });
+              }
+              // modelos que não chegam até esse dia (horizonte menor) ficam de fora
+              dia.modelos = modelos.filter((m) => m.chuvaMm !== null || m.tmax !== null);
+              const f = faixaChuva(dia.modelos);
+              if (f)
+                  dia.faixaChuva = f;
+          }
+          return dia;
+      });
   }
   /**
    * Resposta do INMET (`{ "<ibge>": { "dd/mm/aaaa": { manha, tarde, noite } | {...} } }`) → um item por dia,
@@ -1797,6 +1968,12 @@ var Motor = (function () {
           const r = prox[0]?.resumo;
           if (r)
               l.push(`   INMET amanhã: ${r}`);
+          const f = prox[0]?.faixaChuva;
+          if (f)
+              l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+          const r7 = resumoPrevisao(previsao, data, 7);
+          if (r7.et0Mm !== null && r7.dias >= 3)
+              l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm`);
       }
       for (const b of reservatorios) {
           l.push("");
@@ -1884,6 +2061,12 @@ var Motor = (function () {
           html += `<br><span style="color:#b7791f">⚠️ Estação sem dado de ${h(clima.estimados.join(", "))}: valores do dia vizinho.</span>`;
       if (prox.length)
           html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
+      const f1 = prox[0]?.faixaChuva;
+      if (f1)
+          html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+      const r7 = resumoPrevisao(previsao, data, 7);
+      if (r7.et0Mm !== null && r7.dias >= 3)
+          html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm</span>`;
       html += `</div>`;
       for (const b of reservatorios) {
           const cor = SEM_COR[b.semaforo];
@@ -1985,5 +2168,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();
