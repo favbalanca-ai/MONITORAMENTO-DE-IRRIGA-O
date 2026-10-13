@@ -514,12 +514,15 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   // pulverização: T 27,4 / UR 61 → Delta T 5,6 (ideal); vento 11 km/h = atenção terrestre, bom aérea; chovendo = ruim nos dois
   assert.match(est, /Delta T\s+5,6\s*°C\s+ideal 2–8/);
   assert.match(est, /Condição pra aplicar[\s\S]*Ruim[\s\S]*Vento 11 km\/h: no limite \(10 a 15\)[\s\S]*Rajadas de 23 km\/h[\s\S]*Chovendo agora/);
-  assert.equal(await page.getByText("Aérea").count(), 0);
+  assert.equal(await page.getByText("Aérea", { exact: true }).count(), 0); // não existe mais a modalidade separada (o texto "aplicação aérea" da luz do dia não conta)
   await page.locator(".j48").waitFor();
   const j48 = await page.locator(".j48").innerText();
   assert.match(j48, /Próximas 48 h \(previsão\)/i);
   assert.equal(await page.locator(".horas48 i").count(), 48);
-  assert.match(j48, /Melhor hora pra aplicar: (hoje|amanhã) \d\dh–\d\dh \(\d+ h\)/);
+  // aplicação aérea: só da primeira à última luz — de noite (fixture: boa) o avião não voa; o que sobra é 05h–07h (22 °C, UR 75 %)
+  assert.match(j48, /Melhor hora pra aplicar \(avião, da primeira à última luz\): (hoje|amanhã) 0[456]h–0[678]h \(\d h\)/);
+  assert.match(j48, /Luz do dia \d\d\/\d\d: primeira luz \d\d:\d\d · sol \d\d:\d\d–\d\d:\d\d · última luz \d\d:\d\d/);
+  assert.ok((await page.locator(".horas48 i.h-noite").count()) >= 15);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
   // cartão "Próximos dias": tempo, faixa dos modelos e, em detalhes, os 14 dias + comparação modelo a modelo

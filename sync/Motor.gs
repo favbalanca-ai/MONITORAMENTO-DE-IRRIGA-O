@@ -890,6 +890,36 @@ var Motor = (function () {
       });
       return erros;
   }
+  // ---- src/coletor/tempo.ts ----
+  const formatadores = new Map();
+  function formatador(fuso) {
+      let f = formatadores.get(fuso);
+      if (!f) {
+          f = new Intl.DateTimeFormat("en-CA", {
+              timeZone: fuso,
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit",
+              hourCycle: "h23",
+          });
+          formatadores.set(fuso, f);
+      }
+      return f;
+  }
+  /** Instante (ms desde 1970) → data e hora locais "YYYY-MM-DDTHH:MM:SS" no fuso da estação. */
+  function paraLocal(ms, fuso) {
+      const p = Object.fromEntries(formatador(fuso).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+  }
+  /** Data e hora locais → instante (ms). */
+  function deLocal(local, fuso) {
+      const comoUtc = Date.parse(local + "Z");
+      const desvio = Date.parse(paraLocal(comoUtc, fuso) + "Z") - comoUtc;
+      return comoUtc - desvio;
+  }
+  /** Minutos entre duas datas-hora locais (b − a). */
+  const minutosEntre = (a, b) => (Date.parse(b + "Z") - Date.parse(a + "Z")) / 60000;
+  /** Soma minutos a uma data-hora local. */
+  const somarMinutos = (a, min) => new Date(Date.parse(a + "Z") + min * 60000).toISOString().slice(0, 19);
   // ---- src/motor/previsao.ts ----
   /**
    * Modelos numéricos pedidos ao Open-Meteo além do "melhor ajuste" (best_match, que o Open-Meteo escolhe
@@ -1246,14 +1276,20 @@ var Motor = (function () {
           marca("ruim", "Chovendo — lava o produto");
       return { deltaT: dt, nivel: pior, motivos };
   }
-  /** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
-  function aplicacaoPorHora(horas) {
+  /**
+   * Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo").
+   * Com `temLuz` (ver `marcadorDeLuz`), cada hora ganha `luz`: fora da primeira–última luz o avião não voa.
+   */
+  function aplicacaoPorHora(horas, temLuz) {
       const out = [];
       for (const h of horas) {
           if (h.tempC === null || h.urPct === null)
               continue;
           const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: (h.chuvaMm ?? 0) >= 0.2 || (h.probPct ?? 0) >= 60 });
-          out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
+          const x = { quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct };
+          if (temLuz)
+              x.luz = temLuz(h.quando);
+          out.push(x);
       }
       return out;
   }
@@ -1267,7 +1303,8 @@ var Motor = (function () {
       for (const h of horas) {
           if (h.quando < apartirDe)
               continue;
-          if (ORDEM[h.nivel] <= ORDEM[ateNivel]) {
+          // hora sem luz do dia fecha a janela: o avião só aplica da primeira à última luz
+          if (h.luz !== false && ORDEM[h.nivel] <= ORDEM[ateNivel]) {
               if (!ini)
                   ini = h.quando;
               n++;
@@ -1286,7 +1323,7 @@ var Motor = (function () {
   function horaMenosRuim(horas, apartirDe) {
       let melhor = null;
       for (const h of horas) {
-          if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2)
+          if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2 || h.luz === false)
               continue;
           if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct))
               melhor = h;
@@ -1319,6 +1356,65 @@ var Motor = (function () {
       const seq = ps.slice(-4).map((p) => (p.probPct === null ? (p.chuvaMm === null ? "?" : p.chuvaMm.toFixed(0) + " mm") : Math.round(p.probPct) + "%")).join(" → ");
       const rot = { subindo: "subindo", caindo: "caindo", estavel: "estável", nova: "primeira rodada" };
       return { pontos: ps, emissoes: ps.length, deltaProb, deltaChuva, direcao, confianca, nivel, texto: seq + " · " + rot[direcao] };
+  }
+  // ---- src/motor/sol.ts ----
+  /**
+   * Nascer e pôr do sol e crepúsculo civil (primeira e última luz) para um lugar e um dia — algoritmo
+   * simplificado da NOAA, erro de poucos minutos. Serve para a pulverização aérea, que só acontece com luz.
+   */
+  
+  const RAD = Math.PI / 180;
+  const J2000 = 2451545.0;
+  /** Dia juliano às 0h UTC de uma data ISO. */
+  function julianoDe(data) {
+      return Date.parse(data + "T00:00:00Z") / 86400000 + 2440587.5;
+  }
+  /** Instantes (ms UTC) em que o sol cruza o ângulo `anguloGraus` abaixo (negativo) do horizonte. */
+  function cruzamentos(data, latitude, longitude, anguloGraus) {
+      const n = Math.round(julianoDe(data) - J2000 + 0.5);
+      const jEstrela = n - longitude / 360;
+      const M = ((357.5291 + 0.98560028 * jEstrela) % 360 + 360) % 360;
+      const C = 1.9148 * Math.sin(M * RAD) + 0.02 * Math.sin(2 * M * RAD) + 0.0003 * Math.sin(3 * M * RAD);
+      const lambda = ((M + C + 180 + 102.9372) % 360 + 360) % 360;
+      const jTransito = J2000 + jEstrela + 0.0053 * Math.sin(M * RAD) - 0.0069 * Math.sin(2 * lambda * RAD);
+      const declinacao = Math.asin(Math.sin(lambda * RAD) * Math.sin(23.4397 * RAD));
+      const cosW = (Math.sin(anguloGraus * RAD) - Math.sin(latitude * RAD) * Math.sin(declinacao)) / (Math.cos(latitude * RAD) * Math.cos(declinacao));
+      if (cosW > 1 || cosW < -1)
+          return null;
+      const w = Math.acos(cosW) / RAD;
+      const paraMs = (jd) => (jd - 2440587.5) * 86400000;
+      return [paraMs(jTransito - w / 360), paraMs(jTransito + w / 360)];
+  }
+  const horaMinutoLocal_ = (ms, fuso) => paraLocal(ms, fuso).slice(11, 16);
+  /** Primeira luz (crepúsculo civil, sol a −6°), nascer, pôr e última luz, em hora local do fuso. */
+  function luzDoDia(data, latitude, longitude, fuso) {
+      const sol = cruzamentos(data, latitude, longitude, -0.833);
+      const civil = cruzamentos(data, latitude, longitude, -6);
+      return {
+          data,
+          primeiraLuz: civil ? horaMinutoLocal_(civil[0], fuso) : null,
+          nascer: sol ? horaMinutoLocal_(sol[0], fuso) : null,
+          por: sol ? horaMinutoLocal_(sol[1], fuso) : null,
+          ultimaLuz: civil ? horaMinutoLocal_(civil[1], fuso) : null,
+      };
+  }
+  /** Função "tem luz nessa hora?" para marcar as horas previstas: `quando` = "YYYY-MM-DDTHH:00" local. */
+  function marcadorDeLuz(latitude, longitude, fuso) {
+      const cache = new Map();
+      return (quando) => {
+          const data = quando.slice(0, 10);
+          let l = cache.get(data);
+          if (!l) {
+              l = luzDoDia(data, latitude, longitude, fuso);
+              cache.set(data, l);
+          }
+          if (!l.primeiraLuz || !l.ultimaLuz)
+              return true;
+          const h = quando.slice(11, 16);
+          // a hora prevista vale de HH:00 a HH:59: conta como luz se qualquer parte dela tem luz
+          const fim = h.slice(0, 2) + ":59";
+          return fim >= l.primeiraLuz && h <= l.ultimaLuz;
+      };
   }
   // ---- src/motor/ciclo.ts ----
   /**
@@ -1703,36 +1799,6 @@ var Motor = (function () {
       const pub = base64url(chavePublica(privada));
       return { Authorization: "vapid t=" + entrada + "." + base64url(sig) + ", k=" + pub };
   }
-  // ---- src/coletor/tempo.ts ----
-  const formatadores = new Map();
-  function formatador(fuso) {
-      let f = formatadores.get(fuso);
-      if (!f) {
-          f = new Intl.DateTimeFormat("en-CA", {
-              timeZone: fuso,
-              year: "numeric", month: "2-digit", day: "2-digit",
-              hour: "2-digit", minute: "2-digit", second: "2-digit",
-              hourCycle: "h23",
-          });
-          formatadores.set(fuso, f);
-      }
-      return f;
-  }
-  /** Instante (ms desde 1970) → data e hora locais "YYYY-MM-DDTHH:MM:SS" no fuso da estação. */
-  function paraLocal(ms, fuso) {
-      const p = Object.fromEntries(formatador(fuso).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
-      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
-  }
-  /** Data e hora locais → instante (ms). */
-  function deLocal(local, fuso) {
-      const comoUtc = Date.parse(local + "Z");
-      const desvio = Date.parse(paraLocal(comoUtc, fuso) + "Z") - comoUtc;
-      return comoUtc - desvio;
-  }
-  /** Minutos entre duas datas-hora locais (b − a). */
-  const minutosEntre = (a, b) => (Date.parse(b + "Z") - Date.parse(a + "Z")) / 60000;
-  /** Soma minutos a uma data-hora local. */
-  const somarMinutos = (a, min) => new Date(Date.parse(a + "Z") + min * 60000).toISOString().slice(0, 19);
   // ---- src/coletor/ecowitt.ts ----
   /**
    * Cliente da API v3 da Ecowitt (ecowitt.net).
@@ -2205,5 +2271,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

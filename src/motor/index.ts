@@ -9,5 +9,6 @@ export * from "./equipamento.ts";
 export * from "./balanco.ts";
 export * from "./cadastro.ts";
 export * from "./previsao.ts";
+export * from "./sol.ts";
 export * from "./ciclo.ts";
 export * from "./reservatorio.ts";

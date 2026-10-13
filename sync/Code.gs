@@ -1197,13 +1197,18 @@ function previsaoDaFazenda_(cfg) {
   }
   var dias = Motor.juntarPrevisao(om, inmet);
   if (!dias.length) return { previsao: null, erros: erros };
-  var horas = [];
+  var horas = [], luz = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
-      horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))));
+      // cada hora prevista ganha luz = true/false (primeira à última luz do dia): o avião só aplica com luz
+      horas = Motor.aplicacaoPorHora(Motor.lerOpenMeteoHoras(buscarJson_(Motor.urlOpenMeteoHoras(cfg.latitude, cfg.longitude, cfg.fuso))), Motor.marcadorDeLuz(cfg.latitude, cfg.longitude, cfg.fuso));
     } catch (e) { erros.push("Open-Meteo horas: " + e.message); }
+    try {
+      var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
+      for (var i = 0; i < 4; i++) luz.push(Motor.luzDoDia(Motor.somarDias(hoje, i), cfg.latitude, cfg.longitude, cfg.fuso));
+    } catch (e2) { erros.push("luz do dia: " + e2.message); }
   }
-  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas }, erros: erros };
+  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas, luz: luz }, erros: erros };
 }
 
 /** Gatilho (a cada 3 h) e menu: previsão de todas as fazendas → aba PREVISAO + CACHE. Devolve a da primeira. */
@@ -1712,7 +1717,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-2";
+var VERSAO_SERVIDOR = "2026.10.16-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

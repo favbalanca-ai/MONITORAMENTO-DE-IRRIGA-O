@@ -253,6 +253,13 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
   assert.equal(p.horas.length, 48);
   assert.equal(p.horas[3]!.nivel, "bom");
   assert.equal(p.horas[12]!.nivel, "ruim");
+  // luz do dia pela posição da fazenda: 03h é noite (avião não aplica), 12h tem luz; nascer/pôr dos próximos 4 dias vão para o app
+  assert.equal((p.horas[3] as { luz?: boolean }).luz, false);
+  assert.equal((p.horas[12] as { luz?: boolean }).luz, true);
+  const luz = (p as unknown as { luz: { data: string; primeiraLuz: string; nascer: string; por: string; ultimaLuz: string }[] }).luz;
+  assert.equal(luz.length, 4);
+  assert.equal(luz[0]!.data, "2026-02-08");
+  assert.ok(luz[0]!.primeiraLuz < luz[0]!.nascer && luz[0]!.nascer < "06:10" && luz[0]!.por > "18:20" && luz[0]!.ultimaLuz > luz[0]!.por, JSON.stringify(luz[0]));
   assert.deepEqual([...p.fontes], ["Open-Meteo", "INMET"]);
   assert.ok(amb.urls.some((u) => /open-meteo.*latitude=-14\.74&longitude=-46\.24/.test(u)));
   assert.ok(amb.urls.some((u) => u.endsWith("/previsao/3126208")));

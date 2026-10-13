@@ -44,6 +44,9 @@ feitos sem internet.
   aplicação com os motivos — faixas usuais Embrapa/ANDEF: Delta T 2–8 °C, vento 3–10 km/h (até 15 com atenção),
   UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora (previsão horária do
   Open-Meteo) e a melhor hora pra aplicar (janelas boas; senão as de atenção; senão a hora menos ruim).
+  A aplicação é **aérea**: só conta da **primeira à última luz do dia** (crepúsculo civil, calculado pela
+  latitude/longitude da fazenda); as horas escuras aparecem hachuradas na faixa e ficam fora das janelas.
+  Mostra a primeira luz, o nascer, o pôr e a última luz do dia.
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede). Chave **NDVI por
   satélite**: camada de vigor da vegetação do NASA GIBS (MODIS Terra, 250 m, composto de 16 dias), com data

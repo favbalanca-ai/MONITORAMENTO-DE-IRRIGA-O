@@ -180,3 +180,40 @@ test("tendência: a chance de chuva de um dia-alvo firmando ou caindo de uma rod
   assert.equal(mm.direcao, "subindo");
   assert.equal(mm.texto, "2 mm → 9 mm · subindo");
 });
+
+test("luz do dia: nascer, pôr e crepúsculo civil na fazenda; a janela de aplicação aérea fecha de noite", async () => {
+  const { luzDoDia, marcadorDeLuz, aplicacaoPorHora, janelasBoas, horaMenosRuim } = await import("../src/motor/index.ts");
+  // Fazenda Água Viva (−14,74 / −46,24), 8 de fevereiro: sol ~05:55–18:35, luz civil ~05:30–19:00 (UTC−3)
+  const l = luzDoDia("2026-02-08", -14.74, -46.24, "America/Sao_Paulo");
+  assert.ok(l.nascer! >= "05:45" && l.nascer! <= "06:05", "nascer " + l.nascer);
+  assert.ok(l.por! >= "18:25" && l.por! <= "18:45", "pôr " + l.por);
+  assert.ok(l.primeiraLuz! < l.nascer! && l.primeiraLuz! >= "05:20", "primeira luz " + l.primeiraLuz);
+  assert.ok(l.ultimaLuz! > l.por! && l.ultimaLuz! <= "19:10", "última luz " + l.ultimaLuz);
+  // julho: dias mais curtos
+  const inverno = luzDoDia("2026-07-01", -14.74, -46.24, "America/Sao_Paulo");
+  assert.ok(inverno.nascer! >= "06:20" && inverno.nascer! <= "06:45", "nascer inverno " + inverno.nascer);
+  assert.ok(inverno.por! >= "17:30" && inverno.por! <= "17:55", "pôr inverno " + inverno.por);
+  // marcador por hora: 05h conta (a primeira luz cai dentro dela), 04h e 20h não
+  const temLuz = marcadorDeLuz(-14.74, -46.24, "America/Sao_Paulo");
+  assert.equal(temLuz("2026-02-08T04:00"), false);
+  assert.equal(temLuz("2026-02-08T05:00"), true);
+  assert.equal(temLuz("2026-02-08T12:00"), true);
+  assert.equal(temLuz("2026-02-08T18:00"), true);
+  assert.equal(temLuz("2026-02-08T20:00"), false);
+  // 48 h perfeitas para aplicar, mas só com luz: as janelas param na última luz e recomeçam na primeira
+  const horas = [];
+  for (let i = 0; i < 48; i++) {
+    const d = new Date(Date.UTC(2026, 1, 8, i)); const q = d.toISOString().slice(0, 13) + ":00";
+    horas.push({ quando: q, tempC: 24, urPct: 70, ventoMs: 1.5, rajadaMs: 2, chuvaMm: 0, probPct: 5 });
+  }
+  const ap = aplicacaoPorHora(horas, temLuz);
+  const fimLuz = "T" + l.ultimaLuz!.slice(0, 2) + ":00"; // última hora com luz (a última luz cai dentro dela)
+  const horasLuz = Number(l.ultimaLuz!.slice(0, 2)) - 5 + 1;
+  assert.equal(ap.filter((h) => h.luz === false).length, 48 - 2 * horasLuz);
+  const j = janelasBoas(ap, "2026-02-08T00:00", 2, 4);
+  assert.deepEqual(j.map((x) => [x.inicio, x.fim, x.horas]), [["2026-02-08T05:00", "2026-02-08" + fimLuz, horasLuz], ["2026-02-09T05:00", "2026-02-09" + fimLuz, horasLuz]]);
+  assert.equal(horaMenosRuim(ap, "2026-02-08T20:00")!.quando, "2026-02-09T05:00");
+  // sem marcador, nada muda
+  assert.equal(aplicacaoPorHora(horas)[0]!.luz, undefined);
+  assert.equal(janelasBoas(aplicacaoPorHora(horas), "2026-02-08T00:00", 2, 4)[0]!.horas, 48);
+});

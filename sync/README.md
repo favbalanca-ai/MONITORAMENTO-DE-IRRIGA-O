@@ -59,7 +59,9 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      previsão só avisa — não entra no balanço. Cada rodada também grava em **PREVISAO HISTORICO** o que
      disse sobre cada dia previsto (uma linha por fazenda × dia da rodada × dia previsto, 45 dias guardados);
      dessa aba sai a **tendência** de cada dia (89% → 60% → 50%: caindo) e o índice de confiança que o app e
-     o relatório das 18h mostram.
+     o relatório das 18h mostram. As horas previstas (48 h, pulverização) vêm marcadas com luz = sim/não
+     (primeira à última luz do dia, calculadas pela latitude/longitude) e a previsão traz o nascer/pôr dos
+     próximos 4 dias: a aplicação aérea só entra nas janelas com luz.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
      conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o

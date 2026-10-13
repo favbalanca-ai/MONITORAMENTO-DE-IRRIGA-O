@@ -399,6 +399,8 @@ export function condicoesAplicacao(x: { tempC: number; urPct: number; ventoMs?: 
 
 export interface HoraAplicacao {
   quando: string;
+  /** `false` = sem luz do dia (avião não aplica). Ausente quando não se sabe a posição. */
+  luz?: boolean;
   deltaT: number;
   nivel: NivelAplicacao;
   ventoKmh: number | null;
@@ -407,13 +409,18 @@ export interface HoraAplicacao {
   urPct: number;
 }
 
-/** Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo"). */
-export function aplicacaoPorHora(horas: HoraPrevisao[]): HoraAplicacao[] {
+/**
+ * Nível de aplicação hora a hora (chuva prevista ≥ 0,2 mm ou chance ≥ 60 % conta como "chovendo").
+ * Com `temLuz` (ver `marcadorDeLuz`), cada hora ganha `luz`: fora da primeira–última luz o avião não voa.
+ */
+export function aplicacaoPorHora(horas: HoraPrevisao[], temLuz?: (quando: string) => boolean): HoraAplicacao[] {
   const out: HoraAplicacao[] = [];
   for (const h of horas) {
     if (h.tempC === null || h.urPct === null) continue;
     const c = condicoesAplicacao({ tempC: h.tempC, urPct: h.urPct, ventoMs: h.ventoMs, rajadaMs: h.rajadaMs, chovendo: (h.chuvaMm ?? 0) >= 0.2 || (h.probPct ?? 0) >= 60 });
-    out.push({ quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct });
+    const x: HoraAplicacao = { quando: h.quando, deltaT: Math.round(c.deltaT * 10) / 10, nivel: c.nivel, ventoKmh: h.ventoMs === null ? null : Math.round(h.ventoMs * 3.6), chuvaMm: h.chuvaMm, tempC: h.tempC, urPct: h.urPct };
+    if (temLuz) x.luz = temLuz(h.quando);
+    out.push(x);
   }
   return out;
 }
@@ -428,7 +435,8 @@ export function janelasBoas(horas: HoraAplicacao[], apartirDe: string, minHoras 
   const fecha = () => { if (ini && n >= minHoras) janelas.push({ inicio: ini, fim: ultima, horas: n }); ini = null; n = 0; };
   for (const h of horas) {
     if (h.quando < apartirDe) continue;
-    if (ORDEM[h.nivel] <= ORDEM[ateNivel]) { if (!ini) ini = h.quando; n++; ultima = h.quando; } else fecha();
+    // hora sem luz do dia fecha a janela: o avião só aplica da primeira à última luz
+    if (h.luz !== false && ORDEM[h.nivel] <= ORDEM[ateNivel]) { if (!ini) ini = h.quando; n++; ultima = h.quando; } else fecha();
   }
   fecha();
   return janelas.slice(0, max);
@@ -441,7 +449,7 @@ export function janelasBoas(horas: HoraAplicacao[], apartirDe: string, minHoras 
 export function horaMenosRuim(horas: HoraAplicacao[], apartirDe: string): HoraAplicacao | null {
   let melhor: HoraAplicacao | null = null;
   for (const h of horas) {
-    if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2) continue;
+    if (h.quando < apartirDe || (h.chuvaMm ?? 0) >= 0.2 || h.luz === false) continue;
     if (!melhor || h.deltaT < melhor.deltaT || (h.deltaT === melhor.deltaT && h.urPct > melhor.urPct)) melhor = h;
   }
   return melhor;
