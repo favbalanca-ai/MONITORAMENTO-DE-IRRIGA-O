@@ -114,8 +114,8 @@ var COLUNAS_PIVOS = [
   ["tipo", "Tipo (pivô/talhão)", true],
   ["fonte", "Fonte de água (vazio = direto)", true],
   ["textura", "Textura do solo", true],
-  ["lamina100Mm", "Lâmina bruta a 100% (mm, da placa)", true],
-  ["tempoVolta100H", "Tempo da volta a 100% (h, da placa)", true],
+  ["lamina100Mm", "Lâmina bruta a 100% (mm, da placa — opcional)", true],
+  ["tempoVolta100H", "Tempo da volta a 100% (h)", true],
   ["densidade", "Densidade do solo (g/cm³)", true],
 ];
 
@@ -490,7 +490,8 @@ function lerPivos_(cfg) {
   var t = function (linha, k) { return col[k] < 0 ? "" : String(linha[col[k]] == null ? "" : linha[col[k]]).trim(); };
   var fazendas = lerFazendas_();
   return vals.slice(1).filter(function (l) { return String(l[col.nome]).trim() !== ""; }).map(function (l) {
-    var temEquip = n(l, "raioM") !== null && ((n(l, "vazaoM3h") !== null && n(l, "velocidadeUltimaTorreMMin") !== null) || (n(l, "lamina100Mm") !== null && n(l, "tempoVolta100H") !== null));
+    // equipamento = raio + (tempo da volta a 100% ou velocidade da torre) + (vazão ou lâmina a 100%)
+    var temEquip = n(l, "raioM") !== null && (n(l, "tempoVolta100H") !== null || n(l, "velocidadeUltimaTorreMMin") !== null) && (n(l, "vazaoM3h") !== null || n(l, "lamina100Mm") !== null);
     var faz = fazendaPorChave_(t(l, "fazenda")) || fazendas[0];
     var tipo = /^t/i.test(chaveCultura_(t(l, "tipo"))) ? "talhao" : "pivo";
     var temSolo = n(l, "cc") !== null && n(l, "pmp") !== null;
@@ -1635,7 +1636,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.15-2";
+var VERSAO_SERVIDOR = "2026.10.15-3";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

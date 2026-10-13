@@ -656,11 +656,16 @@ test("cadastro do pivô pela placa: lâmina a 100% e tempo da volta bastam, sem 
   let r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 9", vazaoM3h: "", velocidadeUltimaTorreMMin: "" }, original: null } });
   assert.equal(r.ok, true, r.erro);
   assert.equal(amb.chamar<{ itens: { pivo: { nome: string; equipamento?: unknown } }[] }>("calcular_", "2026-02-08").itens.find((i) => i.pivo.nome === "Pivô 9")!.pivo.equipamento, undefined);
+  // só vazão + tempo da volta: falta a lâmina → o app calcula (200 m³/h × 14 h ÷ (50,27 ha × 10) = 5,57 mm)
+  r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 9", velocidadeUltimaTorreMMin: "", tempoVolta100H: "14" }, original: "Pivô 9" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.chamar<{ itens: { pivo: { nome: string; equipamento?: { tempoVolta100H: number } } }[] }>("calcular_", "2026-02-08").itens.find((i) => i.pivo.nome === "Pivô 9")!.pivo.equipamento!.tempoVolta100H, 14);
+  // placa completa (lâmina + tempo), sem vazão: também vale
   r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 9", vazaoM3h: "", velocidadeUltimaTorreMMin: "", lamina100Mm: "6", tempoVolta100H: "14" }, original: "Pivô 9" } });
   assert.equal(r.ok, true, r.erro);
   const salvo = amb.aba("PIVOS").objetos().find((l) => l["Pivô"] === "Pivô 9")!;
-  assert.equal(salvo["Lâmina bruta a 100% (mm, da placa)"], 6);
-  assert.equal(salvo["Tempo da volta a 100% (h, da placa)"], 14);
+  assert.equal(salvo["Lâmina bruta a 100% (mm, da placa — opcional)"], 6);
+  assert.equal(salvo["Tempo da volta a 100% (h)"], 14);
   const calc = amb.chamar<{ itens: { pivo: { nome: string }; linha?: { recomendacao?: { laminaBrutaMm: number; percentimetroPct: number; tempoVoltaH: number } } }[] }>("calcular_", "2026-02-08");
   const p9 = calc.itens.find((i) => i.pivo.nome === "Pivô 9")!;
   assert.ok(p9.linha && p9.linha.recomendacao, "tem recomendação com os dados da placa");

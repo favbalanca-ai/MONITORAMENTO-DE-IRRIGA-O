@@ -53,9 +53,10 @@ feitos sem internet.
   Em Solo e raiz: **Textura do solo** com valores de referência (botão Usar) pra quem não tem análise; abaixo dos
   campos, o app mostra ao vivo a CAD e a AFD que aquele solo dá (raiz máxima e planta nova) e os dias de folga; e
   "Tenho o laudo" converte CC e PMP de % de peso pra % de volume pela densidade, com média pesada de duas camadas.
-  Em Equipamento, dois jeitos de cadastrar o pivô: pela **placa** (lâmina bruta a 100 % e tempo da volta a 100 %) ou
-  pela **vazão + velocidade da última torre** (o app calcula). Preenchido um dos dois, abaixo aparece a tabela ao vivo
-  de percentímetro × lâmina bruta × líquida × tempo da volta. A placa, quando preenchida, vale sobre o calculado.
+  Em Equipamento, o cadastro simples é **raio + vazão + tempo da volta a 100 %**: o app estima a lâmina a 100 % e,
+  a partir dela, a lâmina e o tempo de cada porcentagem do percentímetro (tabela ao vivo abaixo dos campos). Em
+  "Outros jeitos de informar (opcional)" ficam a velocidade da última torre (no lugar do tempo) e a lâmina bruta a
+  100 % da placa (no lugar da vazão); o que vier da placa vale sobre o calculado.
   **Fonte de água**: abastecimento direto ou um piscinão. Abaixo da lista, **Fontes de água
   (piscinões)**: o administrador cadastra, edita e apaga piscinões (volume útil, bomba m³/h × horas/dia, reserva);
   um piscinão em uso por algum pivô não pode ser apagado.

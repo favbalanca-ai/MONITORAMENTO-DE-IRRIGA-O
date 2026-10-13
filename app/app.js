@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1218,7 +1218,7 @@ const GRUPOS = [
   ['Solo e raiz', ['textura', 'densidade', 'cc', 'pmp', 'umidadeInicialPct', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
-  ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'lamina100Mm', 'tempoVolta100H', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
+  ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'vazaoM3h', 'tempoVolta100H', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh'], ['velocidadeUltimaTorreMMin', 'lamina100Mm']],
 ];
 const simNao = (v) => v === true || /^(SIM|S|TRUE|1|X)$/i.test(String(v).trim());
 V.pivos = function (arg) {
@@ -1337,6 +1337,8 @@ function campoPivo(k, rot, v, so) {
   if (k === 'cicloDias') { const c = cultura($('#p_cultura') ? $('#p_cultura').value : ''); return '<div><label for="' + id + '">' + esc(rot) + '</label><input inputmode="numeric" id="' + id + '" name="' + k + '" value="' + esc(v === '' || v == null ? '' : v) + '" placeholder="padrão' + (c && c.cicloDias ? ' ' + c.cicloDias : '') + '"' + dis + '></div>'; }
   if (k === 'plantio' || k === 'inicioBalanco') return '<div><label for="' + id + '">' + esc(rot) + '</label><input type="date" id="' + id + '" name="' + k + '" value="' + esc(v) + '"' + dis + '></div>';
   if (k === 'nome') return '<div><label for="' + id + '">' + esc(rot) + '</label><input id="' + id + '" name="' + k + '" value="' + esc(v) + '" required' + dis + '></div>';
+  if (k === 'tempoVolta100H') rot = 'Tempo da volta a 100% (h)';
+  if (k === 'lamina100Mm') rot = 'Lâmina bruta a 100% (mm, da placa)';
   if (k === 'fazenda') { const fs = fazendas(); if (fs.length < 2) return '<input type="hidden" id="' + id + '" name="' + k + '" value="' + esc(v || (fs[0] ? fs[0].nome : '')) + '">';
     return '<div><label for="' + id + '">Fazenda</label><select id="' + id + '" name="' + k + '"' + dis + '>' + fs.map((f) => '<option' + (f.nome === v ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') + '</select></div>'; }
   if (k === 'tipo') return '<div><label for="' + id + '">Tipo</label><select id="' + id + '" name="' + k + '"' + dis + '><option value="pivô"' + (/^t/i.test(String(v)) ? '' : ' selected') + '>Pivô (balanço e irrigação)</option><option value="talhão"' + (/^t/i.test(String(v)) ? ' selected' : '') + '>Talhão (sem pivô — relatório do ciclo)</option></select></div>';
@@ -1357,6 +1359,7 @@ function formPivo(p) {
   return '<form class="card" id="f-pivo" data-original="' + esc(p ? p.nome : '') + '" data-fazenda-original="' + esc(p ? p.fazenda || '' : '') + '" autocomplete="off"><div class="row"><h2>' + (p ? esc(p.nome) : 'Nova área') + '</h2><a class="btn btn-outline btn-sm" href="#/pivos">Voltar</a></div>' +
     '<p class="muted" id="tipo-info" style="margin:0 0 4px"></p>' +
     GRUPOS.map((g) => '<fieldset data-grupo="' + esc(g[0]) + '"><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
+      (g[2] ? '<details class="det"' + (g[2].some((k) => base[k] !== '' && base[k] != null) ? ' open' : '') + '><summary>Outros jeitos de informar (opcional): velocidade da última torre, lâmina da placa</summary><div class="grid2">' + g[2].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div></details>' : '') +
       (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') +
       (g[0] === 'Solo e raiz' ? '<div id="solo-info"></div>' : '') +
       (g[0] === 'Equipamento' ? '<div id="equip-info"></div>' : '') +
@@ -1438,9 +1441,9 @@ function infoEquip(f) {
   const v = (k) => ($('#p_' + k, f) ? $('#p_' + k, f).value : '');
   const c = capacidadeDe({ raioM: v('raioM'), anguloGraus: v('anguloGraus'), vazaoM3h: v('vazaoM3h'), velocidadeUltimaTorreMMin: v('velocidadeUltimaTorreMMin'), lamina100Mm: v('lamina100Mm'), tempoVolta100H: v('tempoVolta100H') });
   const ef = numBR(v('eficienciaPct')) || 85, pmin = numBR(v('percentimetroMinPct')) || 10;
-  if (!c) { box.innerHTML = '<p class="muted" style="margin-top:8px">Preencha o raio e, <b>ou</b> a lâmina a 100% + tempo da volta a 100% (da placa do pivô), <b>ou</b> a vazão + velocidade da última torre. Com um dos dois o app calcula o percentímetro.</p>'; return; }
+  if (!c) { box.innerHTML = '<p class="muted" style="margin-top:8px">Preencha <b>raio</b>, <b>vazão</b> e <b>tempo da volta a 100%</b>. Com isso o app estima a lâmina e o tempo de cada porcentagem do percentímetro.</p>'; return; }
   const pcts = [100, 70, 50, 30, pmin].filter((x, i, a) => a.indexOf(x) === i && x >= pmin).sort((a, b) => b - a);
-  box.innerHTML = '<div class="solo-calc"><b>Com esses dados' + (c.placa ? ' (placa)' : ' (calculado de vazão e velocidade)') + ':</b> área ' + br(c.areaHa, 1) + ' ha · vazão ' + br(c.vazao, 0) + ' m³/h · a 100%: <b>' + br(c.l100, 1) + ' mm</b> brutos (' + br(c.l100 * ef / 100, 1) + ' líquidos) em <b>' + horas(c.t100) + '</b>' +
+  box.innerHTML = '<div class="solo-calc"><b>Com esses dados:</b> área ' + br(c.areaHa, 1) + ' ha · vazão ' + br(c.vazao, 0) + ' m³/h · a 100%: <b>' + br(c.l100, 1) + ' mm</b> brutos (' + br(c.l100 * ef / 100, 1) + ' líquidos) em <b>' + horas(c.t100) + '</b>' +
     '<div class="tbl-wrap" style="margin-top:6px"><table><thead><tr><th>Percentímetro</th><th>Lâmina bruta</th><th>Líquida (' + br(ef, 0) + '%)</th><th>Volta</th></tr></thead><tbody>' +
     pcts.map((pc) => '<tr><td>' + pc + '%</td><td>' + br(c.l100 / (pc / 100), 1) + ' mm</td><td>' + br((c.l100 / (pc / 100)) * ef / 100, 1) + ' mm</td><td>' + horas(c.t100 / (pc / 100)) + '</td></tr>').join('') + '</tbody></table></div></div>';
 }

@@ -862,27 +862,20 @@ var Motor = (function () {
               const e = p.equipamento;
               num(e.raioM, `${o}.equipamento.raioM`, 1);
               num(e.anguloGraus, `${o}.equipamento.anguloGraus`, 1, 360);
-              const placa = e.lamina100Mm != null && e.tempoVolta100H != null;
-              if (placa) {
-                  num(e.lamina100Mm, `${o}.equipamento.lamina100Mm`, 0.1, 100);
+              const temTempo = (e.tempoVolta100H != null && e.tempoVolta100H > 0) || (e.velocidadeUltimaTorreMMin != null && e.velocidadeUltimaTorreMMin > 0);
+              const temAgua = (e.vazaoM3h != null && e.vazaoM3h > 0) || (e.lamina100Mm != null && e.lamina100Mm > 0);
+              if (!temTempo)
+                  erros.push(`${o}.equipamento: informe o tempo da volta a 100 % (ou a velocidade da última torre)`);
+              if (!temAgua)
+                  erros.push(`${o}.equipamento: informe a vazão (ou a lâmina a 100 % da placa)`);
+              if (e.tempoVolta100H != null)
                   num(e.tempoVolta100H, `${o}.equipamento.tempoVolta100H`, 0.5, 500);
-                  if (e.vazaoM3h != null)
-                      num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
-                  if (e.velocidadeUltimaTorreMMin != null)
-                      num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
-              }
-              else {
-                  if (e.vazaoM3h == null || e.velocidadeUltimaTorreMMin == null)
-                      erros.push(`${o}.equipamento: informe vazão e velocidade da última torre, ou a lâmina a 100 % e o tempo da volta a 100 % (da placa)`);
-                  else {
-                      num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
-                      num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
-                  }
-                  if (e.lamina100Mm != null)
-                      num(e.lamina100Mm, `${o}.equipamento.lamina100Mm`, 0.1, 100);
-                  if (e.tempoVolta100H != null)
-                      num(e.tempoVolta100H, `${o}.equipamento.tempoVolta100H`, 0.5, 500);
-              }
+              if (e.velocidadeUltimaTorreMMin != null)
+                  num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
+              if (e.vazaoM3h != null)
+                  num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
+              if (e.lamina100Mm != null)
+                  num(e.lamina100Mm, `${o}.equipamento.lamina100Mm`, 0.1, 100);
               num(e.percentimetroMinPct, `${o}.equipamento.percentimetroMinPct`, 1, 100);
               num(e.eficienciaPct, `${o}.equipamento.eficienciaPct`, 1, 100);
               num(e.potenciaKw, `${o}.equipamento.potenciaKw`, 0);
