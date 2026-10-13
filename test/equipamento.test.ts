@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capacidade, horasNaPonta as horasNaPontaFn, laminaDoPercentimetro as laminaFn, recomendar, type Equipamento } from "../src/motor/index.ts";
+import { capacidade, vazaoM3h, horasNaPonta as horasNaPontaFn, laminaDoPercentimetro as laminaFn, recomendar, type Equipamento } from "../src/motor/index.ts";
 
 // Valores de exemplo, não são os dados de placa do pivô.
 const EQ: Equipamento = {
@@ -57,3 +57,19 @@ test("horário de ponta: hora de ligar, horas na ponta e custo nas duas tarifas"
   perto(l.liquidaMm, 9.44);
 });
 function await_() { return { horasNaPonta: horasNaPontaFn, laminaDoPercentimetro: laminaFn }; }
+
+test("dados da placa (lâmina a 100% e tempo da volta) valem sobre a conta por vazão e velocidade", () => {
+  const c = capacidade(EQ);
+  // só a placa, sem vazão nem velocidade: usa o que a placa diz
+  const placa = capacidade({ raioM: 400, anguloGraus: 360, lamina100Mm: 6, tempoVolta100H: 14, percentimetroMinPct: 10, eficienciaPct: 85, potenciaKw: 55, tarifaRsKwh: 0.5 });
+  perto(placa.lamina100Mm, 6);
+  perto(placa.t100h, 14);
+  perto(placa.laminaMaxMm, 60);
+  perto(placa.areaHa, c.areaHa);
+  // os dois preenchidos: a placa manda
+  const mista = capacidade({ ...EQ, lamina100Mm: 6, tempoVolta100H: 14 });
+  perto(mista.lamina100Mm, 6); perto(mista.t100h, 14);
+  // vazão implícita da placa: 6 mm × 50,27 ha × 10 / 14 h ≈ 215 m³/h
+  perto(vazaoM3h({ raioM: 400, anguloGraus: 360, lamina100Mm: 6, tempoVolta100H: 14, percentimetroMinPct: 10, eficienciaPct: 85, potenciaKw: 55, tarifaRsKwh: 0.5 }), 215.4, 0.5);
+  perto(vazaoM3h(EQ), 200);
+});

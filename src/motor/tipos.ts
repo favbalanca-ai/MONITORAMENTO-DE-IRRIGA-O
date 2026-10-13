@@ -113,9 +113,14 @@ export interface Solo {
 export interface Equipamento {
   raioM: number;
   anguloGraus: number;
-  vazaoM3h: number;
-  /** Velocidade da última torre com percentímetro em 100% (m/min). */
-  velocidadeUltimaTorreMMin: number;
+  /** Vazão (m³/h). Pode faltar quando a placa dá a lâmina a 100% e o tempo da volta. */
+  vazaoM3h?: number | null;
+  /** Velocidade da última torre com percentímetro em 100% (m/min). Idem. */
+  velocidadeUltimaTorreMMin?: number | null;
+  /** Da placa do pivô: lâmina bruta aplicada com percentímetro em 100% (mm). Preenchida, vale sobre a conta por vazão. */
+  lamina100Mm?: number | null;
+  /** Da placa do pivô: tempo da volta completa a 100% (h). Preenchido, vale sobre a conta por velocidade. */
+  tempoVolta100H?: number | null;
   percentimetroMinPct: number;
   eficienciaPct: number;
   potenciaKw: number;

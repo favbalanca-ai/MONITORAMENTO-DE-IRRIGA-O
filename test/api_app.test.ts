@@ -647,3 +647,29 @@ test("Web Push: aparelho se inscreve, recebe o push assinado (VAPID) às 18h e b
   assert.equal(r.ok, true);
   assert.equal(amb.aba("PUSH").objetos().length, 0);
 });
+
+test("cadastro do pivô pela placa: lâmina a 100% e tempo da volta bastam, sem vazão e velocidade", () => {
+  const amb = pronto();
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  // sem nenhum dos dois caminhos o pivô fica "sem equipamento" (vale, mas sem percentímetro); só a placa já basta
+  let r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 9", vazaoM3h: "", velocidadeUltimaTorreMMin: "" }, original: null } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.chamar<{ itens: { pivo: { nome: string; equipamento?: unknown } }[] }>("calcular_", "2026-02-08").itens.find((i) => i.pivo.nome === "Pivô 9")!.pivo.equipamento, undefined);
+  r = amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 9", vazaoM3h: "", velocidadeUltimaTorreMMin: "", lamina100Mm: "6", tempoVolta100H: "14" }, original: "Pivô 9" } });
+  assert.equal(r.ok, true, r.erro);
+  const salvo = amb.aba("PIVOS").objetos().find((l) => l["Pivô"] === "Pivô 9")!;
+  assert.equal(salvo["Lâmina bruta a 100% (mm, da placa)"], 6);
+  assert.equal(salvo["Tempo da volta a 100% (h, da placa)"], 14);
+  const calc = amb.chamar<{ itens: { pivo: { nome: string }; linha?: { recomendacao?: { laminaBrutaMm: number; percentimetroPct: number; tempoVoltaH: number } } }[] }>("calcular_", "2026-02-08");
+  const p9 = calc.itens.find((i) => i.pivo.nome === "Pivô 9")!;
+  assert.ok(p9.linha && p9.linha.recomendacao, "tem recomendação com os dados da placa");
+  const rec = p9.linha!.recomendacao!;
+  // volta a X% dura 14 h ÷ (X/100) e aplica 6 mm ÷ (X/100)
+  assert.ok(Math.abs(rec.tempoVoltaH - 14 / (rec.percentimetroPct / 100)) < 0.2, `${rec.tempoVoltaH} h a ${rec.percentimetroPct}%`);
+  assert.ok(Math.abs(rec.laminaBrutaMm - 6 / (rec.percentimetroPct / 100)) < 0.3);
+  // lançamento pelo percentímetro também usa a placa: 50% → 12 mm brutos → 10,2 líquidos
+  r = amb.post({ s: adm, __lancamento: { id: "LP1", tipo: "irrigacao", pivo: "Pivô 9", data: "2026-02-08", mm: "", percentimetro: "50" } });
+  assert.equal(r.ok, true, r.erro);
+  assert.equal(amb.aba("IRRIGACOES").objetos().find((l) => l["ID"] === "LP1")!["Lâmina líquida aplicada (mm)"], 10.2);
+});

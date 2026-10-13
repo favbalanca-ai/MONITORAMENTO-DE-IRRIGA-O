@@ -10,13 +10,29 @@ export interface Capacidade {
   laminaMaxMm: number;
 }
 
+/**
+ * Capacidade do pivô. Dois jeitos de cadastrar, e os dois podem se misturar:
+ * - pela placa: lâmina bruta a 100 % e tempo da volta a 100 % (o que o fabricante imprime);
+ * - pelo equipamento: vazão e velocidade da última torre (o app calcula a lâmina e a volta).
+ * O dado da placa, quando existe, vale sobre o calculado.
+ */
 export function capacidade(eq: Equipamento): Capacidade {
   const fracao = eq.anguloGraus / 360;
   const areaHa = (Math.PI * eq.raioM ** 2 * fracao) / 10_000;
-  const t100h = (fracao * 2 * Math.PI * eq.raioM) / (eq.velocidadeUltimaTorreMMin * 60);
-  const lamina100Mm = (eq.vazaoM3h * t100h) / (areaHa * 10);
+  const t100h = eq.tempoVolta100H != null && eq.tempoVolta100H > 0
+    ? eq.tempoVolta100H   // da placa (no setorial, o tempo do próprio setor)
+    : (fracao * 2 * Math.PI * eq.raioM) / ((eq.velocidadeUltimaTorreMMin ?? 0) * 60);
+  const lamina100Mm = eq.lamina100Mm != null && eq.lamina100Mm > 0
+    ? eq.lamina100Mm
+    : ((eq.vazaoM3h ?? 0) * t100h) / (areaHa * 10);
   const laminaMaxMm = lamina100Mm / (eq.percentimetroMinPct / 100);
   return { areaHa, t100h, lamina100Mm, laminaMaxMm };
+}
+/** Vazão (m³/h): a cadastrada ou a que a lâmina da placa implica. */
+export function vazaoM3h(eq: Equipamento): number {
+  if (eq.vazaoM3h != null && eq.vazaoM3h > 0) return eq.vazaoM3h;
+  const c = capacidade(eq);
+  return c.t100h > 0 ? (c.lamina100Mm * c.areaHa * 10) / c.t100h : 0;
 }
 
 export interface Recomendacao extends Capacidade {

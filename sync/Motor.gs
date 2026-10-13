@@ -556,13 +556,30 @@ var Motor = (function () {
   /** Déficit (mm) correspondente a uma umidade medida θ (%). Nunca negativo. */
   const deficitDaUmidade = (solo, thetaPct, zCm) => Math.max(0, ((solo.cc - thetaPct) / 100) * zCm * 10);
   // ---- src/motor/equipamento.ts ----
+  /**
+   * Capacidade do pivô. Dois jeitos de cadastrar, e os dois podem se misturar:
+   * - pela placa: lâmina bruta a 100 % e tempo da volta a 100 % (o que o fabricante imprime);
+   * - pelo equipamento: vazão e velocidade da última torre (o app calcula a lâmina e a volta).
+   * O dado da placa, quando existe, vale sobre o calculado.
+   */
   function capacidade(eq) {
       const fracao = eq.anguloGraus / 360;
       const areaHa = (Math.PI * eq.raioM ** 2 * fracao) / 10000;
-      const t100h = (fracao * 2 * Math.PI * eq.raioM) / (eq.velocidadeUltimaTorreMMin * 60);
-      const lamina100Mm = (eq.vazaoM3h * t100h) / (areaHa * 10);
+      const t100h = eq.tempoVolta100H != null && eq.tempoVolta100H > 0
+          ? eq.tempoVolta100H // da placa (no setorial, o tempo do próprio setor)
+          : (fracao * 2 * Math.PI * eq.raioM) / ((eq.velocidadeUltimaTorreMMin ?? 0) * 60);
+      const lamina100Mm = eq.lamina100Mm != null && eq.lamina100Mm > 0
+          ? eq.lamina100Mm
+          : ((eq.vazaoM3h ?? 0) * t100h) / (areaHa * 10);
       const laminaMaxMm = lamina100Mm / (eq.percentimetroMinPct / 100);
       return { areaHa, t100h, lamina100Mm, laminaMaxMm };
+  }
+  /** Vazão (m³/h): a cadastrada ou a que a lâmina da placa implica. */
+  function vazaoM3h(eq) {
+      if (eq.vazaoM3h != null && eq.vazaoM3h > 0)
+          return eq.vazaoM3h;
+      const c = capacidade(eq);
+      return c.t100h > 0 ? (c.lamina100Mm * c.areaHa * 10) / c.t100h : 0;
   }
   const PONTA_PADRAO = { inicioH: 18, fimH: 21 };
   /** Horas dentro da ponta numa volta que começa em `inicioH` (hora decimal do dia) e dura `duracaoH`. */
@@ -845,8 +862,27 @@ var Motor = (function () {
               const e = p.equipamento;
               num(e.raioM, `${o}.equipamento.raioM`, 1);
               num(e.anguloGraus, `${o}.equipamento.anguloGraus`, 1, 360);
-              num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
-              num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
+              const placa = e.lamina100Mm != null && e.tempoVolta100H != null;
+              if (placa) {
+                  num(e.lamina100Mm, `${o}.equipamento.lamina100Mm`, 0.1, 100);
+                  num(e.tempoVolta100H, `${o}.equipamento.tempoVolta100H`, 0.5, 500);
+                  if (e.vazaoM3h != null)
+                      num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
+                  if (e.velocidadeUltimaTorreMMin != null)
+                      num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
+              }
+              else {
+                  if (e.vazaoM3h == null || e.velocidadeUltimaTorreMMin == null)
+                      erros.push(`${o}.equipamento: informe vazão e velocidade da última torre, ou a lâmina a 100 % e o tempo da volta a 100 % (da placa)`);
+                  else {
+                      num(e.vazaoM3h, `${o}.equipamento.vazaoM3h`, 0.1);
+                      num(e.velocidadeUltimaTorreMMin, `${o}.equipamento.velocidadeUltimaTorreMMin`, 0.01);
+                  }
+                  if (e.lamina100Mm != null)
+                      num(e.lamina100Mm, `${o}.equipamento.lamina100Mm`, 0.1, 100);
+                  if (e.tempoVolta100H != null)
+                      num(e.tempoVolta100H, `${o}.equipamento.tempoVolta100H`, 0.5, 500);
+              }
               num(e.percentimetroMinPct, `${o}.equipamento.percentimetroMinPct`, 1, 100);
               num(e.eficienciaPct, `${o}.equipamento.eficienciaPct`, 1, 100);
               num(e.potenciaKw, `${o}.equipamento.potenciaKw`, 0);
@@ -1954,5 +1990,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, INMET_URL, urlOpenMeteo, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, paraLocal, deLocal, minutosEntre, somarMinutos, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

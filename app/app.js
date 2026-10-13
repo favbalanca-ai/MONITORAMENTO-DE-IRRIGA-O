@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.15-2';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-1';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -692,11 +692,20 @@ let tipoLanc = 'irrigacao', modoLanc = 'pct';
 /** Lâmina líquida (mm) que uma volta no percentímetro `pct` aplica no pivô — mesma conta do Motor. */
 function laminaDoPct(nome, pct) {
   const p = pivosCadastro().find((x) => x.nome === nome); if (!p) return null;
-  const raio = numBR(p.raioM), vazao = numBR(p.vazaoM3h), vel = numBR(p.velocidadeUltimaTorreMMin), ang = numBR(p.anguloGraus) || 360, ef = numBR(p.eficienciaPct) || 85;
-  if (!raio || !vazao || !vel || !pct) return null;
-  const fr = ang / 360, area = (Math.PI * raio * raio * fr) / 10000, t100 = (fr * 2 * Math.PI * raio) / (vel * 60);
-  const l100 = (vazao * t100) / (area * 10), bruta = l100 / (pct / 100);
-  return { brutaMm: bruta, liquidaMm: bruta * (ef / 100), horas: t100 / (pct / 100) };
+  const c = capacidadeDe(p); if (!c || !pct) return null;
+  const ef = numBR(p.eficienciaPct) || 85, bruta = c.l100 / (pct / 100);
+  return { brutaMm: bruta, liquidaMm: bruta * (ef / 100), horas: c.t100 / (pct / 100) };
+}
+/** Lâmina a 100 % e tempo da volta a 100 % — da placa (se preenchida) ou calculados de vazão e velocidade. Mesma conta do Motor. */
+function capacidadeDe(p) {
+  const raio = numBR(p.raioM), ang = numBR(p.anguloGraus) || 360, vazao = numBR(p.vazaoM3h), vel = numBR(p.velocidadeUltimaTorreMMin), l100p = numBR(p.lamina100Mm), t100p = numBR(p.tempoVolta100H);
+  if (!raio || isNaN(raio)) return null;
+  const fr = ang / 360, area = (Math.PI * raio * raio * fr) / 10000;
+  const t100 = t100p > 0 ? t100p : vel > 0 ? (fr * 2 * Math.PI * raio) / (vel * 60) : null;
+  if (!t100) return null;
+  const l100 = l100p > 0 ? l100p : vazao > 0 ? (vazao * t100) / (area * 10) : null;
+  if (!l100) return null;
+  return { areaHa: area, t100, l100, placa: l100p > 0 || t100p > 0, vazao: vazao > 0 ? vazao : (l100 * area * 10) / t100 };
 }
 function nomesPivos() {
   return pivosCadastro().filter((p) => (/^(SIM|S|TRUE|1)$/i.test(String(p.ativo).trim()) || p.ativo === true) && !(tipoLanc === 'irrigacao' && ehTalhaoSemBalanco(p))).map((p) => p.nome);
@@ -1209,7 +1218,7 @@ const GRUPOS = [
   ['Solo e raiz', ['textura', 'densidade', 'cc', 'pmp', 'umidadeInicialPct', 'raizIniCm', 'raizMaxCm', 'diasRaiz', 'fatorFixo', 'sensorSolo']],
   ['Decisão', ['laminaMinimaMm', 'tensaoIrrigarKpa']],
   ['Localização (mapa)', ['latitude', 'longitude', 'contorno']],
-  ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
+  ['Equipamento', ['fonte', 'raioM', 'anguloGraus', 'lamina100Mm', 'tempoVolta100H', 'vazaoM3h', 'velocidadeUltimaTorreMMin', 'percentimetroMinPct', 'eficienciaPct', 'potenciaKw', 'tarifaRsKwh', 'tarifaPontaRsKwh']],
 ];
 const simNao = (v) => v === true || /^(SIM|S|TRUE|1|X)$/i.test(String(v).trim());
 V.pivos = function (arg) {
@@ -1350,6 +1359,7 @@ function formPivo(p) {
     GRUPOS.map((g) => '<fieldset data-grupo="' + esc(g[0]) + '"><legend>' + esc(g[0]) + '</legend><div class="grid2">' + g[1].map((k) => campoPivo(k, rot[k] || k, base[k] == null ? '' : base[k], so)).join('') + '</div>' +
       (g[0] === 'Identificação' ? '<div id="cult-info"></div>' : '') +
       (g[0] === 'Solo e raiz' ? '<div id="solo-info"></div>' : '') +
+      (g[0] === 'Equipamento' ? '<div id="equip-info"></div>' : '') +
       (g[0] === 'Localização (mapa)' ? (so ? '' : '<div class="toolbar" style="margin-top:10px"><button type="button" class="btn btn-outline btn-sm" data-act="gps">📍 Usar minha posição</button>' +
         '<label class="btn btn-outline btn-sm">📂 KMZ / KML do pivô<input type="file" id="p_arquivo" accept=".kmz,.kml" hidden></label></div>') + '<div id="loc-info" class="muted"></div>' : '') + '</fieldset>').join('') +
     '<p class="muted" style="margin-top:10px">Solo, Kc e equipamento precisam ser confirmados com o agrônomo e a placa do pivô.</p>' +
@@ -1422,6 +1432,18 @@ function converterLaudo(f) {
   infoSolo(f);
   toast('CC e PMP preenchidos em % de volume. Confira e salve.');
 }
+/** Abaixo do Equipamento: o que o pivô entrega com esses dados (lâmina e volta por percentímetro). */
+function infoEquip(f) {
+  const box = $('#equip-info', f); if (!box) return;
+  const v = (k) => ($('#p_' + k, f) ? $('#p_' + k, f).value : '');
+  const c = capacidadeDe({ raioM: v('raioM'), anguloGraus: v('anguloGraus'), vazaoM3h: v('vazaoM3h'), velocidadeUltimaTorreMMin: v('velocidadeUltimaTorreMMin'), lamina100Mm: v('lamina100Mm'), tempoVolta100H: v('tempoVolta100H') });
+  const ef = numBR(v('eficienciaPct')) || 85, pmin = numBR(v('percentimetroMinPct')) || 10;
+  if (!c) { box.innerHTML = '<p class="muted" style="margin-top:8px">Preencha o raio e, <b>ou</b> a lâmina a 100% + tempo da volta a 100% (da placa do pivô), <b>ou</b> a vazão + velocidade da última torre. Com um dos dois o app calcula o percentímetro.</p>'; return; }
+  const pcts = [100, 70, 50, 30, pmin].filter((x, i, a) => a.indexOf(x) === i && x >= pmin).sort((a, b) => b - a);
+  box.innerHTML = '<div class="solo-calc"><b>Com esses dados' + (c.placa ? ' (placa)' : ' (calculado de vazão e velocidade)') + ':</b> área ' + br(c.areaHa, 1) + ' ha · vazão ' + br(c.vazao, 0) + ' m³/h · a 100%: <b>' + br(c.l100, 1) + ' mm</b> brutos (' + br(c.l100 * ef / 100, 1) + ' líquidos) em <b>' + horas(c.t100) + '</b>' +
+    '<div class="tbl-wrap" style="margin-top:6px"><table><thead><tr><th>Percentímetro</th><th>Lâmina bruta</th><th>Líquida (' + br(ef, 0) + '%)</th><th>Volta</th></tr></thead><tbody>' +
+    pcts.map((pc) => '<tr><td>' + pc + '%</td><td>' + br(c.l100 / (pc / 100), 1) + ' mm</td><td>' + br((c.l100 / (pc / 100)) * ef / 100, 1) + ' mm</td><td>' + horas(c.t100 / (pc / 100)) + '</td></tr>').join('') + '</tbody></table></div></div>';
+}
 function infoLocal(f, texto) {
   const box = $('#loc-info', f); if (!box) return;
   let c = null; try { c = JSON.parse($('#p_contorno', f).value || 'null'); } catch (e) { c = null; }
@@ -1466,7 +1488,8 @@ V.pivos_depois = function () {
     } catch (e) { toast(e.message, true); }
   });
   ['#p_cultura', '#p_cicloDias', '#p_plantio'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('change', () => infoCultura(f)); });
-  infoSolo(f);
+  infoSolo(f); infoEquip(f);
+  ['#p_raioM', '#p_anguloGraus', '#p_vazaoM3h', '#p_velocidadeUltimaTorreMMin', '#p_lamina100Mm', '#p_tempoVolta100H', '#p_eficienciaPct', '#p_percentimetroMinPct'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('input', () => infoEquip(f)); });
   ['#p_cc', '#p_pmp', '#p_raizMaxCm', '#p_fatorFixo', '#p_laminaMinimaMm'].forEach((q) => { const el = $(q, f); if (el) el.addEventListener('input', () => { const ab = $('#solo-laudo', f) && $('#solo-laudo', f).open; const vals = ['l-cc1', 'l-pmp1', 'l-cc2', 'l-pmp2', 'l-dens'].map((id) => ($('#' + id, f) || {}).value); infoSolo(f); if (ab && $('#solo-laudo', f)) { $('#solo-laudo', f).open = true; ['l-cc1', 'l-pmp1', 'l-cc2', 'l-pmp2', 'l-dens'].forEach((id, i) => { if ($('#' + id, f) && vals[i] != null) $('#' + id, f).value = vals[i]; }); } }); });
   const txEl = $('#p_textura', f); if (txEl) txEl.addEventListener('change', () => infoSolo(f));
   f.addEventListener('click', (ev) => {
