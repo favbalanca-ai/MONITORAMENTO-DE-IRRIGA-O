@@ -244,14 +244,16 @@ test("histórico desenha gráfico e tabela", async () => {
   assert.equal(await page.locator("#grafico .gfx-afd").count(), 1);
   assert.ok((await page.locator("#grafico .gfx-chuva").count()) > 0, "colunas de chuva");
   assert.match((await page.locator("#grafico .gfx-rotulo").textContent())!, /\d+,\d mm hoje/);
-  assert.equal(await page.locator(".gfx-legenda span").count(), 8);
+  assert.equal(await page.locator(".gfx-legenda span").count(), 9);
+  assert.equal(await page.locator("#grafico .gfx-cad").count(), 1, "linha do ponto de murcha (CAD)");
+  assert.match((await page.locator("#grafico .gfx-rotulo-cad").textContent())!, /ponto de murcha \(CAD \d+ mm\)/);
   // crosshair + tooltip ao tocar no gráfico
   const hit = page.locator("#grafico .gfx-hit");
   const caixa = (await hit.boundingBox())!;
   await hit.dispatchEvent("pointermove", { clientX: caixa.x + caixa.width * 0.5, clientY: caixa.y + caixa.height * 0.3, bubbles: true });
   await page.locator("#grafico .gfx-tip").waitFor();
   const tip = await page.locator("#grafico .gfx-tip").innerText();
-  assert.match(tip, /\d\d\/\d\d\/2026 · \d+ DAS · R\d[\s\S]*\d+,\d mm\s+déficit[\s\S]*AFD \(limite\)[\s\S]*consumo \(ETc\)/);
+  assert.match(tip, /\d\d\/\d\d\/2026 · \d+ DAS · R\d[\s\S]*\d+,\d mm\s+déficit[\s\S]*AFD \(limite de estresse\)[\s\S]*ponto de murcha \(CAD\)[\s\S]*consumo \(ETc\)/);
   assert.equal(await page.locator("#grafico .gfx-cross.on").count(), 1, "crosshair visível");
   await hit.dispatchEvent("pointerleave", { bubbles: true });
   assert.equal(await page.locator("#grafico .gfx-tip").isHidden(), true);
