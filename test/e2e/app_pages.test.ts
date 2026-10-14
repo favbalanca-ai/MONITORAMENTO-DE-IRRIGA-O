@@ -81,7 +81,7 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
   await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
   // Open-Meteo buscado pelo celular: sem internet por padrão (cada teste libera com a própria resposta, se quiser)
-  await ctx.route(/api\.open-meteo\.com/, (r) => r.abort("internetdisconnected"));
+  await ctx.route(/open-meteo\.com/, (r) => r.abort("internetdisconnected"));
   const page = await ctx.newPage();
   const erros: string[] = [];
   page.on("pageerror", (e) => erros.push(e.message));
@@ -235,16 +235,22 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
     time.push(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 13) + ":00"); temperature_2m.push(24); relative_humidity_2m.push(70); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5);
   }
   const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
+  const ensemble = JSON.parse(readFileSync(new URL("../fixtures/previsao_ensemble.json", import.meta.url), "utf8"));
   const pedidosCel: string[] = [];
-  await ctx.route(/api\.open-meteo\.com/, (r) => { pedidosCel.push(r.request().url()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.request().url().includes("hourly=") ? omHoras : om), headers: { "Access-Control-Allow-Origin": "*" } }); });
+  await ctx.route(/open-meteo\.com/, (r) => { const u = r.request().url(); pedidosCel.push(u); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(u.includes("ensemble-api") ? ensemble : u.includes("hourly=") ? omHoras : om), headers: { "Access-Control-Allow-Origin": "*" } }); });
   await page.getByRole("button", { name: /Atualizar/ }).click();
   await page.getByText(/Previsão atualizada pelo celular/).waitFor();
   await page.getByText("Próximos dias").waitFor();
   await page.locator(".prev-dia").first().waitFor();
-  assert.equal(pedidosCel.length, 2);
+  assert.equal(pedidosCel.length, 3);
   assert.ok(pedidosCel.some((u) => u.includes("models=best_match,ecmwf_ifs025")));
+  assert.ok(pedidosCel.some((u) => u.includes("ensemble-api.open-meteo.com")));
   assert.ok(chamadas.includes("POST __previsaoDados"));
-  await page.getByText(/Fonte: Open-Meteo \(6 modelos\) via app/).waitFor();
+  await page.getByText(/Fonte: Open-Meteo \(6 modelos\) via app \+ ECMWF ensemble \(51 rodadas\) via app/).waitFor();
+  // a chance de 09/02 é a do ensemble (100%, 11 rodadas no fixture) e a faixa p10–p90 aparece no dia
+  const dia9 = page.locator(".prev-dia", { hasText: "09/02" });
+  await dia9.locator(".prev-ens", { hasText: "100%" }).waitFor();
+  await dia9.locator(".prev-faixa", { hasText: "6–18 mm" }).waitFor();
   await page.locator(".j48").waitFor(); // as 48 h também vieram pelo celular
   // sem Open-Meteo na planilha, a aba PREVISAO ficou com os números que o celular mandou
   assert.equal(amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!["Chuva prevista (mm)"], 12.4);
@@ -554,7 +560,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByText("Chuva por modelo (mm)").waitFor();
   assert.deepEqual(await page.locator(".prev-modelos tbody tr td:first-child").allInnerTexts(), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France"]);
   const tabPrev = await page.locator(".prev-tab").first().innerText();
-  assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+65% → 65% · estável\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
+  assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+–\s+65% → 65% · estável\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
   assert.equal(await page.locator(".prev-tab .spark-tend").count(), 6);
   // rosa dos ventos 24 h: uma leitura ao vivo vinda de 135° (SE) a 11 km/h
   const rosa = await page.locator(".card.rosa24").innerText();

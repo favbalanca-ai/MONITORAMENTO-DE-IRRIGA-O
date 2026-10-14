@@ -36,6 +36,10 @@ export interface DiaPrevisao {
   modelos?: ModeloDia[];
   /** Faixa e concordância entre os modelos para a chuva do dia. */
   faixaChuva?: FaixaChuva;
+  /** Conjunto (ensemble) do ECMWF: chance contada nas 51 rodadas e faixa. Quando existe, `probPct` vem dele. */
+  ensemble?: EnsembleDia;
+  /** Chance que o modelo "melhor ajuste" dava, guardada quando o ensemble assume `probPct`. */
+  probModeloPct?: number | null;
   /** Como a previsão deste dia mudou de uma rodada para outra (a planilha anexa, do histórico). */
   tendencia?: TendenciaPrevisao;
   /** Texto do INMET por turno ("manhã: sol; tarde: pancadas de chuva…"). */
@@ -71,7 +75,22 @@ export const MODELOS_PREVISAO: { id: string; nome: string; origem: string }[] = 
   { id: "icon_seamless", nome: "ICON", origem: "Alemanha (DWD)" },
   { id: "gem_seamless", nome: "GEM", origem: "Canadá" },
   { id: "meteofrance_seamless", nome: "Météo-France", origem: "França" },
+  { id: "ukmo_seamless", nome: "UKMO", origem: "Reino Unido (Met Office)" },
+  { id: "jma_seamless", nome: "JMA", origem: "Japão" },
+  { id: "ecmwf_aifs025", nome: "ECMWF AIFS", origem: "Europa (modelo de IA)" },
 ];
+
+/** Resumo das 51 rodadas do conjunto (ensemble) do ECMWF para a chuva de um dia. */
+export interface EnsembleDia {
+  /** Rodadas com pelo menos 1 mm ÷ rodadas (%). É a chance de chuva "contada". */
+  probPct: number;
+  minMm: number;
+  p10Mm: number;
+  p50Mm: number;
+  p90Mm: number;
+  maxMm: number;
+  membros: number;
+}
 
 export interface Previsao {
   /** Quando foi buscada (hora local da estação). */
@@ -95,6 +114,63 @@ export function urlOpenMeteo(latitude: number, longitude: number, fuso: string, 
     "&wind_speed_unit=kmh&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados +
     (modelos.length > 1 ? "&models=" + modelos.join(",") : "")
   );
+}
+
+/** Conjunto (ensemble) do ECMWF: chuva hora a hora de cada uma das 51 rodadas, 14 dias. */
+export function urlOpenMeteoEnsemble(latitude: number, longitude: number, fuso: string, dias = 14): string {
+  return (
+    "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=" + latitude + "&longitude=" + longitude +
+    "&hourly=precipitation&models=ecmwf_ifs025&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias
+  );
+}
+
+const quantil = (ordenado: number[], q: number): number => {
+  if (!ordenado.length) return 0;
+  const pos = (ordenado.length - 1) * q, i = Math.floor(pos), f = pos - i;
+  return i + 1 < ordenado.length ? ordenado[i]! * (1 - f) + ordenado[i + 1]! * f : ordenado[i]!;
+};
+
+/**
+ * Resposta do ensemble (`hourly.precipitation`, `hourly.precipitation_member01`… ou a série diária
+ * `daily.precipitation_sum*`) → por dia, a chuva de cada rodada e o resumo (chance ≥ 1 mm, faixa).
+ */
+export function lerEnsemble(json: unknown): Map<DataISO, EnsembleDia> {
+  const raiz = json as { hourly?: Record<string, unknown[]>; daily?: Record<string, unknown[]> } | null;
+  const h = raiz?.hourly, dd = raiz?.daily;
+  const serie = h && Array.isArray(h["time"]) ? h : dd && Array.isArray(dd["time"]) ? dd : null;
+  if (!serie) throw new Error("Ensemble: resposta sem série de chuva.");
+  const base = serie === h ? "precipitation" : "precipitation_sum";
+  const chaves = Object.keys(serie).filter((k) => k === base || new RegExp("^" + base + "_member\\d+$").test(k));
+  if (!chaves.length) throw new Error("Ensemble: resposta sem as rodadas de chuva.");
+  const porDia = new Map<DataISO, number[]>();
+  const tempos = serie["time"] as unknown[];
+  tempos.forEach((t, i) => {
+    const data = String(t).slice(0, 10);
+    let v = porDia.get(data);
+    if (!v) { v = new Array<number>(chaves.length).fill(0); porDia.set(data, v); }
+    const soma = v;
+    chaves.forEach((k, m) => { const x = num(serie[k]?.[i]); if (x !== null) soma[m] = (soma[m] ?? 0) + x; });
+  });
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const out = new Map<DataISO, EnsembleDia>();
+  for (const [data, v] of porDia) {
+    const ord = [...v].sort((a, b) => a - b);
+    out.set(data, {
+      probPct: Math.round((100 * ord.filter((x) => x >= 1).length) / ord.length),
+      minMm: r1(ord[0]!), p10Mm: r1(quantil(ord, 0.1)), p50Mm: r1(quantil(ord, 0.5)), p90Mm: r1(quantil(ord, 0.9)), maxMm: r1(ord[ord.length - 1]!),
+      membros: ord.length,
+    });
+  }
+  return out;
+}
+
+/** Anexa o ensemble aos dias: a chance de chuva passa a ser a contada nas rodadas; a do modelo fica em `probModeloPct`. */
+export function aplicarEnsemble(dias: DiaPrevisao[], ensemble: Map<DataISO, EnsembleDia>): DiaPrevisao[] {
+  return dias.map((d) => {
+    const e = ensemble.get(d.data);
+    if (!e) return d;
+    return { ...d, ensemble: e, probModeloPct: d.probPct, probPct: e.probPct };
+  });
 }
 
 /** Faixa de chuva entre os modelos do dia (mediana, mínimo, máximo e quantos preveem ≥ 1 mm). */

@@ -933,6 +933,9 @@ var Motor = (function () {
       { id: "icon_seamless", nome: "ICON", origem: "Alemanha (DWD)" },
       { id: "gem_seamless", nome: "GEM", origem: "Canadá" },
       { id: "meteofrance_seamless", nome: "Météo-France", origem: "França" },
+      { id: "ukmo_seamless", nome: "UKMO", origem: "Reino Unido (Met Office)" },
+      { id: "jma_seamless", nome: "JMA", origem: "Japão" },
+      { id: "ecmwf_aifs025", nome: "ECMWF AIFS", origem: "Europa (modelo de IA)" },
   ];
   const INMET_URL = "https://apiprevmet3.inmet.gov.br/previsao/";
   /**
@@ -945,6 +948,65 @@ var Motor = (function () {
           ",weather_code,relative_humidity_2m_mean,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum,sunshine_duration,uv_index_max,precipitation_hours" +
           "&wind_speed_unit=kmh&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias + "&past_days=" + passados +
           (modelos.length > 1 ? "&models=" + modelos.join(",") : ""));
+  }
+  /** Conjunto (ensemble) do ECMWF: chuva hora a hora de cada uma das 51 rodadas, 14 dias. */
+  function urlOpenMeteoEnsemble(latitude, longitude, fuso, dias = 14) {
+      return ("https://ensemble-api.open-meteo.com/v1/ensemble?latitude=" + latitude + "&longitude=" + longitude +
+          "&hourly=precipitation&models=ecmwf_ifs025&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
+  }
+  const quantil = (ordenado, q) => {
+      if (!ordenado.length)
+          return 0;
+      const pos = (ordenado.length - 1) * q, i = Math.floor(pos), f = pos - i;
+      return i + 1 < ordenado.length ? ordenado[i] * (1 - f) + ordenado[i + 1] * f : ordenado[i];
+  };
+  /**
+   * Resposta do ensemble (`hourly.precipitation`, `hourly.precipitation_member01`… ou a série diária
+   * `daily.precipitation_sum*`) → por dia, a chuva de cada rodada e o resumo (chance ≥ 1 mm, faixa).
+   */
+  function lerEnsemble(json) {
+      const raiz = json;
+      const h = raiz?.hourly, dd = raiz?.daily;
+      const serie = h && Array.isArray(h["time"]) ? h : dd && Array.isArray(dd["time"]) ? dd : null;
+      if (!serie)
+          throw new Error("Ensemble: resposta sem série de chuva.");
+      const base = serie === h ? "precipitation" : "precipitation_sum";
+      const chaves = Object.keys(serie).filter((k) => k === base || new RegExp("^" + base + "_member\\d+$").test(k));
+      if (!chaves.length)
+          throw new Error("Ensemble: resposta sem as rodadas de chuva.");
+      const porDia = new Map();
+      const tempos = serie["time"];
+      tempos.forEach((t, i) => {
+          const data = String(t).slice(0, 10);
+          let v = porDia.get(data);
+          if (!v) {
+              v = new Array(chaves.length).fill(0);
+              porDia.set(data, v);
+          }
+          const soma = v;
+          chaves.forEach((k, m) => { const x = num(serie[k]?.[i]); if (x !== null)
+              soma[m] = (soma[m] ?? 0) + x; });
+      });
+      const r1 = (x) => Math.round(x * 10) / 10;
+      const out = new Map();
+      for (const [data, v] of porDia) {
+          const ord = [...v].sort((a, b) => a - b);
+          out.set(data, {
+              probPct: Math.round((100 * ord.filter((x) => x >= 1).length) / ord.length),
+              minMm: r1(ord[0]), p10Mm: r1(quantil(ord, 0.1)), p50Mm: r1(quantil(ord, 0.5)), p90Mm: r1(quantil(ord, 0.9)), maxMm: r1(ord[ord.length - 1]),
+              membros: ord.length,
+          });
+      }
+      return out;
+  }
+  /** Anexa o ensemble aos dias: a chance de chuva passa a ser a contada nas rodadas; a do modelo fica em `probModeloPct`. */
+  function aplicarEnsemble(dias, ensemble) {
+      return dias.map((d) => {
+          const e = ensemble.get(d.data);
+          if (!e)
+              return d;
+          return { ...d, ensemble: e, probModeloPct: d.probPct, probPct: e.probPct };
+      });
   }
   /** Faixa de chuva entre os modelos do dia (mediana, mínimo, máximo e quantos preveem ≥ 1 mm). */
   function faixaChuva(modelos) {
@@ -2271,5 +2333,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

@@ -374,15 +374,28 @@ test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open
   for (let h = 0; h < 48; h++) { time.push("2026-02-0" + (h < 24 ? 8 : 9) + "T" + String(h % 24).padStart(2, "0") + ":00"); temperature_2m.push(24); relative_humidity_2m.push(70); wind_speed_10m.push(1.5); wind_gusts_10m.push(2); precipitation.push(0); precipitation_probability.push(5); }
   const horas = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
   amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
+  const ensemble = JSON.parse(readFileSync(new URL("./fixtures/previsao_ensemble.json", import.meta.url), "utf8"));
   const op = entrar(amb, "jose", "4321").token;   // operador também pode: é só previsão
-  const r = amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: om, horas } });
+  const r = amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: om, horas, ensemble } });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.atualizou, true);
   assert.equal(r.log.status, "ok");
   assert.ok(!amb.urls.some((u) => u.includes("open-meteo")), "não pediu nada ao Open-Meteo pelo Google");
   const d = amb.get({ acao: "dados", s: op });
-  assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET"]);
-  assert.equal(d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09").faixaChuva.modelos, 6);
+  assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET", "ECMWF ensemble (51 rodadas) via app"]);
+  const dia9 = d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09");
+  assert.equal(dia9.faixaChuva.modelos, 6);
+  // a chance do dia passou a ser a contada nas rodadas do ensemble; a do modelo ficou guardada
+  assert.equal(dia9.probPct, 100);
+  assert.equal(dia9.probModeloPct, 80);
+  assert.equal(dia9.ensemble.p90Mm, 17.8);
+  const linha9 = amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!;
+  assert.equal(linha9["Probabilidade (%)"], 100);
+  assert.equal(linha9["Chance do modelo (%)"], 80);
+  assert.equal(linha9["Ensemble p50 (mm)"], 12);
+  assert.equal(linha9["Ensemble rodadas"], 11);
+  assert.match(d.estacoes["agua viva"].previsaoUrls.ensemble, /^https:\/\/ensemble-api\.open-meteo\.com\/v1\/ensemble\?latitude=-14\.74/);
+  assert.doesNotMatch(d.estacoes["agua viva"].previsaoUrls.diarioSimples, /models=/);
   assert.equal(d.previsao.horas.length, 48);
   assert.equal(d.previsao.luz.length, 4);
   assert.match(d.estacoes["agua viva"].previsaoUrls.diario, /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-14\.74&longitude=-46\.24.*models=best_match/);

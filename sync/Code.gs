@@ -146,7 +146,8 @@ var CABECALHOS = {
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
   LOG: ["Quando", "Ação", "Status", "Detalhe", "Dia do relatório"],
   PREVISAO: ["Data", "Chuva prevista (mm)", "Probabilidade (%)", "Tmin", "Tmax", "INMET", "Atualizado em", "Fontes", "Fazenda",
-    "Tempo", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Modelos com chuva", "Modelos", "UR média (%)", "Vento máx. (km/h)", "Rajada (km/h)", "ET₀ (mm)", "Radiação (MJ/m²)", "Sol (h)", "UV máx."],
+    "Tempo", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Modelos com chuva", "Modelos", "UR média (%)", "Vento máx. (km/h)", "Rajada (km/h)", "ET₀ (mm)", "Radiação (MJ/m²)", "Sol (h)", "UV máx.",
+    "Ensemble p10 (mm)", "Ensemble p50 (mm)", "Ensemble p90 (mm)", "Ensemble rodadas", "Chance do modelo (%)"],
 };
 var N_COLS_LEITURAS = 10;
 
@@ -1197,6 +1198,7 @@ function previsaoDaFazenda_(cfg, fornecido) {
   // compartilhados do Google com "HTTP 429"; do celular passa)
   var diarioDoApp = fornecido && fornecido.diario ? function () { return fornecido.diario; } : null;
   var horasDoApp = fornecido && fornecido.horas ? function () { return fornecido.horas; } : null;
+  var ensembleDoApp = fornecido && fornecido.ensemble ? function () { return fornecido.ensemble; } : null;
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       try {
@@ -1220,7 +1222,15 @@ function previsaoDaFazenda_(cfg, fornecido) {
     } catch (e) { erros.push("INMET: " + e.message); }
   }
   var dias = Motor.juntarPrevisao(om, inmet);
-  if (!dias.length) return { previsao: null, erros: erros };
+  if (!dias.length) return { previsao: null, erros: erros, omOk: omOk, inmet: inmet };
+  // conjunto (ensemble) de 51 rodadas do ECMWF: a chance de chuva passa a ser contada nas rodadas.
+  // Só quando o app manda (pelo Google daria "429" como o resto).
+  if (omOk && ensembleDoApp) {
+    try {
+      dias = Motor.aplicarEnsemble(dias, Motor.lerEnsemble(ensembleDoApp()));
+      fontes.push("ECMWF ensemble (51 rodadas) via app");
+    } catch (e3) { erros.push("Ensemble: " + e3.message); }
+  }
   var horas = [], luz = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
@@ -1275,7 +1285,8 @@ function atualizarPrevisao(fornecidos) {
       var f = d.faixaChuva;
       linhas.push([d.data, v(d.chuvaMm), v(d.probPct), v(d.tmin), v(d.tmax), d.resumo || "", r.previsao.atualizadoEm, r.previsao.fontes.join(", "), cfg.nome,
         d.tempo || "", f ? f.minMm : "", f ? f.maxMm : "", f ? f.comChuva : "", f ? f.modelos : "",
-        v(d.urPct), v(d.ventoKmh), v(d.rajadaKmh), v(d.et0Mm), v(d.radiacaoMJ), v(d.solH), v(d.uvMax)]);
+        v(d.urPct), v(d.ventoKmh), v(d.rajadaKmh), v(d.et0Mm), v(d.radiacaoMJ), v(d.solH), v(d.uvMax),
+        d.ensemble ? d.ensemble.p10Mm : "", d.ensemble ? d.ensemble.p50Mm : "", d.ensemble ? d.ensemble.p90Mm : "", d.ensemble ? d.ensemble.membros : "", v(d.probModeloPct)]);
     });
   });
   var algum = fazendas.some(function (f) { return mapa[f.chave]; });
@@ -1291,7 +1302,8 @@ function atualizarPrevisao(fornecidos) {
       var f = d.faixaChuva;
       linhas.push([d.data, v2(d.chuvaMm), v2(d.probPct), v2(d.tmin), v2(d.tmax), d.resumo || "", p.atualizadoEm, (p.fontes || []).join(", "), cfg.nome,
         d.tempo || "", f ? f.minMm : "", f ? f.maxMm : "", f ? f.comChuva : "", f ? f.modelos : "",
-        v2(d.urPct), v2(d.ventoKmh), v2(d.rajadaKmh), v2(d.et0Mm), v2(d.radiacaoMJ), v2(d.solH), v2(d.uvMax)]);
+        v2(d.urPct), v2(d.ventoKmh), v2(d.rajadaKmh), v2(d.et0Mm), v2(d.radiacaoMJ), v2(d.solH), v2(d.uvMax),
+        d.ensemble ? d.ensemble.p10Mm : "", d.ensemble ? d.ensemble.p50Mm : "", d.ensemble ? d.ensemble.p90Mm : "", d.ensemble ? d.ensemble.membros : "", v2(d.probModeloPct)]);
     });
   });
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
@@ -1785,7 +1797,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-7";
+var VERSAO_SERVIDOR = "2026.10.16-8";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1873,10 +1885,11 @@ function doPost(e) {
       // o app buscou o Open-Meteo no celular e manda as respostas; qualquer usuário logado pode (é só previsão)
       var chaveF = chaveFazenda_(String(d.fazenda || ""));
       if (!lerFazendas_().some(function (f) { return f.chave === chaveF; })) return json_({ ok: false, erro: "Fazenda não encontrada." });
-      if (JSON.stringify(d).length > 600000) return json_({ ok: false, erro: "Previsão grande demais." });
+      if (JSON.stringify(d).length > 2500000) return json_({ ok: false, erro: "Previsão grande demais." });
       if (!d.diario || typeof d.diario !== "object" || !d.diario.daily) return json_({ ok: false, erro: "Resposta diária do Open-Meteo inválida." });
       try { Motor.lerOpenMeteo(d.diario); } catch (eV) { return json_({ ok: false, erro: eV.message }); }
-      var forn = {}; forn[chaveF] = { diario: d.diario, horas: d.horas && typeof d.horas === "object" && d.horas.hourly ? d.horas : null };
+      var forn = {}; forn[chaveF] = { diario: d.diario, horas: d.horas && typeof d.horas === "object" && d.horas.hourly ? d.horas : null,
+        ensemble: d.ensemble && typeof d.ensemble === "object" && (d.ensemble.hourly || d.ensemble.daily) ? d.ensemble : null };
       var okPD = atualizarPrevisao(forn);
       return json_({ ok: true, atualizou: !!okPD, log: ultimoLog_("previsão"), hash: hashDados_() });
     }
@@ -2028,7 +2041,7 @@ function dadosApp_(u) {
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
       ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null,
       // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
-      previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso) } : null };
+      previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso) } : null };
   });
   var f0 = estacoes[chaves[0]];
   return {

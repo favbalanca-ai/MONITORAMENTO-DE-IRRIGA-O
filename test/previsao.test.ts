@@ -34,7 +34,7 @@ test("vários modelos: o melhor ajuste é o principal, os outros entram em `mode
   assert.deepEqual(d[12]!.modelos!.map((m) => m.nome), ["Melhor ajuste", "ECMWF", "GFS", "ICON"]);
   assert.equal(d[12]!.faixaChuva!.modelos, 4);
   // URL pede todos os modelos; sem modelos, não manda o parâmetro
-  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /&models=best_match,ecmwf_ifs025,gfs_seamless,icon_seamless,gem_seamless,meteofrance_seamless$/);
+  assert.match(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo"), /&models=best_match,ecmwf_ifs025,gfs_seamless,icon_seamless,gem_seamless,meteofrance_seamless,ukmo_seamless,jma_seamless,ecmwf_aifs025$/);
   assert.doesNotMatch(urlOpenMeteo(-14.9, -46.25, "America/Sao_Paulo", 14, 7, []), /models=/);
   // um modelo só: nada de faixa
   assert.equal(lerOpenMeteo(om)[8]!.modelos, undefined);
@@ -216,4 +216,34 @@ test("luz do dia: nascer, pôr e crepúsculo civil na fazenda; a janela de aplic
   // sem marcador, nada muda
   assert.equal(aplicacaoPorHora(horas)[0]!.luz, undefined);
   assert.equal(janelasBoas(aplicacaoPorHora(horas), "2026-02-08T00:00", 2, 4)[0]!.horas, 48);
+});
+
+test("ensemble do ECMWF: chance contada nas rodadas e faixa p10–p90; vira o probPct do dia", async () => {
+  const { lerEnsemble, aplicarEnsemble, urlOpenMeteoEnsemble, MODELOS_PREVISAO } = await import("../src/motor/index.ts");
+  const ens = lerEnsemble(JSON.parse(readFileSync(new URL("./fixtures/previsao_ensemble.json", import.meta.url), "utf8")));
+  assert.equal(ens.size, 7);
+  const d9 = ens.get("2026-02-09")!;
+  assert.equal(d9.membros, 11);
+  assert.equal(d9.probPct, 100);
+  assert.equal(d9.minMm, 4.8);
+  assert.equal(d9.maxMm, 19.2);
+  assert.equal(d9.p50Mm, 12);
+  assert.equal(d9.p10Mm, 6.2);
+  assert.equal(d9.p90Mm, 17.8);
+  assert.equal(ens.get("2026-02-13")!.probPct, 91); // 10 de 11 rodadas ≥ 1 mm
+  assert.equal(ens.get("2026-02-11")!.probPct, 0);
+  assert.throws(() => lerEnsemble({ hourly: { time: ["2026-02-09T00:00"], temperature_2m: [1] } }), /rodadas de chuva/);
+  assert.throws(() => lerEnsemble({}), /série de chuva/);
+  // série diária também vale
+  const diario = lerEnsemble({ daily: { time: ["2026-02-09"], precipitation_sum: [0], precipitation_sum_member01: [3], precipitation_sum_member02: [5] } });
+  assert.deepEqual(diario.get("2026-02-09"), { probPct: 67, minMm: 0, p10Mm: 0.6, p50Mm: 3, p90Mm: 4.6, maxMm: 5, membros: 3 });
+  // aplicar: a chance do dia passa a ser a do ensemble; a do modelo fica guardada
+  const dias = aplicarEnsemble(lerOpenMeteo(om), ens);
+  const dia9 = dias.find((d) => d.data === "2026-02-09")!;
+  assert.equal(dia9.probPct, 100);
+  assert.equal(dia9.probModeloPct, 80);
+  assert.equal(dia9.ensemble!.p90Mm, 17.8);
+  assert.equal(dias.find((d) => d.data === "2026-02-01")!.ensemble, undefined); // dia fora do ensemble fica como estava
+  assert.match(urlOpenMeteoEnsemble(-14.9, -46.25, "America/Sao_Paulo"), /^https:\/\/ensemble-api\.open-meteo\.com\/v1\/ensemble\?latitude=-14\.9&longitude=-46\.25&hourly=precipitation&models=ecmwf_ifs025&timezone=America%2FSao_Paulo&forecast_days=14$/);
+  assert.deepEqual(MODELOS_PREVISAO.map((m) => m.nome), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France", "UKMO", "JMA", "ECMWF AIFS"]);
 });

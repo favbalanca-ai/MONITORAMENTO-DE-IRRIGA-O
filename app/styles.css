@@ -281,6 +281,8 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-dia b em{font-style:normal;font-size:10px}
 .prev-dia span{display:block}
 .prev-mod{font-size:11px;margin-top:2px;opacity:.85}
+.prev-ens{font-weight:700;color:var(--blue)}
+.prev-faixa{font-size:11px;color:var(--muted)}
 .prev-mod svg{width:11px;height:11px;vertical-align:-1px}
 .prev-resumo{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:13px}
 .prev-resumo span{display:flex;flex-direction:column}

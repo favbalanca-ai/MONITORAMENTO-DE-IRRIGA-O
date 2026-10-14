@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-7';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-8';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -732,7 +732,8 @@ function cardPrevisao(dia) {
     '<small>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</small>' +
     '<span class="prev-ico" aria-label="' + esc(d.tempo || '') + '">' + (iconeTempo(d.codigoTempo) || '·') + '</span>' +
     '<b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
-    '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
+    '<span' + (d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
+    (d.ensemble ? '<span class="prev-faixa">' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm</span>' : '') +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
     (d.faixaChuva ? '<span class="prev-mod">' + d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' ' + ico('chuva') + '</span>' : '') +
     (d.tendencia && d.tendencia.emissoes >= 2 && d.chuvaMm != null ? '<span class="prev-tend">' + seloTendencia(d.tendencia, true) + '</span>' : '') +
@@ -749,9 +750,10 @@ function cardPrevisao(dia) {
     (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<p class="muted prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</p>' : '') +
     (amanha.resumo ? '<p class="muted">INMET amanhã — ' + esc(amanha.resumo) + '</p>' : '');
   const n = (x, c) => (x == null ? '–' : br(x, c));
-  const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
+  const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Ensemble</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
     todos.map((d) => '<tr class="' + classe(d).trim() + '"><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td><td class="esq">' + iconeTempo(d.codigoTempo) + ' ' + esc(d.tempo || (d.resumo ? 'INMET: ' + d.resumo : '–')) + '</td>' +
-      '<td>' + n(d.chuvaMm, 1) + ' mm</td><td>' + (d.probPct == null ? '–' : br(d.probPct, 0) + '%') + '</td>' +
+      '<td>' + n(d.chuvaMm, 1) + ' mm</td><td>' + (d.probPct == null ? '–' : br(d.probPct, 0) + '%') + (d.ensemble && d.probModeloPct != null ? ' <small>(modelo ' + br(d.probModeloPct, 0) + '%)</small>' : '') + '</td>' +
+      '<td>' + (d.ensemble ? br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm <small>(mediana ' + br(d.ensemble.p50Mm, 0) + ', ' + d.ensemble.membros + ' rodadas)</small>' : '–') + '</td>' +
       '<td class="esq td-tend">' + (d.tendencia && d.tendencia.emissoes >= 2 && d.chuvaMm != null ? sparkTendencia(d.tendencia) + '<small>' + esc(d.tendencia.texto) + '</small>' : '<small class="muted">1ª rodada</small>') + '</td>' +
       '<td>' + (d.faixaChuva ? d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' · ' + br(d.faixaChuva.minMm, 0) + '–' + br(d.faixaChuva.maxMm, 0) + ' mm' : '–') + '</td>' +
       '<td>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°' : '–') + '</td>' +
@@ -770,6 +772,7 @@ function cardPrevisao(dia) {
   }
   const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + tabela + modelos +
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
+    (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
   return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     tira + resumo + linhaAmanha + detalhes +
@@ -820,10 +823,17 @@ async function previsaoPeloCelular(forcar) {
   for (const k of chaves) {
     const e = DADOS.estacoes[k];
     try {
-      const diario = await baixarJson(e.previsaoUrls.diario);
-      let horas = null;
+      let diario;
+      try { diario = await baixarJson(e.previsaoUrls.diario); }
+      catch (ed) {
+        // o pedido com todos os modelos falhou (modelo fora do ar?): tenta só o melhor ajuste
+        if (!e.previsaoUrls.diarioSimples) throw ed;
+        diario = await baixarJson(e.previsaoUrls.diarioSimples); avisos.push(e.nome + ' modelos: ' + ed.message + ' (só o melhor ajuste)');
+      }
+      let horas = null, ensemble = null;
       try { horas = await baixarJson(e.previsaoUrls.horas); } catch (eh) { avisos.push(e.nome + ' horas: ' + eh.message); }
-      const r = await chamar('POST', null, { __previsaoDados: { fazenda: k, diario, horas } });
+      if (e.previsaoUrls.ensemble) { try { ensemble = await baixarJson(e.previsaoUrls.ensemble); } catch (ee) { avisos.push(e.nome + ' ensemble: ' + ee.message); } }
+      const r = await chamar('POST', null, { __previsaoDados: { fazenda: k, diario, horas, ensemble } });
       if (!r || !r.ok) throw new Error((r && r.erro) || 'a planilha recusou');
       algum = true;
       if (r.log && r.log.status !== 'ok' && r.log.detalhe) avisos.push(r.log.detalhe);

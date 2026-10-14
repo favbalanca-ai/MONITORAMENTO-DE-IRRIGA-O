@@ -52,8 +52,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      relatório por fazenda para os e-mails dela. O mesmo relatório vai em **PDF** anexo ao e-mail e fica em `RELATORIOS/AAAA-MM-DD.pdf`
      (também pelo menu **📄 Relatório de hoje em PDF** e pelo botão PDF do app).
    - **PREVISAO** é preenchida sozinha a cada 3 h (gatilho `atualizarPrevisao`) ou pelo menu **🌧 Atualizar previsão do tempo**:
-     Open-Meteo (pela latitude/longitude) com **6 modelos** — melhor ajuste, ECMWF (Europa), GFS (EUA), ICON
-     (Alemanha), GEM (Canadá) e Météo-France — mais o texto do INMET (pelo município). Por dia: chuva, chance,
+     Open-Meteo (pela latitude/longitude) com **9 modelos** — melhor ajuste, ECMWF (Europa), GFS (EUA), ICON
+     (Alemanha), GEM (Canadá), Météo-France, UKMO (Reino Unido), JMA (Japão) e ECMWF AIFS (IA) — mais o texto
+     do INMET (pelo município) e, quando o app manda, o **ensemble do ECMWF** (51 rodadas): a chance de chuva
+     passa a ser contada nas rodadas (≥ 1 mm) e a aba ganha p10/p50/p90 e a chance do modelo. Por dia: chuva, chance,
      tempo, faixa mín–máx entre os modelos e quantos veem chuva, Tmin/Tmax, UR, vento, rajada, ET₀, radiação,
      sol e UV, até 14 dias. Se o pedido com modelos falhar, repete só com o melhor ajuste (anota no LOG). A
      previsão só avisa — não entra no balanço. Cada rodada também grava em **PREVISAO HISTORICO** o que
