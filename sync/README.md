@@ -66,7 +66,9 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      da rodada anterior (o LOG avisa "mantive as horas da rodada …"); a previsão diária boa anterior também fica quando o
      Open-Meteo falha (só o texto do INMET se renova). Como o Open-Meteo bloqueia os endereços do Google com
      frequência, o **app busca o Open-Meteo no celular** e manda as respostas (`__previsaoDados`): a planilha
-     só lê o INMET e grava. A URL que o app usa vai em `estacoes[].previsaoUrls`.
+     só lê o INMET e grava. A URL que o app usa vai em `estacoes[].previsaoUrls`. O cache (aba CACHE, JSON do resumo e das
+     previsões) é gravado em pedaços de 40.000 caracteres, coluna a coluna, porque uma célula do Sheets não
+     aceita mais de 50.000.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
      conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o

@@ -9,6 +9,10 @@ import { paraLocal } from "../../src/coletor/tempo.ts";
 
 type Celula = unknown;
 
+/** Como o Google Sheets: uma célula não aceita mais de 50.000 caracteres. */
+function limiteCelula(x: Celula) {
+  if (typeof x === "string" && x.length > 50000) throw new Error("Your input contains more than the maximum of 50000 characters in a single cell.");
+}
 class FakeRange {
   readonly aba: FakeSheet;
   readonly r: number;
@@ -29,10 +33,11 @@ class FakeRange {
   }
   setValues(v: Celula[][]) {
     if (v.length !== this.nr || v.some((l) => l.length !== this.nc)) throw new Error(`setValues: tamanho ${v.length}x${v[0]?.length} ≠ ${this.nr}x${this.nc}`);
+    v.forEach((l) => l.forEach(limiteCelula));
     v.forEach((l, i) => l.forEach((x, j) => this.aba.set(this.r + i, this.c + j, x)));
     return this;
   }
-  setValue(x: Celula) { this.aba.set(this.r, this.c, x); return this; }
+  setValue(x: Celula) { limiteCelula(x); this.aba.set(this.r, this.c, x); return this; }
   getValue() { return this.aba.dados[this.r - 1]?.[this.c - 1] ?? ""; }
   sort({ column, ascending }: { column: number; ascending: boolean }) {
     const linhas = this.getValues();

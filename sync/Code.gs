@@ -1161,9 +1161,26 @@ function salvarResumo_(dia, fazendas, previsoes) {
       return t.concat((f.reservatorios || []).map(function (b) { return Object.assign({ fazenda: f.cfg.nome, chaveFazenda: f.cfg.chave }, b); }));
     }, []),
   };
-  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
-  aba.getRange(1, 1).setValue(JSON.stringify(resumo));
+  gravarCache_(1, JSON.stringify(resumo));
   return resumo;
+}
+
+/** Uma célula do Sheets aceita no máximo 50.000 caracteres: o cache (JSON) vai em pedaços, coluna a coluna. */
+var PEDACO_CACHE = 40000;
+function gravarCache_(linha, texto) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
+  var pedacos = [];
+  for (var i = 0; i < texto.length; i += PEDACO_CACHE) pedacos.push(texto.slice(i, i + PEDACO_CACHE));
+  if (!pedacos.length) pedacos.push("");
+  var largura = Math.max(pedacos.length, aba.getLastColumn(), 1);
+  var valores = pedacos.concat(new Array(largura - pedacos.length).fill(""));
+  aba.getRange(linha, 1, 1, largura).setValues([valores]);
+}
+function lerCache_(linha) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
+  if (!aba || aba.getLastRow() < linha) return "";
+  var n = Math.max(aba.getLastColumn(), 1);
+  return aba.getRange(linha, 1, 1, n).getValues()[0].map(function (x) { return x === null || x === undefined ? "" : String(x); }).join("");
 }
 
 /* ------------------------------ previsão do tempo ------------------------------ */
@@ -1279,8 +1296,7 @@ function atualizarPrevisao(fornecidos) {
   });
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
   escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, linhas);
-  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
-  aba.getRange(2, 1).setValue(JSON.stringify({ porFazenda: mapa }));
+  gravarCache_(2, JSON.stringify({ porFazenda: mapa }));
   log_("previsão", falhou ? "parcial" : "ok", resumoLog.join(" / "));
   return mapa[fazendas[0].chave] || null;
 }
@@ -1361,9 +1377,7 @@ function buscarJson_(url) {
 
 /** Previsões guardadas, por chave da fazenda. Versão anterior (uma só) vira a da primeira fazenda. */
 function lerPrevisoes_() {
-  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
-  if (!aba || aba.getLastRow() < 2) return {};
-  var t = aba.getRange(2, 1).getValue();
+  var t = lerCache_(2);
   var o;
   try { o = t ? JSON.parse(t) : null; } catch (e) { o = null; }
   if (!o) return {};
@@ -1400,9 +1414,7 @@ function menuPrevisao() {
 }
 
 function lerResumo_() {
-  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
-  if (!aba || aba.getLastRow() < 1) return null;
-  var t = aba.getRange(1, 1).getValue();
+  var t = lerCache_(1);
   return t ? JSON.parse(t) : null;
 }
 
@@ -1773,7 +1785,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-6";
+var VERSAO_SERVIDOR = "2026.10.16-7";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

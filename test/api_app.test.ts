@@ -524,6 +524,36 @@ test("ESTACAO: chuva mínima e horário de ponta entram no cálculo; tarifa de p
   assert.ok(l2.alertas.some((a) => /abaixo de 5 mm/.test(a)));
 });
 
+test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas passam de 50.000 caracteres — o CACHE vai em pedaços", () => {
+  const amb = pronto();
+  amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  // resposta mais longa que a da vida real (21 dias): repete a série do fixture
+  const d = om.daily; const n = d.time.length;
+  for (const k of Object.keys(d)) if (k !== "time") d[k] = d[k].concat(d[k].slice(0, 7));
+  d.time = d.time.concat(Array.from({ length: 7 }, (_, i) => "2026-02-" + String(15 + i).padStart(2, "0")));
+  const time = [], a = [], b = [], c = [], e = [], f = [], g = [];
+  for (let h = 0; h < 72; h++) { time.push("2026-02-" + String(8 + Math.floor(h / 24)).padStart(2, "0") + "T" + String(h % 24).padStart(2, "0") + ":00"); a.push(24); b.push(70); c.push(1.5); e.push(2); f.push(0); g.push(5); }
+  const horas = { hourly: { time, temperature_2m: a, relative_humidity_2m: b, wind_speed_10m: c, wind_gusts_10m: e, precipitation: f, precipitation_probability: g } };
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 200, corpo: horas } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  for (let r = 0; r < 4; r++) { amb.chamar("atualizarPrevisao"); amb.agoraMs! += 86400000; }
+  const cache = amb.aba("CACHE");
+  const total = String(cache.getRange(2, 1).getValue()).length + String(cache.getRange(2, 2).getValue()).length + String(cache.getRange(2, 3).getValue()).length;
+  assert.ok(total > 50000, "o teste precisa de um cache maior que uma célula: " + total);
+  assert.ok(String(cache.getRange(2, 1).getValue()).length <= 40000);
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const dados = amb.get({ acao: "dados", s: adm });
+  assert.equal(dados.ok, true);
+  assert.equal(dados.estacoes["novo pago"].previsao.dias.length, n + 7);
+  assert.equal(dados.estacoes["agua viva"].previsao.horas.length, 72);
+  assert.equal(amb.get({ acao: "hash", s: adm }).ok, true);
+  // o cache "diminuindo" (rodada menor) não deixa sobras das colunas antigas
+  amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
+  amb.chamar("atualizarPrevisao");
+  assert.equal(amb.get({ acao: "dados", s: adm }).estacoes["novo pago"].previsao.dias.length, n + 7); // manteve a diária boa
+});
+
 test("duas fazendas: cada usuário vê só a sua; talhão sem pivô tem só o relatório do ciclo", () => {
   const amb = pronto();
   // segunda fazenda sem estação: o clima vem do Open-Meteo (92 dias passados)
