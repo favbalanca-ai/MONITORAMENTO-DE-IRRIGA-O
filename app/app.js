@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-6';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-7';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -702,7 +702,7 @@ function sparkTendencia(t) {
 }
 /** Selo "↓ caindo · confiança baixa (39)". */
 function seloTendencia(t, curto) {
-  if (!t) return '';
+  if (!t || !t.pontos || !t.pontos.some((p) => p.probPct != null || p.chuvaMm != null)) return '';
   const cls = 'tend tend-' + t.direcao + ' conf-' + t.nivel;
   if (curto) return '<span class="' + cls + '" title="' + esc(t.texto + ' · confiança ' + CONF_ROTULO[t.nivel].toLowerCase() + ' (' + t.confianca + ')') + '">' + TEND_SETA[t.direcao] + ' ' + t.confianca + '</span>';
   return '<span class="' + cls + '">' + TEND_SETA[t.direcao] + ' ' + esc(TEND_ROTULO[t.direcao]) + '</span> · confiança <b>' + esc(CONF_ROTULO[t.nivel].toLowerCase()) + '</b> (' + t.confianca + ')';
@@ -735,7 +735,7 @@ function cardPrevisao(dia) {
     '<span>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
     (d.faixaChuva ? '<span class="prev-mod">' + d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' ' + ico('chuva') + '</span>' : '') +
-    (d.tendencia && d.tendencia.emissoes >= 2 ? '<span class="prev-tend">' + seloTendencia(d.tendencia, true) + '</span>' : '') +
+    (d.tendencia && d.tendencia.emissoes >= 2 && d.chuvaMm != null ? '<span class="prev-tend">' + seloTendencia(d.tendencia, true) + '</span>' : '') +
     '</div>').join('') + '</div>';
   const resumo = '<div class="prev-resumo">' +
     '<span><small>2 dias</small><b>' + br(soma2, 1) + ' mm</b></span>' +
@@ -743,14 +743,16 @@ function cardPrevisao(dia) {
     (r14.n > 7 ? '<span><small>' + r14.n + ' dias</small><b>' + br(r14.chuva, 0) + ' mm</b>' + (r14.et0 != null ? '<em>ET₀ ' + br(r14.et0, 0) + ' mm · saldo ' + (r14.saldo >= 0 ? '+' : '') + br(r14.saldo, 0) + '</em>' : '') + '</span>' : '') +
     '</div>';
   const amanha = prox[0];
-  const linhaAmanha = (amanha.tempo || amanha.faixaChuva ? '<p class="muted prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</p>' : '') +
-    (amanha.tendencia && amanha.tendencia.emissoes >= 2 ? '<p class="muted prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</p>' : '') +
+  const soInmet = !todos.some((d) => d.chuvaMm != null);
+  const avisoInmet = soInmet ? '<p class="muted prev-so-inmet">⚠️ Só o texto do INMET chegou: o Open-Meteo (mm, chance, modelos) não respondeu. Toque em <b>Atualizar</b> para o celular buscar.</p>' : '';
+  const linhaAmanha = avisoInmet + (amanha.tempo || amanha.faixaChuva ? '<p class="muted prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</p>' : '') +
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<p class="muted prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</p>' : '') +
     (amanha.resumo ? '<p class="muted">INMET amanhã — ' + esc(amanha.resumo) + '</p>' : '');
   const n = (x, c) => (x == null ? '–' : br(x, c));
   const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
     todos.map((d) => '<tr class="' + classe(d).trim() + '"><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td><td class="esq">' + iconeTempo(d.codigoTempo) + ' ' + esc(d.tempo || (d.resumo ? 'INMET: ' + d.resumo : '–')) + '</td>' +
       '<td>' + n(d.chuvaMm, 1) + ' mm</td><td>' + (d.probPct == null ? '–' : br(d.probPct, 0) + '%') + '</td>' +
-      '<td class="esq td-tend">' + (d.tendencia && d.tendencia.emissoes >= 2 ? sparkTendencia(d.tendencia) + '<small>' + esc(d.tendencia.texto) + '</small>' : '<small class="muted">1ª rodada</small>') + '</td>' +
+      '<td class="esq td-tend">' + (d.tendencia && d.tendencia.emissoes >= 2 && d.chuvaMm != null ? sparkTendencia(d.tendencia) + '<small>' + esc(d.tendencia.texto) + '</small>' : '<small class="muted">1ª rodada</small>') + '</td>' +
       '<td>' + (d.faixaChuva ? d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' · ' + br(d.faixaChuva.minMm, 0) + '–' + br(d.faixaChuva.maxMm, 0) + ' mm' : '–') + '</td>' +
       '<td>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°' : '–') + '</td>' +
       '<td>' + (d.urPct == null ? '–' : br(d.urPct, 0) + '%') + '</td>' +
@@ -810,8 +812,10 @@ async function baixarJson(url) {
  */
 async function previsaoPeloCelular(forcar) {
   if (!DADOS || !DADOS.estacoes || navigator.onLine === false) return { ok: false, erro: 'sem internet' };
-  const chaves = Object.keys(DADOS.estacoes).filter((k) => DADOS.estacoes[k].previsaoUrls && (forcar || previsaoVelha(DADOS.estacoes[k])));
-  if (!chaves.length) return { ok: false, erro: 'nenhuma fazenda com latitude/longitude' + (forcar ? '' : ' ou previsão já recente') };
+  const comUrl = Object.keys(DADOS.estacoes).filter((k) => DADOS.estacoes[k].previsaoUrls);
+  if (!comUrl.length) return { ok: false, erro: (DADOS.versao && DADOS.versao < '2026.10.16-5') ? 'a planilha está na versão ' + DADOS.versao + '; precisa da 2026.10.16-5 ou mais nova (colar Code.gs e Motor.gs e criar Nova versão)' : 'nenhuma fazenda com latitude/longitude' };
+  const chaves = comUrl.filter((k) => forcar || previsaoVelha(DADOS.estacoes[k]));
+  if (!chaves.length) return { ok: false, erro: 'previsão já recente' };
   const avisos = []; let algum = false, erro = '';
   for (const k of chaves) {
     const e = DADOS.estacoes[k];

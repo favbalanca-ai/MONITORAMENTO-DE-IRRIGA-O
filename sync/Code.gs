@@ -1316,6 +1316,7 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
     if (!limite) limite = Motor.somarDias(emissao, -DIAS_HISTORICO_PREVISAO);
     p.dias.forEach(function (d) {
       if (d.data < emissao) return; // dias passados (ET₀ do Open-Meteo) não são previsão
+      if (d.chuvaMm === null || d.chuvaMm === undefined) return; // só texto do INMET: não tem número pra acompanhar
       var f = d.faixaChuva || null;
       var k = cfg.chave + "|" + emissao + "|" + d.data;
       if (!porChave[k]) ordem.push(k);
@@ -1334,7 +1335,7 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
         var l = porChave[k];
         pontos.push({ emissao: l[1], probPct: n(l[4]), chuvaMm: n(l[3]), comChuva: n(l[5]), modelos: n(l[6]) });
       });
-      if (pontos.length) d.tendencia = Motor.tendenciaPrevisao(pontos);
+      if (pontos.length && d.chuvaMm !== null && d.chuvaMm !== undefined) d.tendencia = Motor.tendenciaPrevisao(pontos);
     });
   });
   var linhas = ordem.filter(function (k) { return !limite || k.split("|")[1] >= limite; }).map(function (k) { return porChave[k]; });
@@ -1347,7 +1348,7 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
  * o Apps Script sai por endereços compartilhados do Google e o Open-Meteo limita por endereço.
  */
 function buscarJson_(url) {
-  var esperas = [1500, 3000, 6000], code = 0, resp;
+  var esperas = [1500, 3000], code = 0, resp;
   for (var i = 0; i <= esperas.length; i++) {
     resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     code = resp.getResponseCode();
@@ -1772,7 +1773,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-5";
+var VERSAO_SERVIDOR = "2026.10.16-6";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

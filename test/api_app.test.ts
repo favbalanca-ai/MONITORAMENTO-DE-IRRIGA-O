@@ -352,6 +352,13 @@ test("Open-Meteo ocupado (429): a planilha espera e tenta de novo; se as 48 h fa
   const ultimo = amb.aba("LOG").objetos().filter((l) => l["Ação"] === "previsão").pop()!;
   assert.equal(ultimo["Status"], "parcial");
   assert.match(String(ultimo["Detalhe"]), /Open-Meteo horas: HTTP 429 \| 48 h: mantive as horas da rodada 19:00/);
+  // rodada só com INMET (sem número): nada vai para o histórico e nenhum dia ganha tendência
+  const amb2 = pronto();
+  const inmet2 = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb2.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet2 } : { code: 429, corpo: {} });
+  const p2 = amb2.chamar("atualizarPrevisao") as { dias: { tendencia?: unknown; chuvaMm: number | null }[] };
+  assert.ok(p2.dias.length > 0 && p2.dias.every((d) => d.chuvaMm === null && d.tendencia === undefined));
+  assert.equal(amb2.aba("PREVISAO HISTORICO").getLastRow(), 1);
   // erro que não adianta repetir (404) não insiste
   amb.respostaHttp = (url) => (url.includes("open-meteo") ? { code: 404, corpo: {} } : { code: 500, corpo: {} });
   const antes = amb.urls.length;
