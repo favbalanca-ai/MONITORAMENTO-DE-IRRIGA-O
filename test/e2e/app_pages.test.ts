@@ -236,15 +236,29 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
   }
   const omHoras = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
   const ensemble = JSON.parse(readFileSync(new URL("../fixtures/previsao_ensemble.json", import.meta.url), "utf8"));
+  const sazonal = JSON.parse(readFileSync(new URL("../fixtures/previsao_sazonal.json", import.meta.url), "utf8"));
   const pedidosCel: string[] = [];
-  await ctx.route(/open-meteo\.com/, (r) => { const u = r.request().url(); pedidosCel.push(u); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(u.includes("ensemble-api") ? ensemble : u.includes("hourly=") ? omHoras : om), headers: { "Access-Control-Allow-Origin": "*" } }); });
+  await ctx.route(/open-meteo\.com/, (r) => { const u = r.request().url(); pedidosCel.push(u); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(u.includes("seasonal-api") ? sazonal : u.includes("ensemble-api") ? ensemble : u.includes("hourly=") ? omHoras : om), headers: { "Access-Control-Allow-Origin": "*" } }); });
   await page.getByRole("button", { name: /Atualizar/ }).click();
   await page.getByText(/Previsão atualizada pelo celular/).waitFor();
   await page.getByText("Próximos dias").waitFor();
   await page.locator(".prev-dia").first().waitFor();
-  assert.equal(pedidosCel.length, 3);
+  assert.equal(pedidosCel.length, 4);
   assert.ok(pedidosCel.some((u) => u.includes("models=best_match,ecmwf_ifs025")));
   assert.ok(pedidosCel.some((u) => u.includes("ensemble-api.open-meteo.com")));
+  assert.ok(pedidosCel.some((u) => u.includes("seasonal-api.open-meteo.com")));
+  // cartão dos 60 dias: três painéis (chuva, temperatura, radiação) + eixo, divisão modelos/sazonal e balão ao tocar
+  await page.getByText("Próximos 60 dias").waitFor();
+  assert.equal(await page.locator(".g60-card svg.g60").count(), 4);
+  assert.ok((await page.locator(".g60-card .g60-chuva.saz").count()) > 10); // barras do sazonal (mais claras)
+  assert.ok((await page.locator(".g60-card .g60-chuva:not(.saz)").count()) >= 4); // barras dos modelos
+  await page.getByText(/Até 14\/02: 9 modelos \(área clara\)\. De 15\/02 em diante: tendência sazonal/).waitFor();
+  const wrap = page.locator(".g60-card .g60-wrap"); const box = (await wrap.boundingBox())!;
+  // no celular é o dedo (touchmove); aqui disparamos o evento no meio do gráfico
+  await wrap.dispatchEvent("mousemove", { clientX: box.x + box.width * 0.5, clientY: box.y + 40 });
+  await page.locator(".g60-tip:not([hidden])").waitFor();
+  assert.match(await page.locator(".g60-tip").innerText(), /\d\d\/\d\d sazonal\s+Chuva .* mm\s+\d+–\d+ °C · \d+ MJ\/m²/);
+  await page.screenshot({ path: PRINTS + "16_60dias.png", fullPage: true });
   assert.ok(chamadas.includes("POST __previsaoDados"));
   await page.getByText(/Fonte: Open-Meteo \(6 modelos\) via app \+ ECMWF ensemble \(51 rodadas\) via app/).waitFor();
   // a chance de 09/02 é a do ensemble (100%, 11 rodadas no fixture) e a faixa p10–p90 aparece no dia

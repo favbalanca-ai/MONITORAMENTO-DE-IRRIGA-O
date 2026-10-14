@@ -21,6 +21,7 @@ var ABA = {
   LOG: "LOG",
   PREVISAO: "PREVISAO",
   PREVISAO_HIST: "PREVISAO HISTORICO",
+  PREVISAO_60: "PREVISAO 60 DIAS",
   FAZENDAS: "FAZENDAS",
   RESERVATORIOS: "RESERVATORIOS",
   NIVEIS: "NIVEL RESERVATORIO",
@@ -140,6 +141,7 @@ var CABECALHOS = {
   UMIDADE: ["Data", "Pivô", "Umidade na raiz (%)", "Umidade camada profunda (%)", "Tensão (kPa)", "Fonte", "Por", "ID"],
   NIVEIS: ["Data", "Reservatório", "Nível (%)", "Obs.", "Por", "ID", "Fazenda"],
   PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
+  PREVISAO_60: ["Data", "Fonte", "Chuva (mm)", "Chance (%)", "Tmin", "Tmax", "Radiação (MJ/m²)", "Atualizado em", "Fazenda"],
   PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
@@ -215,6 +217,7 @@ function instalar() {
   criarAbaSeFaltar_(ss, ABA.LOG, CABECALHOS.LOG);
   criarAbaSeFaltar_(ss, ABA.PREVISAO, CABECALHOS.PREVISAO);
   criarAbaSeFaltar_(ss, ABA.PREVISAO_HIST, CABECALHOS.PREVISAO_HIST);
+  criarAbaSeFaltar_(ss, ABA.PREVISAO_60, CABECALHOS.PREVISAO_60);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
   abaUsuarios_();
@@ -1199,6 +1202,7 @@ function previsaoDaFazenda_(cfg, fornecido) {
   var diarioDoApp = fornecido && fornecido.diario ? function () { return fornecido.diario; } : null;
   var horasDoApp = fornecido && fornecido.horas ? function () { return fornecido.horas; } : null;
   var ensembleDoApp = fornecido && fornecido.ensemble ? function () { return fornecido.ensemble; } : null;
+  var sazonalDoApp = fornecido && fornecido.sazonal ? function () { return fornecido.sazonal; } : null;
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
       try {
@@ -1231,6 +1235,15 @@ function previsaoDaFazenda_(cfg, fornecido) {
       fontes.push("ECMWF ensemble (51 rodadas) via app");
     } catch (e3) { erros.push("Ensemble: " + e3.message); }
   }
+  // 60 dias: modelos até onde vão (14 dias) e depois a previsão sazonal do NCEP (CFSv2), só quando o app manda
+  var longo = [], sazonalOk = false;
+  if (sazonalDoApp) {
+    try {
+      longo = Motor.montarLongoPrazo(dias, Motor.lerSazonal(sazonalDoApp()), Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10), 60);
+      sazonalOk = true;
+      fontes.push("NCEP CFSv2 sazonal via app");
+    } catch (e4) { erros.push("Sazonal: " + e4.message); }
+  }
   var horas = [], luz = [];
   if (cfg.latitude !== null && cfg.longitude !== null) {
     try {
@@ -1242,7 +1255,7 @@ function previsaoDaFazenda_(cfg, fornecido) {
       for (var i = 0; i < 4; i++) luz.push(Motor.luzDoDia(Motor.somarDias(hoje, i), cfg.latitude, cfg.longitude, cfg.fuso));
     } catch (e2) { erros.push("luz do dia: " + e2.message); }
   }
-  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas, luz: luz }, erros: erros, omOk: omOk, inmet: inmet };
+  return { previsao: { fazenda: cfg.nome, atualizadoEm: Motor.paraLocal(Date.now(), cfg.fuso), dias: dias, fontes: fontes, horas: horas, luz: luz, longo: longo }, erros: erros, omOk: omOk, inmet: inmet, sazonalOk: sazonalOk };
 }
 
 /**
@@ -1278,6 +1291,13 @@ function atualizarPrevisao(fornecidos) {
       r.erros.push("48 h: mantive as horas da rodada " + String(r.previsao.horasDe).slice(11, 16));
     }
     if (anterior && (!r.previsao.luz || !r.previsao.luz.length) && anterior.luz && anterior.luz.length) r.previsao.luz = anterior.luz;
+    // 60 dias: sem sazonal nesta rodada, os dias dos modelos se renovam e o resto fica da rodada anterior
+    if (!r.sazonalOk && anterior && anterior.longo && anterior.longo.length) {
+      var hojeL = String(r.previsao.atualizadoEm).slice(0, 10);
+      var sazAnt = anterior.longo.filter(function (d) { return d.fonte === "sazonal"; }).map(function (d) { return { data: d.data, chuvaMm: d.chuvaMm, tmax: d.tmax, tmin: d.tmin, radiacaoMJ: d.radiacaoMJ, membros: 0 }; });
+      r.previsao.longo = Motor.montarLongoPrazo(r.previsao.dias, sazAnt, hojeL, 60);
+      r.previsao.longoDe = anterior.longoDe || anterior.atualizadoEm;
+    }
     mapa[cfg.chave] = r.previsao;
     resumoLog.push(cfg.nome + ": " + r.previsao.fontes.join(", ") + (r.erros.length ? " | " + r.erros.join(" | ") : ""));
     var v = function (x) { return x === null || x === undefined ? "" : x; };
@@ -1308,6 +1328,14 @@ function atualizarPrevisao(fornecidos) {
   });
   criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO, CABECALHOS.PREVISAO);
   escreverTabela_(ABA.PREVISAO, CABECALHOS.PREVISAO, linhas);
+  var l60 = [];
+  lerFazendas_().forEach(function (cfg) {
+    var p = mapa[cfg.chave];
+    if (!p || !p.longo) return;
+    p.longo.forEach(function (d) { l60.push([d.data, d.fonte === "sazonal" ? "sazonal (CFSv2)" : "modelos", v2(d.chuvaMm), v2(d.probPct), v2(d.tmin), v2(d.tmax), v2(d.radiacaoMJ), p.atualizadoEm, cfg.nome]); });
+  });
+  criarAbaSeFaltar_(SpreadsheetApp.getActive(), ABA.PREVISAO_60, CABECALHOS.PREVISAO_60);
+  escreverTabela_(ABA.PREVISAO_60, CABECALHOS.PREVISAO_60, l60);
   gravarCache_(2, JSON.stringify({ porFazenda: mapa }));
   log_("previsão", falhou ? "parcial" : "ok", resumoLog.join(" / "));
   return mapa[fazendas[0].chave] || null;
@@ -1797,7 +1825,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-8";
+var VERSAO_SERVIDOR = "2026.10.16-9";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1889,7 +1917,8 @@ function doPost(e) {
       if (!d.diario || typeof d.diario !== "object" || !d.diario.daily) return json_({ ok: false, erro: "Resposta diária do Open-Meteo inválida." });
       try { Motor.lerOpenMeteo(d.diario); } catch (eV) { return json_({ ok: false, erro: eV.message }); }
       var forn = {}; forn[chaveF] = { diario: d.diario, horas: d.horas && typeof d.horas === "object" && d.horas.hourly ? d.horas : null,
-        ensemble: d.ensemble && typeof d.ensemble === "object" && (d.ensemble.hourly || d.ensemble.daily) ? d.ensemble : null };
+        ensemble: d.ensemble && typeof d.ensemble === "object" && (d.ensemble.hourly || d.ensemble.daily) ? d.ensemble : null,
+        sazonal: d.sazonal && typeof d.sazonal === "object" && d.sazonal.daily ? d.sazonal : null };
       var okPD = atualizarPrevisao(forn);
       return json_({ ok: true, atualizou: !!okPD, log: ultimoLog_("previsão"), hash: hashDados_() });
     }
@@ -2041,7 +2070,7 @@ function dadosApp_(u) {
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
       ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null,
       // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
-      previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso) } : null };
+      previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso), sazonal: Motor.urlOpenMeteoSazonal(fc.latitude, fc.longitude, fc.fuso) } : null };
   });
   var f0 = estacoes[chaves[0]];
   return {

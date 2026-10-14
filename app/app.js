@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-8';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-9';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -558,11 +558,13 @@ V.clima = function () {
   return (cardEstacao() || '<div class="card vazio">A estação ainda não mandou nenhuma leitura.</div>') +
     cardRosa24h() +
     (cardPrevisao(r.dia) || cardSemPrevisao()) +
+    card60dias() +
     miniMapa() +
     '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>';
 };
 V.clima_depois = async function () {
+  ligarHover60();
   if (V.hoje_depois) V.hoje_depois();
   const ps = pivosCadastro();
   if (!ps.length || !syncUrl()) return;
@@ -780,6 +782,83 @@ function cardPrevisao(dia) {
     (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
 }
 
+/* ================= 60 dias: modelos (14 d) + sazonal CFSv2 ================= */
+const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+/**
+ * Cartão "Próximos 60 dias": três painéis empilhados com o mesmo eixo de datas (chuva em barras, temperatura
+ * máxima/mínima, radiação). Os primeiros 14 dias vêm dos 9 modelos; o resto é a tendência sazonal do CFSv2,
+ * desenhada mais clara. Um eixo por painel (nada de dois eixos no mesmo gráfico).
+ */
+function card60dias() {
+  const pv = estacao().previsao; const longo = pv && pv.longo ? pv.longo : [];
+  if (!longo.length) return '';
+  const n = longo.length, W = 680, mE = 40, mD = 12, w = W - mE - mD;
+  const x = (i) => mE + ((i + 0.5) * w) / n, bw = Math.max(1.5, (w / n) * 0.7);
+  const iSaz = longo.findIndex((d) => d.fonte === 'sazonal');
+  const chuvaMax = Math.max(10, ...longo.map((d) => d.chuvaMm || 0));
+  const tMin = Math.min(10, ...longo.map((d) => (d.tmin == null ? 99 : d.tmin))), tMax = Math.max(35, ...longo.map((d) => d.tmax || 0));
+  const radMax = Math.max(25, ...longo.map((d) => d.radiacaoMJ || 0));
+  const soma = (de, ate, campo) => longo.slice(de, ate).reduce((t, d) => t + (d[campo] || 0), 0);
+  const tot14 = soma(0, 14, 'chuvaMm'), tot30 = soma(0, 30, 'chuvaMm'), tot60 = soma(0, 60, 'chuvaMm');
+  const painel = (altura, desenha, rotuloY) => {
+    const mT = 8, mB = 4, alt = altura - mT - mB;
+    let s = '<svg class="g60" viewBox="0 0 ' + W + ' ' + altura + '" width="100%" preserveAspectRatio="none" aria-hidden="true">';
+    if (iSaz > 0) s += '<rect x="' + (mE + (iSaz * w) / n) + '" y="0" width="' + (w - (iSaz * w) / n) + '" height="' + altura + '" class="g60-saz"/>';
+    s += desenha(mT, alt);
+    rotuloY.forEach(([v, y]) => { s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y + '" y2="' + y + '" class="g60-grade"/><text x="' + (mE - 6) + '" y="' + (y + 4) + '" text-anchor="end" class="g60-txt">' + v + '</text>'; });
+    return s + '</svg>';
+  };
+  const pChuva = painel(110, (mT, alt) => {
+    const y = (v) => mT + alt - (v / chuvaMax) * alt;
+    return longo.map((d, i) => (d.chuvaMm > 0 ? '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + y(d.chuvaMm).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (mT + alt - y(d.chuvaMm)).toFixed(1) + '" rx="1" class="g60-chuva' + (d.fonte === 'sazonal' ? ' saz' : '') + '"/>' : '')).join('');
+  }, [[br(chuvaMax, 0) + ' mm', 8], [br(chuvaMax / 2, 0), 8 + 49]]);
+  const pTemp = painel(110, (mT, alt) => {
+    const y = (v) => mT + alt - ((v - tMin) / (tMax - tMin)) * alt;
+    const linha = (campo) => longo.map((d, i) => (d[campo] == null ? '' : (i && longo[i - 1][campo] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d[campo]).toFixed(1))).join(' ');
+    const area = longo.map((d, i) => (d.tmax == null ? '' : (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.tmax).toFixed(1))).join(' ') + ' ' + longo.slice().reverse().map((d, j) => (d.tmin == null ? '' : 'L' + x(n - 1 - j).toFixed(1) + ' ' + y(d.tmin).toFixed(1))).join(' ') + ' Z';
+    return '<path d="' + area + '" class="g60-faixa"/><path d="' + linha('tmax') + '" class="g60-tmax"/><path d="' + linha('tmin') + '" class="g60-tmin"/>';
+  }, [[br(tMax, 0) + '°', 8], [br((tMax + tMin) / 2, 0) + '°', 8 + 49], [br(tMin, 0) + '°', 8 + 98]]);
+  const pRad = painel(90, (mT, alt) => {
+    const y = (v) => mT + alt - (v / radMax) * alt;
+    return '<path d="' + longo.map((d, i) => (d.radiacaoMJ == null ? '' : (i && longo[i - 1].radiacaoMJ != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.radiacaoMJ).toFixed(1))).join(' ') + '" class="g60-rad"/>';
+  }, [[br(radMax, 0) + ' MJ', 8], ['0', 8 + 78]]);
+  // eixo de datas: um rótulo a cada ~10 dias + início de mês
+  let eixo = '<svg class="g60 g60-eixo" viewBox="0 0 ' + W + ' 18" width="100%" preserveAspectRatio="none" aria-hidden="true">';
+  let ultimoRotulo = -99;
+  longo.forEach((d, i) => { const dia = Number(d.data.slice(8, 10)); if ((i === 0 || dia === 1 || dia === 10 || dia === 20) && i - ultimoRotulo >= 5) { ultimoRotulo = i; eixo += '<text x="' + x(i).toFixed(1) + '" y="13" text-anchor="middle" class="g60-txt">' + (dia === 1 || i === 0 ? dia + ' ' + MESES_ABREV[Number(d.data.slice(5, 7)) - 1] : dia) + '</text>'; } });
+  eixo += '</svg>';
+  const divisor = iSaz > 0 ? '<p class="muted g60-nota">Até ' + esc(dataBr(longo[iSaz - 1].data)) + ': 9 modelos (área clara). De ' + esc(dataBr(longo[iSaz].data)) + ' em diante: <b>tendência sazonal</b> do NCEP (CFSv2), média de 4 rodadas, área sombreada. Serve para ver o padrão (semana mais seca ou mais chuvosa), não o dia exato.</p>' : '';
+  return '<div class="card g60-card" data-g60=\'' + esc(JSON.stringify(longo.map((d) => [d.data, d.fonte, d.chuvaMm, d.probPct, d.tmin, d.tmax, d.radiacaoMJ]))) + '\'><div class="row"><h2>' + ico('calendario') + ' Próximos 60 dias</h2><span class="muted">' + n + ' dias</span></div>' +
+    '<div class="prev-resumo"><span><small>14 dias</small><b>' + br(tot14, 0) + ' mm</b></span><span><small>30 dias</small><b>' + br(tot30, 0) + ' mm</b></span><span><small>60 dias</small><b>' + br(tot60, 0) + ' mm</b></span></div>' +
+    '<div class="g60-wrap">' +
+    '<div class="g60-rotulo"><i class="l" style="--c:var(--g-chuva)"></i> Chuva (mm/dia)</div>' + pChuva +
+    '<div class="g60-rotulo"><i class="l" style="--c:var(--g-def)"></i> Máxima <i class="l" style="--c:var(--g-lam);margin-left:8px"></i> Mínima (°C)</div>' + pTemp +
+    '<div class="g60-rotulo"><i class="l" style="--c:var(--g-afd)"></i> Radiação (MJ/m²/dia)</div>' + pRad + eixo +
+    '<div class="g60-cursor" hidden></div><div class="g60-tip" hidden></div></div>' +
+    divisor +
+    '<p class="muted">Fonte: 9 modelos (Open-Meteo) e NCEP CFSv2 sazonal, buscados pelo celular' + (pv.longoDe ? ' · sazonal da rodada ' + esc(dataBr(pv.longoDe)) : '') + '. Toque ou passe o dedo no gráfico para ver cada dia.</p></div>';
+}
+/** Cursor + balão nos três painéis dos 60 dias (mesmo eixo de datas). */
+function ligarHover60() {
+  const card = $('.g60-card'); if (!card) return;
+  const dados = JSON.parse(card.dataset.g60 || '[]'); if (!dados.length) return;
+  const wrap = card.querySelector('.g60-wrap'), cursor = card.querySelector('.g60-cursor'), tip = card.querySelector('.g60-tip');
+  const mE = 40, mD = 12, W = 680;
+  const mostrar = (clientX) => {
+    const r = wrap.getBoundingClientRect(); const fx = (clientX - r.left) / r.width * W;
+    const n = dados.length, i = Math.max(0, Math.min(n - 1, Math.floor(((fx - mE) / (W - mE - mD)) * n)));
+    const d = dados[i]; const px = ((mE + ((i + 0.5) * (W - mE - mD)) / n) / W) * r.width;
+    cursor.hidden = false; cursor.style.left = px + 'px';
+    tip.hidden = false;
+    tip.innerHTML = '<b>' + esc(diaSemana(d[0])) + ' ' + esc(dataBr(d[0])) + '</b> <small>' + (d[1] === 'sazonal' ? 'sazonal' : 'modelos') + '</small><br>Chuva ' + (d[2] == null ? '–' : br(d[2], 1) + ' mm') + (d[3] != null ? ' (' + br(d[3], 0) + '%)' : '') + '<br>' + (d[4] != null && d[5] != null ? br(d[4], 0) + '–' + br(d[5], 0) + ' °C' : '') + (d[6] != null ? ' · ' + br(d[6], 0) + ' MJ/m²' : '');
+    tip.style.left = Math.min(Math.max(0, px - 70), r.width - 150) + 'px';
+  };
+  wrap.addEventListener('mousemove', (ev) => mostrar(ev.clientX));
+  wrap.addEventListener('touchstart', (ev) => mostrar(ev.touches[0].clientX), { passive: true });
+  wrap.addEventListener('touchmove', (ev) => mostrar(ev.touches[0].clientX), { passive: true });
+  wrap.addEventListener('mouseleave', () => { cursor.hidden = true; tip.hidden = true; });
+}
+
 /** Sem previsão: diz o que a planilha registrou da última tentativa e deixa o administrador tentar de novo. */
 function cardSemPrevisao() {
   const lg = DADOS && DADOS.logPrevisao, f = fazendaAtual();
@@ -833,7 +912,9 @@ async function previsaoPeloCelular(forcar) {
       let horas = null, ensemble = null;
       try { horas = await baixarJson(e.previsaoUrls.horas); } catch (eh) { avisos.push(e.nome + ' horas: ' + eh.message); }
       if (e.previsaoUrls.ensemble) { try { ensemble = await baixarJson(e.previsaoUrls.ensemble); } catch (ee) { avisos.push(e.nome + ' ensemble: ' + ee.message); } }
-      const r = await chamar('POST', null, { __previsaoDados: { fazenda: k, diario, horas, ensemble } });
+      let sazonal = null;
+      if (e.previsaoUrls.sazonal) { try { sazonal = await baixarJson(e.previsaoUrls.sazonal); } catch (es) { avisos.push(e.nome + ' sazonal: ' + es.message); } }
+      const r = await chamar('POST', null, { __previsaoDados: { fazenda: k, diario, horas, ensemble, sazonal } });
       if (!r || !r.ok) throw new Error((r && r.erro) || 'a planilha recusou');
       algum = true;
       if (r.log && r.log.status !== 'ok' && r.log.detalhe) avisos.push(r.log.detalhe);

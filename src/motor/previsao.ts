@@ -589,3 +589,78 @@ export function tendenciaPrevisao(pontos: PontoPrevisao[]): TendenciaPrevisao {
   const rot: Record<DirecaoPrevisao, string> = { subindo: "subindo", caindo: "caindo", estavel: "estável", nova: "primeira rodada" };
   return { pontos: ps, emissoes: ps.length, deltaProb, deltaChuva, direcao, confianca, nivel, texto: seq + " · " + rot[direcao] };
 }
+
+/* ------------------------------ longo prazo: 60 dias (modelos + sazonal) ------------------------------ */
+
+/** Um dia da previsão sazonal (NCEP CFSv2 via Open-Meteo): média das rodadas. */
+export interface DiaSazonal {
+  data: DataISO;
+  chuvaMm: number | null;
+  tmax: number | null;
+  tmin: number | null;
+  radiacaoMJ: number | null;
+  membros: number;
+}
+
+/** Previsão sazonal do NCEP (CFSv2): diária, até 9 meses; aqui 61 dias. */
+export function urlOpenMeteoSazonal(latitude: number, longitude: number, fuso: string, dias = 61): string {
+  return (
+    "https://seasonal-api.open-meteo.com/v1/seasonal?latitude=" + latitude + "&longitude=" + longitude +
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,shortwave_radiation_sum" +
+    "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias
+  );
+}
+
+/** Resposta sazonal (`daily.<var>`, `daily.<var>_member01`…) → um item por dia com a média das rodadas. */
+export function lerSazonal(json: unknown): DiaSazonal[] {
+  const d = (json as { daily?: Record<string, unknown[]> } | null)?.daily;
+  if (!d || !Array.isArray(d["time"])) throw new Error("Sazonal: resposta sem a série diária.");
+  const colunas = (base: string) => Object.keys(d).filter((k) => k === base || new RegExp("^" + base + "_member\\d+$").test(k));
+  const vars = { chuvaMm: colunas("precipitation_sum"), tmax: colunas("temperature_2m_max"), tmin: colunas("temperature_2m_min"), radiacaoMJ: colunas("shortwave_radiation_sum") };
+  if (!vars.chuvaMm.length && !vars.tmax.length) throw new Error("Sazonal: resposta sem chuva nem temperatura.");
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const media = (ks: string[], i: number): number | null => {
+    const v = ks.map((k) => num(d[k]?.[i])).filter((x): x is number => x !== null);
+    return v.length ? r1(v.reduce((a, b) => a + b, 0) / v.length) : null;
+  };
+  const membros = Math.max(vars.chuvaMm.length, vars.tmax.length);
+  return (d["time"] as unknown[]).map((t, i) => ({
+    data: String(t).slice(0, 10),
+    chuvaMm: media(vars.chuvaMm, i), tmax: media(vars.tmax, i), tmin: media(vars.tmin, i), radiacaoMJ: media(vars.radiacaoMJ, i),
+    membros,
+  }));
+}
+
+export interface DiaLongoPrazo {
+  data: DataISO;
+  /** "modelos" = os 9 modelos (até 14 dias); "sazonal" = tendência climática do CFSv2 (menos certa). */
+  fonte: "modelos" | "sazonal";
+  chuvaMm: number | null;
+  probPct: number | null;
+  tmax: number | null;
+  tmin: number | null;
+  radiacaoMJ: number | null;
+}
+
+/**
+ * Série de `n` dias depois de `hoje`: os dias cobertos pelos modelos (com número) entram deles; o resto
+ * vem do sazonal. Dias sem nenhuma das duas fontes ficam de fora.
+ */
+export function montarLongoPrazo(dias: DiaPrevisao[], sazonal: DiaSazonal[], hoje: DataISO, n = 60): DiaLongoPrazo[] {
+  const porDia = new Map<DataISO, DiaPrevisao>();
+  for (const d of dias) if (d.chuvaMm !== null && d.chuvaMm !== undefined) porDia.set(d.data, d);
+  const saz = new Map<DataISO, DiaSazonal>();
+  for (const s of sazonal) saz.set(s.data, s);
+  const out: DiaLongoPrazo[] = [];
+  let data = hoje;
+  for (let i = 0; i < n; i++) {
+    data = somarDiasIso(data, 1);
+    const m = porDia.get(data);
+    if (m) { out.push({ data, fonte: "modelos", chuvaMm: m.chuvaMm, probPct: m.probPct, tmax: m.tmax, tmin: m.tmin, radiacaoMJ: m.radiacaoMJ ?? null }); continue; }
+    const s = saz.get(data);
+    if (s) out.push({ data, fonte: "sazonal", chuvaMm: s.chuvaMm, probPct: null, tmax: s.tmax, tmin: s.tmin, radiacaoMJ: s.radiacaoMJ });
+  }
+  return out;
+}
+
+const somarDiasIso = (data: DataISO, k: number): DataISO => new Date(Date.parse(data + "T00:00:00Z") + k * 86_400_000).toISOString().slice(0, 10);

@@ -375,14 +375,23 @@ test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open
   const horas = { hourly: { time, temperature_2m, relative_humidity_2m, wind_speed_10m, wind_gusts_10m, precipitation, precipitation_probability } };
   amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
   const ensemble = JSON.parse(readFileSync(new URL("./fixtures/previsao_ensemble.json", import.meta.url), "utf8"));
+  const sazonal = JSON.parse(readFileSync(new URL("./fixtures/previsao_sazonal.json", import.meta.url), "utf8"));
   const op = entrar(amb, "jose", "4321").token;   // operador também pode: é só previsão
-  const r = amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: om, horas, ensemble } });
+  const r = amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: om, horas, ensemble, sazonal } });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.atualizou, true);
   assert.equal(r.log.status, "ok");
   assert.ok(!amb.urls.some((u) => u.includes("open-meteo")), "não pediu nada ao Open-Meteo pelo Google");
   const d = amb.get({ acao: "dados", s: op });
-  assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET", "ECMWF ensemble (51 rodadas) via app"]);
+  assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET", "ECMWF ensemble (51 rodadas) via app", "NCEP CFSv2 sazonal via app"]);
+  // 60 dias: 6 dos modelos (09 a 14/02) + 54 do sazonal; aba PREVISAO 60 DIAS preenchida
+  assert.equal(d.previsao.longo.length, 60);
+  assert.equal(d.previsao.longo[0].data, "2026-02-09");
+  assert.equal(d.previsao.longo[0].fonte, "modelos");
+  assert.equal(d.previsao.longo[6].fonte, "sazonal");
+  assert.equal(amb.aba("PREVISAO 60 DIAS").objetos().length, 60);
+  assert.equal(amb.aba("PREVISAO 60 DIAS").objetos()[6]!["Fonte"], "sazonal (CFSv2)");
+  assert.match(d.estacoes["agua viva"].previsaoUrls.sazonal, /^https:\/\/seasonal-api\.open-meteo\.com\/v1\/seasonal\?latitude=-14\.74/);
   const dia9 = d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09");
   assert.equal(dia9.faixaChuva.modelos, 6);
   // a chance do dia passou a ser a contada nas rodadas do ensemble; a do modelo ficou guardada
@@ -403,6 +412,13 @@ test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open
   // recusas: fazenda desconhecida, resposta sem série diária
   assert.match(amb.post({ s: op, __previsaoDados: { fazenda: "outra", diario: om } }).erro, /Fazenda não encontrada/);
   assert.match(amb.post({ s: op, __previsaoDados: { fazenda: "agua viva", diario: { daily: {} } } }).erro, /série diária/);
+  // rodada seguinte sem o sazonal (planilha, pelo Google): os dias dos modelos se renovam e o sazonal fica da rodada anterior
+  amb.agoraMs! += 3 * 3600_000;
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  const p2 = amb.chamar("atualizarPrevisao") as { longo: { fonte: string }[]; longoDe?: string };
+  assert.equal(p2.longo.length, 60);
+  assert.equal(p2.longo.filter((x) => x.fonte === "sazonal").length, 54);
+  assert.equal(p2.longoDe, "2026-02-08T19:00:00");
 });
 
 test("Open-Meteo falhou na rodada: a previsão diária boa anterior fica (só o texto do INMET se renova)", () => {

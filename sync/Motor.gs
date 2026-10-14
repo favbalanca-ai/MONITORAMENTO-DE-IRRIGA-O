@@ -1419,6 +1419,61 @@ var Motor = (function () {
       const rot = { subindo: "subindo", caindo: "caindo", estavel: "estável", nova: "primeira rodada" };
       return { pontos: ps, emissoes: ps.length, deltaProb, deltaChuva, direcao, confianca, nivel, texto: seq + " · " + rot[direcao] };
   }
+  /** Previsão sazonal do NCEP (CFSv2): diária, até 9 meses; aqui 61 dias. */
+  function urlOpenMeteoSazonal(latitude, longitude, fuso, dias = 61) {
+      return ("https://seasonal-api.open-meteo.com/v1/seasonal?latitude=" + latitude + "&longitude=" + longitude +
+          "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,shortwave_radiation_sum" +
+          "&timezone=" + encodeURIComponent(fuso) + "&forecast_days=" + dias);
+  }
+  /** Resposta sazonal (`daily.<var>`, `daily.<var>_member01`…) → um item por dia com a média das rodadas. */
+  function lerSazonal(json) {
+      const d = json?.daily;
+      if (!d || !Array.isArray(d["time"]))
+          throw new Error("Sazonal: resposta sem a série diária.");
+      const colunas = (base) => Object.keys(d).filter((k) => k === base || new RegExp("^" + base + "_member\\d+$").test(k));
+      const vars = { chuvaMm: colunas("precipitation_sum"), tmax: colunas("temperature_2m_max"), tmin: colunas("temperature_2m_min"), radiacaoMJ: colunas("shortwave_radiation_sum") };
+      if (!vars.chuvaMm.length && !vars.tmax.length)
+          throw new Error("Sazonal: resposta sem chuva nem temperatura.");
+      const r1 = (x) => Math.round(x * 10) / 10;
+      const media = (ks, i) => {
+          const v = ks.map((k) => num(d[k]?.[i])).filter((x) => x !== null);
+          return v.length ? r1(v.reduce((a, b) => a + b, 0) / v.length) : null;
+      };
+      const membros = Math.max(vars.chuvaMm.length, vars.tmax.length);
+      return d["time"].map((t, i) => ({
+          data: String(t).slice(0, 10),
+          chuvaMm: media(vars.chuvaMm, i), tmax: media(vars.tmax, i), tmin: media(vars.tmin, i), radiacaoMJ: media(vars.radiacaoMJ, i),
+          membros,
+      }));
+  }
+  /**
+   * Série de `n` dias depois de `hoje`: os dias cobertos pelos modelos (com número) entram deles; o resto
+   * vem do sazonal. Dias sem nenhuma das duas fontes ficam de fora.
+   */
+  function montarLongoPrazo(dias, sazonal, hoje, n = 60) {
+      const porDia = new Map();
+      for (const d of dias)
+          if (d.chuvaMm !== null && d.chuvaMm !== undefined)
+              porDia.set(d.data, d);
+      const saz = new Map();
+      for (const s of sazonal)
+          saz.set(s.data, s);
+      const out = [];
+      let data = hoje;
+      for (let i = 0; i < n; i++) {
+          data = somarDiasIso(data, 1);
+          const m = porDia.get(data);
+          if (m) {
+              out.push({ data, fonte: "modelos", chuvaMm: m.chuvaMm, probPct: m.probPct, tmax: m.tmax, tmin: m.tmin, radiacaoMJ: m.radiacaoMJ ?? null });
+              continue;
+          }
+          const s = saz.get(data);
+          if (s)
+              out.push({ data, fonte: "sazonal", chuvaMm: s.chuvaMm, probPct: null, tmax: s.tmax, tmin: s.tmin, radiacaoMJ: s.radiacaoMJ });
+      }
+      return out;
+  }
+  const somarDiasIso = (data, k) => new Date(Date.parse(data + "T00:00:00Z") + k * 86400000).toISOString().slice(0, 10);
   // ---- src/motor/sol.ts ----
   /**
    * Nascer e pôr do sol e crepúsculo civil (primeira e última luz) para um lugar e um dia — algoritmo
@@ -2333,5 +2388,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

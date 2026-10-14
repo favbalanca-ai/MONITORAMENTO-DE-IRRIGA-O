@@ -247,3 +247,31 @@ test("ensemble do ECMWF: chance contada nas rodadas e faixa p10–p90; vira o pr
   assert.match(urlOpenMeteoEnsemble(-14.9, -46.25, "America/Sao_Paulo"), /^https:\/\/ensemble-api\.open-meteo\.com\/v1\/ensemble\?latitude=-14\.9&longitude=-46\.25&hourly=precipitation&models=ecmwf_ifs025&timezone=America%2FSao_Paulo&forecast_days=14$/);
   assert.deepEqual(MODELOS_PREVISAO.map((m) => m.nome), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France", "UKMO", "JMA", "ECMWF AIFS"]);
 });
+
+test("sazonal (CFSv2): média das rodadas por dia; 60 dias = modelos até onde vão, depois o sazonal", async () => {
+  const { lerSazonal, montarLongoPrazo, urlOpenMeteoSazonal } = await import("../src/motor/index.ts");
+  const saz = lerSazonal(JSON.parse(readFileSync(new URL("./fixtures/previsao_sazonal.json", import.meta.url), "utf8")));
+  assert.equal(saz.length, 61);
+  assert.equal(saz[0]!.data, "2026-02-09");
+  assert.equal(saz[0]!.membros, 4);
+  assert.equal(saz[0]!.chuvaMm, 3); // (0 + 2 + 4 + 6) / 4
+  assert.equal(saz[1]!.tmax, 30.4); // média de 29,6 / 30,1 / 30,6 / 31,1 = 30,35 → 30,4
+  assert.throws(() => lerSazonal({ daily: { time: ["2026-02-09"], uv_index_max: [1] } }), /sem chuva nem temperatura/);
+  assert.throws(() => lerSazonal({}), /série diária/);
+  assert.match(urlOpenMeteoSazonal(-14.9, -46.25, "America/Sao_Paulo"), /^https:\/\/seasonal-api\.open-meteo\.com\/v1\/seasonal\?latitude=-14\.9&longitude=-46\.25&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,shortwave_radiation_sum&timezone=America%2FSao_Paulo&forecast_days=61$/);
+  const longo = montarLongoPrazo(lerOpenMeteo(om), saz, "2026-02-08", 60);
+  assert.equal(longo.length, 60);
+  assert.equal(longo[0]!.data, "2026-02-09");
+  assert.equal(longo[0]!.fonte, "modelos");
+  assert.equal(longo[0]!.chuvaMm, 12.4);
+  assert.equal(longo[0]!.probPct, 80);
+  assert.equal(longo[5]!.fonte, "modelos"); // 14/02 é o último dia dos modelos no fixture
+  assert.equal(longo[6]!.fonte, "sazonal"); // 15/02 em diante: CFSv2
+  assert.equal(longo[6]!.probPct, null);
+  assert.equal(longo[59]!.data, "2026-04-09");
+  assert.equal(longo.filter((d) => d.fonte === "sazonal").length, 54);
+  // sem sazonal: só os dias dos modelos
+  assert.equal(montarLongoPrazo(lerOpenMeteo(om), [], "2026-02-08", 60).length, 6);
+  // só INMET (sem número) não entra
+  assert.equal(montarLongoPrazo(lerInmet(inmet), saz, "2026-02-08", 60).every((d) => d.fonte === "sazonal"), true);
+});
