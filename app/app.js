@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-10';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-11';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -192,7 +192,32 @@ window.addEventListener('hashchange', () => route());
 // Teclado do celular: a barra de baixo é fixa e "sobe" junto com o teclado, tampando o campo. Enquanto um
 // campo de texto está em edição, a barra fica escondida (classe no body); volta ao sair do campo.
 document.addEventListener('focusin', (ev) => { const t = ev.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && !/^(checkbox|radio|button|submit|range)$/.test(t.type || '')) document.body.classList.add('teclado'); });
-document.addEventListener('focusout', () => { setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) document.body.classList.remove('teclado'); }, 150); });
+document.addEventListener('focusout', () => { setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { document.body.classList.remove('teclado'); reancorarBarra(); } }, 150); });
+// Safari do iPhone: depois que o teclado ou o seletor de data fecha, elementos fixos (a barra de baixo) ficam
+// deslocados no meio da tela até a página rolar. Um empurrão de 1 px no scroll faz o navegador reposicionar.
+function reancorarBarra() {
+  try {
+    const y = window.scrollY;
+    window.scrollTo(0, y + 1); window.scrollTo(0, y);
+    const sb = document.querySelector('.sidebar'); if (sb) { sb.style.transform = 'translateZ(0) translateY(0.01px)'; setTimeout(() => { sb.style.transform = ''; }, 50); }
+  } catch (e) {}
+}
+if (window.visualViewport) {
+  let tecladoAberto = false;
+  const vv = window.visualViewport;
+  const checa = () => {
+    // teclado aberto = a área visível ficou bem menor que a janela
+    const aberto = window.innerHeight - vv.height > 120;
+    if (aberto !== tecladoAberto) {
+      tecladoAberto = aberto;
+      document.body.classList.toggle('teclado', aberto);
+      if (!aberto) setTimeout(reancorarBarra, 60);
+    }
+  };
+  vv.addEventListener('resize', checa);
+  vv.addEventListener('scroll', checa);
+}
+window.addEventListener('orientationchange', () => setTimeout(reancorarBarra, 300));
 
 function semDados() {
   if (!syncUrl()) return '<div class="card vazio"><p>Para começar, cole o endereço da planilha em <b>⚙️ Ajustes</b>.</p><p class="muted">Na planilha: menu 💧 Manejo → 📱 Endereço para o app.</p><a class="btn btn-primary" style="margin-top:12px" href="#/sync">Abrir Ajustes</a></div>';
