@@ -70,7 +70,10 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      da rodada anterior (o LOG avisa "mantive as horas da rodada …"); a previsão diária boa anterior também fica quando o
      Open-Meteo falha (só o texto do INMET se renova). Como o Open-Meteo bloqueia os endereços do Google com
      frequência, o **app busca o Open-Meteo no celular** e manda as respostas (`__previsaoDados`): a planilha
-     só lê o INMET e grava. A URL que o app usa vai em `estacoes[].previsaoUrls`. O cache (aba CACHE, JSON do resumo e das
+     só lê o INMET e grava. A URL que o app usa vai em `estacoes[].previsaoUrls`. **Desempenho:** dentro de um mesmo pedido, FAZENDAS, CONFIG APP, o CACHE e as últimas LEITURAS são
+     lidas uma vez só (memória por pedido, `MEMO_`, zerada no início de cada doGet/doPost); o `hash` não varre
+     a aba LEITURAS; e o app recebe a previsão enxuta (`previsaoParaApp_`: dias de ontem em diante, 10 dias de
+     modelos, 8 rodadas de tendência, 50 horas a partir de agora, sem os 60 dias). O cache (aba CACHE, JSON do resumo e das
      previsões) é gravado em pedaços de 40.000 caracteres, coluna a coluna, porque uma célula do Sheets não
      aceita mais de 50.000.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma

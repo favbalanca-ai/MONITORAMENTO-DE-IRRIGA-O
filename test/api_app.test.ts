@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { deLocal } from "../src/coletor/tempo.ts";
+import { CONTADOR } from "./apps_script/fake.ts";
 import { criarAmbiente, setFazenda, type Ambiente } from "./apps_script/fake.ts";
 import { leiturasMeteoCorrigido } from "./pivo2_exemplo.ts";
 
@@ -269,7 +270,7 @@ test("previsão: Open-Meteo dá os mm, INMET o texto; vai para a aba, o app e o 
 
   const adm = entrar(amb, "fabiana", "1234").token;
   const d = amb.get({ acao: "dados", s: adm });
-  assert.equal(d.previsao.dias.length, 14);
+  assert.equal(d.previsao.dias.length, 8); // o app recebe só de ontem (07/02) em diante; a planilha guarda os 14
   const pv = d.resumo.pivos[0];
   assert.equal(pv.avisoChuva, null, "20,5 mm previstos não cobrem 80% do déficit de " + pv.deficit);
   assert.equal(pv.projecao.dias.length, 6, "projeção com a ET₀ prevista de 09/02 a 14/02");
@@ -384,12 +385,12 @@ test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open
   assert.ok(!amb.urls.some((u) => u.includes("open-meteo")), "não pediu nada ao Open-Meteo pelo Google");
   const d = amb.get({ acao: "dados", s: op });
   assert.deepEqual([...d.previsao.fontes], ["Open-Meteo (6 modelos) via app", "INMET", "ECMWF ensemble (51 rodadas) via app", "NCEP CFSv2 sazonal via app"]);
-  // 60 dias: 6 dos modelos (09 a 14/02) + 54 do sazonal; aba PREVISAO 60 DIAS preenchida
-  assert.equal(d.previsao.longo.length, 60);
-  assert.equal(d.previsao.longo[0].data, "2026-02-09");
-  assert.equal(d.previsao.longo[0].fonte, "modelos");
-  assert.equal(d.previsao.longo[6].fonte, "sazonal");
-  assert.equal(amb.aba("PREVISAO 60 DIAS").objetos().length, 60);
+  // 60 dias: 6 dos modelos (09 a 14/02) + 54 do sazonal, só na aba PREVISAO 60 DIAS (o app não recebe)
+  assert.equal(d.previsao.longo, undefined);
+  const l60 = amb.aba("PREVISAO 60 DIAS").objetos();
+  assert.equal(l60.length, 60);
+  assert.equal(String(l60[0]!["Data"]).slice(0, 10), "2026-02-09");
+  assert.equal(l60[0]!["Fonte"], "modelos");
   assert.equal(amb.aba("PREVISAO 60 DIAS").objetos()[6]!["Fonte"], "sazonal (CFSv2)");
   assert.match(d.estacoes["agua viva"].previsaoUrls.sazonal, /^https:\/\/seasonal-api\.open-meteo\.com\/v1\/seasonal\?latitude=-14\.74/);
   const dia9 = d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09");
@@ -405,7 +406,7 @@ test("previsão pelo celular (__previsaoDados): o app manda as respostas do Open
   assert.equal(linha9["Ensemble rodadas"], 11);
   assert.match(d.estacoes["agua viva"].previsaoUrls.ensemble, /^https:\/\/ensemble-api\.open-meteo\.com\/v1\/ensemble\?latitude=-14\.74/);
   assert.doesNotMatch(d.estacoes["agua viva"].previsaoUrls.diarioSimples, /models=/);
-  assert.equal(d.previsao.horas.length, 48);
+  assert.equal(d.previsao.horas.length, 29) // só as horas a partir de agora (19h de 08/02): 5 de hoje + 24 de amanhã;
   assert.equal(d.previsao.luz.length, 4);
   assert.match(d.estacoes["agua viva"].previsaoUrls.diario, /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-14\.74&longitude=-46\.24.*models=best_match/);
   assert.match(d.estacoes["agua viva"].previsaoUrls.horas, /hourly=temperature_2m/);
@@ -465,7 +466,7 @@ test("previsão com vários modelos: faixa e concordância vão para a aba e o a
   assert.equal(linha["UV máx."], 11);
   const adm = entrar(amb, "fabiana", "1234").token;
   const d = amb.get({ acao: "dados", s: adm });
-  assert.equal(d.previsao.dias[8].faixaChuva.comChuva, 5);
+  assert.equal(d.previsao.dias.find((x: { data: string }) => x.data === "2026-02-09").faixaChuva.comChuva, 5);
 
   // pedido com modelos falha (HTTP 400) → repete só com o melhor ajuste e anota no LOG
   amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("models=") ? { code: 400, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
@@ -553,6 +554,42 @@ test("ESTACAO: chuva mínima e horário de ponta entram no cálculo; tarifa de p
   assert.ok(l2.alertas.some((a) => /abaixo de 5 mm/.test(a)));
 });
 
+test("sincronização leve: o pedido \"dados\" lê cada aba uma vez só, o \"hash\" não lê LEITURAS e a previsão vai enxuta", () => {
+  const amb = pronto();
+  amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  const sazonal = JSON.parse(readFileSync(new URL("./fixtures/previsao_sazonal.json", import.meta.url), "utf8"));
+  const time = [], a = [], b = [], c = [], e = [], f = [], g = [];
+  for (let h = 0; h < 72; h++) { time.push("2026-02-" + String(8 + Math.floor(h / 24)).padStart(2, "0") + "T" + String(h % 24).padStart(2, "0") + ":00"); a.push(24); b.push(70); c.push(1.5); e.push(2); f.push(0); g.push(5); }
+  const horas = { hourly: { time, temperature_2m: a, relative_humidity_2m: b, wind_speed_10m: c, wind_gusts_10m: e, precipitation: f, precipitation_probability: g } };
+  amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
+  const adm = entrar(amb, "fabiana", "1234").token;
+  amb.post({ s: adm, __previsaoDados: { fazenda: "agua viva", diario: om, horas, sazonal } });
+  amb.post({ s: adm, __previsaoDados: { fazenda: "novo pago", diario: om, horas, sazonal } });
+  // "dados": poucas leituras de planilha (antes: LEITURAS 5×, FAZENDAS 10×, CONFIG APP 6×, CACHE 4×)
+  CONTADOR.leituras = 0;
+  const d = amb.get({ acao: "dados", s: adm });
+  const leiturasDados = CONTADOR.leituras;
+  assert.ok(leiturasDados <= 30, "dados fez " + leiturasDados + " leituras de planilha"); // antes da memória por pedido passava de 45
+  // "hash": não varre a aba LEITURAS (só pergunta quantas linhas tem)
+  CONTADOR.leituras = 0;
+  const h = amb.get({ acao: "hash", s: adm });
+  assert.ok(h.ok && h.hash === d.hash);
+  assert.ok(CONTADOR.leituras <= 8, "hash fez " + CONTADOR.leituras + " leituras de planilha"); // sessão, FAZENDAS e o CACHE; nada da aba LEITURAS
+  // previsão enxuta: sem os 60 dias, só de ontem em diante, 50 horas a partir de agora (19h de 08/02), modelos nos 10 primeiros dias
+  const pv = d.estacoes["agua viva"].previsao;
+  assert.equal(pv.longo, undefined);
+  assert.ok(pv.dias.every((x: { data: string }) => x.data >= "2026-02-07"), "dias antigos fora");
+  assert.equal(pv.horas.length, 50);
+  assert.equal(pv.horas[0].quando, "2026-02-08T19:00");
+  assert.ok(pv.dias.filter((x: { modelos?: unknown }) => x.modelos).length <= 10);
+  // mas a planilha guarda tudo: os 60 dias continuam na aba
+  assert.equal(amb.aba("PREVISAO 60 DIAS").objetos().length, 120);
+  // tamanho da resposta: bem abaixo do que ia antes (duas fazendas com tudo passavam de 150 KB)
+  assert.ok(JSON.stringify(d).length < 90000, "resposta com " + JSON.stringify(d).length + " caracteres");
+});
+
 test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas passam de 50.000 caracteres — o CACHE vai em pedaços", () => {
   const amb = pronto();
   amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);
@@ -574,13 +611,13 @@ test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas
   const adm = entrar(amb, "fabiana", "1234").token;
   const dados = amb.get({ acao: "dados", s: adm });
   assert.equal(dados.ok, true);
-  assert.equal(dados.estacoes["novo pago"].previsao.dias.length, n + 7);
-  assert.equal(dados.estacoes["agua viva"].previsao.horas.length, 72);
+  assert.equal(dados.estacoes["novo pago"].previsao.dias.length, 11); // de ontem (11/02, 4 rodadas depois) a 21/02
+  assert.equal(dados.estacoes["agua viva"].previsao.horas.length, 0) // as horas do fixture ficaram no passado (relógio avançou 4 dias): o app não recebe hora velha;
   assert.equal(amb.get({ acao: "hash", s: adm }).ok, true);
   // o cache "diminuindo" (rodada menor) não deixa sobras das colunas antigas
   amb.respostaHttp = (url) => (url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 429, corpo: {} });
   amb.chamar("atualizarPrevisao");
-  assert.equal(amb.get({ acao: "dados", s: adm }).estacoes["novo pago"].previsao.dias.length, n + 7); // manteve a diária boa
+  assert.equal(amb.get({ acao: "dados", s: adm }).estacoes["novo pago"].previsao.dias.length, 11); // manteve a diária boa
 });
 
 test("duas fazendas: cada usuário vê só a sua; talhão sem pivô tem só o relatório do ciclo", () => {

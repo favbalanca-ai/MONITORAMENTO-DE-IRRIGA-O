@@ -9,6 +9,9 @@ import { paraLocal } from "../../src/coletor/tempo.ts";
 
 type Celula = unknown;
 
+/** Quantas vezes a planilha foi lida (getValues) — para medir o custo de um pedido. */
+export const CONTADOR = { leituras: 0 };
+function contarLeitura() { CONTADOR.leituras++; }
 /** Como o Google Sheets: uma célula não aceita mais de 50.000 caracteres. */
 function limiteCelula(x: Celula) {
   if (typeof x === "string" && x.length > 50000) throw new Error("Your input contains more than the maximum of 50000 characters in a single cell.");
@@ -23,6 +26,7 @@ class FakeRange {
     this.aba = aba; this.r = r; this.c = c; this.nr = nr; this.nc = nc;
   }
   getValues(): Celula[][] {
+    contarLeitura();
     const out: Celula[][] = [];
     for (let i = 0; i < this.nr; i++) {
       const linha: Celula[] = [];
@@ -280,7 +284,8 @@ export function criarAmbiente(): Ambiente {
   vm.runInContext(codigo, ctx, { filename: "apps-script" });
   amb.ctx = ctx;
   amb.aba = (n) => { const a = abas.get(n); if (!a) throw new Error(`aba ${n} não existe`); return a; };
-  amb.chamar = (fn, ...args) => (ctx[fn] as (...a: unknown[]) => unknown)(...args) as never;
+  // como no Google: cada execução (gatilho, menu, doGet, doPost) começa sem a memória do pedido anterior
+  amb.chamar = (fn, ...args) => { if (typeof ctx["limparMemo_"] === "function") (ctx["limparMemo_"] as () => void)(); return (ctx[fn] as (...a: unknown[]) => unknown)(...args) as never; };
   amb.get = (params) => JSON.parse((amb.chamar<{ texto: string }>("doGet", { parameter: params })).texto);
   amb.post = (corpo) => JSON.parse((amb.chamar<{ texto: string }>("doPost", { postData: { contents: JSON.stringify(corpo) } })).texto);
   return amb;

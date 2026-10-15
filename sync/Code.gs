@@ -350,7 +350,21 @@ function normalizarCfg_(cfg) {
  * Fazendas cadastradas (aba FAZENDAS). Sem a aba, a planilha funciona como antes: uma fazenda só,
  * com a aba ESTACAO e o MAC das propriedades do script.
  */
+/**
+ * Memória de UM pedido: cada execução do Apps Script começa do zero, então o que for lido aqui vale só
+ * dentro do mesmo doGet/doPost/gatilho. Evita reler a mesma aba várias vezes num pedido (FAZENDAS, CONFIG APP,
+ * CACHE e as últimas LEITURAS eram lidas de 2 a 6 vezes por "dados").
+ */
+var MEMO_ = {};
+function limparMemo_(chave) { if (chave) delete MEMO_[chave]; else MEMO_ = {}; }
+
 function lerFazendas_() {
+  if (MEMO_.fazendas) return MEMO_.fazendas.map(function (f) { return Object.assign({}, f); });
+  var lista = lerFazendasDaAba_();
+  MEMO_.fazendas = lista;
+  return lista.map(function (f) { return Object.assign({}, f); });
+}
+function lerFazendasDaAba_() {
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.FAZENDAS);
   var lista = [];
   if (aba && aba.getLastRow() >= 2) {
@@ -375,6 +389,7 @@ function lerFazendas_() {
 
 /** Cria a aba FAZENDAS a partir da ESTACAO (planilha de versão anterior) e completa colunas que faltem. */
 function garantirFazendas_() {
+  limparMemo_("fazendas");
   var ss = SpreadsheetApp.getActive();
   var aba = ss.getSheetByName(ABA.FAZENDAS);
   if (!aba) {
@@ -646,6 +661,7 @@ function lerLeituras_(ini, fim, fazenda) {
 /** Grava sem duplicar (mesmo horário + mesma fazenda) e mantém a aba em ordem. Devolve quantas entraram. */
 function gravarLeituras_(leituras, fazenda) {
   if (!leituras.length) return 0;
+  limparMemo_("ultimasLeituras");
   var aba = abaLeituras_();
   var primeira = lerFazendas_()[0].chave;
   var chave = fazenda ? chaveFazenda_(fazenda) : primeira;
@@ -1172,6 +1188,7 @@ function salvarResumo_(dia, fazendas, previsoes) {
 /** Uma célula do Sheets aceita no máximo 50.000 caracteres: o cache (JSON) vai em pedaços, coluna a coluna. */
 var PEDACO_CACHE = 40000;
 function gravarCache_(linha, texto) {
+  limparMemo_("cache" + linha);
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE) || SpreadsheetApp.getActive().insertSheet(ABA.CACHE);
   var pedacos = [];
   for (var i = 0; i < texto.length; i += PEDACO_CACHE) pedacos.push(texto.slice(i, i + PEDACO_CACHE));
@@ -1181,10 +1198,16 @@ function gravarCache_(linha, texto) {
   aba.getRange(linha, 1, 1, largura).setValues([valores]);
 }
 function lerCache_(linha) {
+  var k = "cache" + linha;
+  if (MEMO_[k] !== undefined) return MEMO_[k];
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CACHE);
-  if (!aba || aba.getLastRow() < linha) return "";
-  var n = Math.max(aba.getLastColumn(), 1);
-  return aba.getRange(linha, 1, 1, n).getValues()[0].map(function (x) { return x === null || x === undefined ? "" : String(x); }).join("");
+  var t = "";
+  if (aba && aba.getLastRow() >= linha) {
+    var n = Math.max(aba.getLastColumn(), 1);
+    t = aba.getRange(linha, 1, 1, n).getValues()[0].map(function (x) { return x === null || x === undefined ? "" : String(x); }).join("");
+  }
+  MEMO_[k] = t;
+  return t;
 }
 
 /* ------------------------------ previsão do tempo ------------------------------ */
@@ -1417,13 +1440,15 @@ function buscarJson_(url) {
 
 /** Previsões guardadas, por chave da fazenda. Versão anterior (uma só) vira a da primeira fazenda. */
 function lerPrevisoes_() {
+  if (MEMO_.previsoes && MEMO_.previsoesTexto === lerCache_(2)) return JSON.parse(MEMO_.previsoes);
   var t = lerCache_(2);
   var o;
   try { o = t ? JSON.parse(t) : null; } catch (e) { o = null; }
-  if (!o) return {};
-  if (o.porFazenda) return o.porFazenda;
-  if (o.dias) { var m = {}; m[lerFazendas_()[0].chave] = o; return m; }
-  return {};
+  var mapa = {};
+  if (o && o.porFazenda) mapa = o.porFazenda;
+  else if (o && o.dias) mapa[lerFazendas_()[0].chave] = o;
+  MEMO_.previsoesTexto = t; MEMO_.previsoes = JSON.stringify(mapa);
+  return mapa;
 }
 
 /** Previsão de uma fazenda (chave); sem chave, da primeira. */
@@ -1825,7 +1850,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-9";
+var VERSAO_SERVIDOR = "2026.10.16-10";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -1836,6 +1861,7 @@ function json_(o) {
 }
 
 function doGet(e) {
+  limparMemo_();
   try {
     return json_(doGet_((e && e.parameter) || {}));
   } catch (err) {
@@ -1874,6 +1900,7 @@ function doGet_(p) {
 }
 
 function doPost(e) {
+  limparMemo_();
   var corpo;
   try {
     corpo = JSON.parse((e && e.postData && e.postData.contents) || "{}");
@@ -1953,10 +1980,17 @@ function hojeLocal_() {
 /** Última leitura ao vivo com tudo que a estação mandou + tendência da pressão (3 h). */
 /** As últimas `n` linhas de LEITURAS de uma fazenda (chave; sem chave = a primeira). */
 function ultimasLeituras_(n, chave) {
+  var primeira0 = lerFazendas_()[0].chave;
+  var alvo0 = chave ? chaveFazenda_(chave) : primeira0;
+  var memo = MEMO_.ultimasLeituras || (MEMO_.ultimasLeituras = {});
+  if (memo[alvo0] && memo[alvo0].n >= n) return memo[alvo0].lista.slice(-n);
+  var lista = ultimasLeiturasDaAba_(Math.max(n, 200), alvo0, primeira0);
+  memo[alvo0] = { n: Math.max(n, 200), lista: lista };
+  return lista.slice(-n);
+}
+function ultimasLeiturasDaAba_(n, alvo, primeira) {
   var aba = abaLeituras_();
   if (!aba || aba.getLastRow() < 2) return [];
-  var primeira = lerFazendas_()[0].chave;
-  var alvo = chave ? chaveFazenda_(chave) : primeira;
   var total = aba.getLastRow() - 1;
   var saida = [];
   // lê em blocos de trás pra frente até juntar n linhas da fazenda
@@ -2068,7 +2102,7 @@ function dadosApp_(u) {
   fazendas.forEach(function (f) {
     var fc = comCoordenadas_(f);
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
-      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsoes[f.chave] || null,
+      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsaoParaApp_(previsoes[f.chave] || null, fc.fuso),
       // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
       previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso), sazonal: Motor.urlOpenMeteoSazonal(fc.latitude, fc.longitude, fc.fuso) } : null };
   });
@@ -2097,14 +2131,40 @@ function dadosApp_(u) {
   };
 }
 
+/**
+ * Só o que o app mostra: dias de ontem em diante, 10 dias de "modelos", as últimas 8 rodadas da tendência,
+ * as 50 horas a partir da hora atual, sem os 60 dias (ficam na aba PREVISAO 60 DIAS). Corta a resposta a
+ * uma fração do tamanho, e tamanho é o que mais pesa no celular.
+ */
+function previsaoParaApp_(p, fuso) {
+  if (!p) return null;
+  var agora = Motor.paraLocal(Date.now(), fuso);
+  var ontem = Motor.somarDias(agora.slice(0, 10), -1);
+  var horaCorte = agora.slice(0, 13) + ":00";
+  var q = {};
+  Object.keys(p).forEach(function (k) { if (k !== "longo" && k !== "dias" && k !== "horas") q[k] = p[k]; });
+  var nModelos = 0;
+  q.dias = (p.dias || []).filter(function (d) { return d.data >= ontem; }).map(function (d) {
+    var e = {};
+    Object.keys(d).forEach(function (k) { e[k] = d[k]; });
+    if (e.modelos) { nModelos++; if (nModelos > 10) delete e.modelos; }
+    if (e.tendencia && e.tendencia.pontos && e.tendencia.pontos.length > 8) {
+      var t = {}; Object.keys(e.tendencia).forEach(function (k) { t[k] = e.tendencia[k]; });
+      t.pontos = e.tendencia.pontos.slice(-8); e.tendencia = t;
+    }
+    return e;
+  });
+  q.horas = (p.horas || []).filter(function (h) { return h.quando >= horaCorte; }).slice(0, 50);
+  return q;
+}
+
 /** Muda quando há cálculo novo, leitura nova ou lançamento novo: o app só baixa tudo se mudou. */
 function hashDados_() {
   var r = lerResumo_();
   var ss = SpreadsheetApp.getActive();
   var n = function (nome) { var a = ss.getSheetByName(nome); return a ? a.getLastRow() : 0; };
-  var ult = ultimaLeitura_();
   var prev = lerPrevisao_();
-  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), n(ABA.LEITURAS), ult ? ult.quando : "", prev ? prev.atualizadoEm : "", n(ABA.NIVEIS), n(ABA.RESERVATORIOS)].join("|");
+  return [r ? r.calculadoEm : "", n(ABA.IRRIGACOES), n(ABA.UMIDADE), n(ABA.PIVOS), n(ABA.LEITURAS), prev ? prev.atualizadoEm : "", n(ABA.NIVEIS), n(ABA.RESERVATORIOS)].join("|");
 }
 
 function recalcularApp_() {
@@ -2746,11 +2806,18 @@ var CONFIG_APP_PADRAO = [
 
 /** Valor de uma chave da CONFIG APP (texto, "" se não existe). */
 function configApp_(chave) {
-  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CONFIG_APP);
-  if (!aba || aba.getLastRow() < 2) return "";
-  var vals = aba.getRange(2, 1, aba.getLastRow() - 1, 2).getValues();
-  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim().toUpperCase() === chave) return String(vals[i][1] == null ? "" : vals[i][1]).trim();
-  return "";
+  if (!MEMO_.configApp) {
+    var mapa = {};
+    var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CONFIG_APP);
+    if (aba && aba.getLastRow() >= 2) {
+      aba.getRange(2, 1, aba.getLastRow() - 1, 2).getValues().forEach(function (l) {
+        var k = String(l[0]).trim().toUpperCase();
+        if (k && !(k in mapa)) mapa[k] = String(l[1] == null ? "" : l[1]).trim();
+      });
+    }
+    MEMO_.configApp = mapa;
+  }
+  return MEMO_.configApp[chave] || "";
 }
 
 function loginExigido_() {
