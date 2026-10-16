@@ -307,6 +307,10 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-resumo b{font-size:16px;color:var(--blue);font-variant-numeric:tabular-nums}
 .prev-resumo em{font-style:normal;font-size:11px;color:var(--muted)}
 .prev-amanha{margin-top:8px}
+.prev-placar{margin-top:8px}.prev-placar .svg{width:13px;height:13px;vertical-align:-2px}
+.prev-placar-tab tr.melhor td{font-weight:700}
+.peso-barra{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;position:relative;overflow:hidden}
+.peso-barra::after{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:var(--blue)}
 .prev-det summary{margin-top:4px}
 .prev-tab td.esq{text-align:left;white-space:normal;min-width:120px}
 .prev-tab tr.chuva td{background:var(--blue-soft)}

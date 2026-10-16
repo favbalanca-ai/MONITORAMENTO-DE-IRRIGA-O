@@ -38,8 +38,12 @@ export interface DiaPrevisao {
   faixaChuva?: FaixaChuva;
   /** Conjunto (ensemble) do ECMWF: chance contada nas 51 rodadas e faixa. Quando existe, `probPct` vem dele. */
   ensemble?: EnsembleDia;
-  /** Chance que o modelo "melhor ajuste" dava, guardada quando o ensemble assume `probPct`. */
+  /** Chance que o modelo "melhor ajuste" dava, guardada quando o ensemble ou o consenso assume `probPct`. */
   probModeloPct?: number | null;
+  /** Consenso ponderado pelo placar dos modelos (quando há história suficiente): `chuvaMm` passa a ser ele. */
+  consenso?: { chuvaMm: number; probPct: number | null; tmax: number | null; tmin: number | null; modelos: number };
+  /** Chuva do "melhor ajuste", guardada quando o consenso assume `chuvaMm`. */
+  modeloMm?: number | null;
   /** Como a previsão deste dia mudou de uma rodada para outra (a planilha anexa, do histórico). */
   tendencia?: TendenciaPrevisao;
   /** Texto do INMET por turno ("manhã: sol; tarde: pancadas de chuva…"). */

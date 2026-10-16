@@ -1533,6 +1533,153 @@ var Motor = (function () {
           return fim >= l.primeiraLuz && h <= l.ultimaLuz;
       };
   }
+  // ---- src/motor/pesos.ts ----
+  const dias = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+  const r2 = (x) => Math.round(x * 100) / 100;
+  /** Calcula o placar e os pesos. `hoje` é a data local; só entram alvos anteriores a hoje. */
+  function calcularPesos(registros, observacoes, hoje, op = {}) {
+      const janela = op.janelaDias ?? 30, meiaVida = op.meiaVidaDias ?? 7, antMax = op.antecedenciaMax ?? 7, minimo = op.minimoDias ?? 5;
+      const obs = new Map();
+      for (const o of observacoes)
+          obs.set(o.data, o);
+      const acum = new Map();
+      const alvosGerais = new Set();
+      for (const r of registros) {
+          if (r.alvo >= hoje)
+              continue;
+          const idade = dias(r.alvo, hoje);
+          if (idade > janela)
+              continue;
+          const ant = dias(r.emissao, r.alvo);
+          if (ant < 1 || ant > antMax)
+              continue;
+          const o = obs.get(r.alvo);
+          if (!o)
+              continue;
+          const w = Math.pow(0.5, idade / meiaVida);
+          let a = acum.get(r.modelo);
+          if (!a) {
+              a = { wChuva: 0, eChuva: 0, wTemp: 0, eTemp: 0, wSim: 0, acertos: 0, n: 0, alvos: new Set() };
+              acum.set(r.modelo, a);
+          }
+          let contou = false;
+          if (r.chuvaMm !== null && o.chuvaMm !== null) {
+              a.wChuva += w;
+              a.eChuva += w * Math.abs(r.chuvaMm - o.chuvaMm);
+              a.wSim += w;
+              if ((r.chuvaMm >= 1) === (o.chuvaMm >= 1))
+                  a.acertos += w;
+              contou = true;
+          }
+          const erros = [];
+          if (r.tmax !== null && o.tmax !== null)
+              erros.push(Math.abs(r.tmax - o.tmax));
+          if (r.tmin !== null && o.tmin !== null)
+              erros.push(Math.abs(r.tmin - o.tmin));
+          if (erros.length) {
+              a.wTemp += w;
+              a.eTemp += (w * erros.reduce((s, x) => s + x, 0)) / erros.length;
+              contou = true;
+          }
+          if (contou) {
+              a.n++;
+              a.alvos.add(r.alvo);
+              alvosGerais.add(r.alvo);
+          }
+      }
+      const placar = [];
+      for (const [modelo, a] of acum) {
+          if (!a.n)
+              continue;
+          placar.push({
+              modelo, n: a.n,
+              maeChuva: a.wChuva > 0 ? r2(a.eChuva / a.wChuva) : null,
+              maeTemp: a.wTemp > 0 ? r2(a.eTemp / a.wTemp) : null,
+              acertoChuvaPct: a.wSim > 0 ? Math.round((100 * a.acertos) / a.wSim) : null,
+              peso: 0,
+          });
+      }
+      const suficiente = alvosGerais.size >= minimo && placar.length >= 2;
+      if (!suficiente) {
+          // sem história: todos iguais (a lista pode estar vazia; quem consome trata)
+          const n = placar.length || 1;
+          for (const p of placar)
+              p.peso = r2(1 / n);
+          return { calculadoEm: hoje, diasComparados: alvosGerais.size, suficiente: false, modelos: placar.sort((x, y) => x.modelo.localeCompare(y.modelo)) };
+      }
+      // pontuação: quanto menor o erro em relação à mediana dos modelos, maior o peso (chuva 60 %, temperatura 40 %)
+      const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
+      const medChuva = mediana(placar.map((p) => p.maeChuva).filter((x) => x !== null));
+      const medTemp = mediana(placar.map((p) => p.maeTemp).filter((x) => x !== null));
+      const razao = (ref, x) => (x === null ? 1 : (ref + 0.5) / (x + 0.5)); // +0,5 evita dividir por zero e exageros
+      const bruto = placar.map((p) => {
+          const s = 0.6 * razao(medChuva, p.maeChuva) + 0.4 * razao(medTemp, p.maeTemp);
+          return Math.max(0.33, Math.min(3, s * s)); // ao quadrado para separar; entre 1/3 e 3× do peso igual
+      });
+      const soma = bruto.reduce((s, x) => s + x, 0);
+      placar.forEach((p, i) => { p.peso = r2(bruto[i] / soma); });
+      return { calculadoEm: hoje, diasComparados: alvosGerais.size, suficiente: true, modelos: placar.sort((x, y) => y.peso - x.peso) };
+  }
+  /**
+   * Consenso ponderado de um dia: média dos modelos pela pontuação do placar. Modelo sem número no dia fica de
+   * fora e os pesos se renormalizam. A chance = parcela ponderada dos modelos com ≥ 1 mm, misturada meio a meio
+   * com o ensemble quando ele existe.
+   */
+  function consensoPonderado(dia, pesos) {
+      if (!dia.modelos || dia.modelos.length < 2)
+          return null;
+      const peso = new Map();
+      if (pesos && pesos.suficiente)
+          for (const p of pesos.modelos)
+              peso.set(p.modelo, p.peso);
+      let sw = 0, chuva = 0, swT = 0, tmax = 0, tmin = 0, comChuva = 0, n = 0;
+      for (const m of dia.modelos) {
+          const w = peso.size ? (peso.get(m.nome) ?? 0.5 / peso.size) : 1; // modelo novo no placar: meio peso
+          if (m.chuvaMm !== null) {
+              sw += w;
+              chuva += w * m.chuvaMm;
+              if (m.chuvaMm >= 1)
+                  comChuva += w;
+              n++;
+          }
+          if (m.tmax !== null && m.tmin !== null) {
+              swT += w;
+              tmax += w * m.tmax;
+              tmin += w * m.tmin;
+          }
+      }
+      if (!sw)
+          return null;
+      const r1 = (x) => Math.round(x * 10) / 10;
+      let prob = Math.round((100 * comChuva) / sw);
+      if (dia.ensemble)
+          prob = Math.round((dia.ensemble.probPct + prob) / 2);
+      return { chuvaMm: r1(chuva / sw), probPct: prob, tmax: swT ? r1(tmax / swT) : null, tmin: swT ? r1(tmin / swT) : null, modelos: n };
+  }
+  /**
+   * Aplica o consenso aos dias: `chuvaMm`, `probPct`, `tmax` e `tmin` passam a ser os ponderados e os valores
+   * do "melhor ajuste" ficam guardados em `modeloMm`/`probModeloPct`. Sem placar suficiente, não mexe.
+   */
+  function aplicarPesos(dias, pesos) {
+      if (!pesos || !pesos.suficiente)
+          return dias;
+      return dias.map((d) => {
+          const c = consensoPonderado(d, pesos);
+          if (!c)
+              return d;
+          const e = { ...d, consenso: c, modeloMm: d.chuvaMm, chuvaMm: c.chuvaMm };
+          if (c.probPct !== null) {
+              if (e.probModeloPct === undefined)
+                  e.probModeloPct = d.probPct;
+              e.probPct = c.probPct;
+          }
+          if (c.tmax !== null && c.tmin !== null) {
+              e.tmax = c.tmax;
+              e.tmin = c.tmin;
+          }
+          return e;
+      });
+  }
   // ---- src/motor/ciclo.ts ----
   /**
    * Resumo meteorológico do ciclo de uma área (pivô ou talhão): graus-dia, horas de luz, chuva, ET₀ e extremos
@@ -2388,5 +2535,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

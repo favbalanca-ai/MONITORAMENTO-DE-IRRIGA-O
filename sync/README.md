@@ -55,7 +55,11 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      Open-Meteo (pela latitude/longitude) com **9 modelos** — melhor ajuste, ECMWF (Europa), GFS (EUA), ICON
      (Alemanha), GEM (Canadá), Météo-France, UKMO (Reino Unido), JMA (Japão) e ECMWF AIFS (IA) — mais o texto
      do INMET (pelo município) e, quando o app manda, o **ensemble do ECMWF** (51 rodadas): a chance de chuva
-     passa a ser contada nas rodadas (≥ 1 mm) e a aba ganha p10/p50/p90 e a chance do modelo. O app manda também a
+     passa a ser contada nas rodadas (≥ 1 mm) e a aba ganha p10/p50/p90 e a chance do modelo. **Placar dos modelos:** cada rodada grava
+     na aba **PREVISAO MODELOS** o que cada modelo previu (1 a 7 dias à frente, 37 dias guardados) e compara com
+     a aba CLIMA da fazenda (`Motor.calcularPesos`: erro médio de chuva e de temperatura, ponderado pela idade com
+     meia-vida de 7 dias, janela de 30 dias); a aba **PESOS MODELOS** mostra o placar e, com 5 dias medidos, a
+     previsão gravada passa a ser o consenso ponderado (`Motor.aplicarPesos`). O app manda também a
      **previsão sazonal do NCEP CFSv2** (61 dias, média de 4 rodadas): a aba **PREVISAO 60 DIAS** junta os dias
      dos modelos com o sazonal; sem sazonal na rodada, fica o da rodada anterior. Por dia: chuva, chance,
      tempo, faixa mín–máx entre os modelos e quantos veem chuva, Tmin/Tmax, UR, vento, rajada, ET₀, radiação,

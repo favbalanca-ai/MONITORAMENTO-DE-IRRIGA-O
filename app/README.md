@@ -14,7 +14,11 @@ feitos sem internet.
   **ensemble do ECMWF**: 51 rodadas, de onde sai a chance de chuva mostrada e a faixa p10–p90 de cada dia). A previsão sazonal do NCEP (CFSv2, 60 dias) também é buscada pelo celular, mas só vai para a aba
   PREVISAO 60 DIAS da planilha (o cartão no app foi retirado a pedido da dona) — e, em
   "Detalhes", 14 dias com UR, vento/rajada, ET₀, horas de sol e UV e a tabela de chuva modelo a modelo.
-  Totais de chuva × ET₀ (saldo) em 7 e 14 dias. **Tendência** de cada dia: o que as rodadas anteriores
+  **Placar dos modelos**: a planilha compara o que cada modelo previu (1 a 7 dias antes) com o que a estação
+  mediu e dá peso a quem acerta mais nos últimos 30 dias (erros recentes pesam mais); com 5 dias medidos, a
+  chuva, a chance e a temperatura de cada dia passam a ser o **consenso ponderado** (o "melhor ajuste" fica entre
+  parênteses nos detalhes) e a tabela do placar mostra peso, erro de chuva, erro de temperatura e acerto
+  chove/não chove por modelo. Totais de chuva × ET₀ (saldo) em 7 e 14 dias. **Tendência** de cada dia: o que as rodadas anteriores
   (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
   confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
   chuva prevista cobre o déficit. **O próprio app busca o Open-Meteo** (o Open-Meteo bloqueia os endereços

@@ -564,6 +564,9 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   await page.getByText(/Detalhes dos 6 dias e comparação dos modelos/).click();
   await page.getByText("Chuva por modelo (mm)").waitFor();
   assert.deepEqual(await page.locator(".prev-modelos tbody tr td:first-child").allInnerTexts(), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France"]);
+  // placar dos modelos: sem nenhum dia medido ainda, só o aviso (a tabela aparece quando há comparações)
+  await page.getByText(/Placar dos modelos: 0 de 5 dias medidos/).waitFor();
+  assert.equal(await page.locator(".prev-placar-tab").count(), 0);
   const tabPrev = await page.locator(".prev-tab").first().innerText();
   assert.match(tabPrev, /ter 10\/02\s+🌧️ Chuva fraca\s+8,1 mm\s+65%\s+–\s+65% → 65% · estável\s+5\/6 · 0–12 mm\s+18–28°\s+71%\s+15 \(30\) km\/h\s+3,9\s+9,5 h\s+9/);
   assert.equal(await page.locator(".prev-tab .spark-tend").count(), 6);

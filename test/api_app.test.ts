@@ -590,6 +590,51 @@ test("sincronização leve: o pedido \"dados\" lê cada aba uma vez só, o \"has
   assert.ok(JSON.stringify(d).length < 90000, "resposta com " + JSON.stringify(d).length + " caracteres");
 });
 
+test("placar dos modelos: depois de 5 dias medidos, quem acertou mais ganha peso e a previsão vira o consenso ponderado", () => {
+  const amb = pronto();
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmet = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : url.includes("inmet") ? { code: 200, corpo: inmet } : { code: 500, corpo: {} });
+  // a estação mede exatamente o que o ECMWF previu (fixture: 1,2× o melhor ajuste); GEM nunca vê chuva, GFS vê metade
+  const clima = amb.aba("CLIMA");
+  const d = om.daily;
+  for (let i = 7; i < 14; i++) clima.appendRow([d.time[i], d.temperature_2m_max_ecmwf_ifs025[i], d.temperature_2m_min_ecmwf_ifs025[i], 25, 60, 2, 20, d.precipitation_sum_ecmwf_ifs025[i], 144, "", 4.5, 4.2, 8, 12.5, "Água Viva"]);
+  // 7 rodadas, uma por dia (08 a 14/02)
+  for (let r = 0; r < 7; r++) {
+    amb.agoraMs = deLocal("2026-02-" + String(8 + r).padStart(2, "0") + "T09:00:00", "America/Sao_Paulo");
+    amb.chamar("atualizarPrevisao");
+  }
+  const modelos = amb.aba("PREVISAO MODELOS").objetos();
+  assert.ok(modelos.length > 60, "registros por modelo: " + modelos.length); // o fixture só vai até 14/02
+  assert.ok(modelos.every((l) => String(l["Dia previsto"]).slice(0, 10) > String(l["Emitida em"]).slice(0, 10)));
+  const placar = amb.aba("PESOS MODELOS").objetos();
+  assert.equal(placar.length, 6);
+  assert.equal(placar[0]!["Modelo"], "ECMWF"); // maior peso primeiro
+  assert.equal(placar[0]!["Vale?"], "SIM");
+  assert.ok(Number(placar[0]!["Peso (%)"]) > Number(placar[placar.length - 1]!["Peso (%)"]));
+  assert.ok(Number(placar[0]!["Erro chuva (mm)"]) < 0.2, "ECMWF erro " + placar[0]!["Erro chuva (mm)"]);
+  assert.ok(Number(placar.find((l) => l["Modelo"] === "GEM")!["Acerto chove/não chove (%)"]) < 100);
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const dados = amb.get({ acao: "dados", s: adm });
+  const pv = dados.previsao;
+  assert.equal(pv.pesos.suficiente, true);
+  assert.ok(pv.pesos.diasComparados >= 5);
+  assert.ok(pv.fontes.includes("consenso ponderado"));
+  // o dia 14/02: melhor ajuste 15 mm; consenso puxa para o ECMWF (18 mm) e fica acima de 15
+  const dia14 = pv.dias.find((x: { data: string }) => x.data === "2026-02-14");
+  assert.equal(dia14.modeloMm, 15);
+  assert.ok(dia14.chuvaMm > 15 && dia14.chuvaMm <= 18, "consenso " + dia14.chuvaMm);
+  assert.equal(dia14.consenso.modelos, 4); // GEM e Météo-France não chegam a 14/02 no fixture
+  assert.equal(amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-14")!["Melhor ajuste (mm)"], 15);
+  // primeiro dia (sem história): pesos iguais e nada de consenso
+  const amb2 = pronto();
+  amb2.respostaHttp = amb.respostaHttp;
+  const p1 = amb2.chamar("atualizarPrevisao") as { pesos: { suficiente: boolean; diasComparados: number }; dias: { consenso?: unknown }[] };
+  assert.equal(p1.pesos.suficiente, false);
+  assert.equal(p1.pesos.diasComparados, 0);
+  assert.ok(p1.dias.every((x) => x.consenso === undefined));
+});
+
 test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas passam de 50.000 caracteres — o CACHE vai em pedaços", () => {
   const amb = pronto();
   amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);
