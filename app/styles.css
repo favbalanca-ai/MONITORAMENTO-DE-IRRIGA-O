@@ -309,6 +309,7 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-amanha{margin-top:8px}
 .prev-placar{margin-top:8px}.prev-placar .svg{width:13px;height:13px;vertical-align:-2px}
 .prev-placar-tab tr.melhor td{font-weight:700}
+tr.incompleto td{color:var(--muted)}
 .peso-barra{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;position:relative;overflow:hidden}
 .peso-barra::after{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:var(--blue)}
 .prev-det summary{margin-top:4px}

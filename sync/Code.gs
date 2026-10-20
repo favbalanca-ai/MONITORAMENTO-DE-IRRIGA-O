@@ -23,6 +23,7 @@ var ABA = {
   PREVISAO_HIST: "PREVISAO HISTORICO",
   PREVISAO_60: "PREVISAO 60 DIAS",
   PREVISAO_MODELOS: "PREVISAO MODELOS",
+  CLIMA_INMET: "CLIMA INMET",
   PESOS: "PESOS MODELOS",
   FAZENDAS: "FAZENDAS",
   RESERVATORIOS: "RESERVATORIOS",
@@ -60,6 +61,7 @@ var COLUNAS_FAZENDAS = [
   ["chuvaMinima", "Chuva mínima que conta (mm)"],
   ["pontaInicio", "Ponta — início (h)"],
   ["pontaFim", "Ponta — fim (h)"],
+  ["inmet", "Estação INMET (código, ex.: A036)"],
 ];
 
 var PASTA_BACKUP = "BACKUP";
@@ -144,6 +146,7 @@ var CABECALHOS = {
   NIVEIS: ["Data", "Reservatório", "Nível (%)", "Obs.", "Por", "ID", "Fazenda"],
   PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
   PREVISAO_MODELOS: ["Fazenda", "Emitida em", "Dia previsto", "Modelo", "Chuva (mm)", "Tmax", "Tmin"],
+  CLIMA_INMET: ["Data", "Chuva (mm)", "Tmax", "Tmin", "Horas medidas", "Estação", "Fazenda", "Baixado em"],
   PESOS: ["Fazenda", "Modelo", "Peso (%)", "Erro chuva (mm)", "Erro temperatura (°C)", "Acerto chove/não chove (%)", "Comparações", "Dias comparados", "Calculado em", "Vale?"],
   PREVISAO_60: ["Data", "Fonte", "Chuva (mm)", "Chance (%)", "Tmin", "Tmax", "Radiação (MJ/m²)", "Atualizado em", "Fazenda"],
   PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)"],
@@ -173,6 +176,8 @@ function onOpen() {
     .addItem("Recuperar buracos (período)", "menuRecuperarPeriodo")
     .addItem("Importar METEO de outra planilha", "menuImportarMeteo")
     .addItem("🌧 Atualizar previsão do tempo", "menuPrevisao")
+    .addItem("🌧 Estações INMET próximas", "menuEstacoesInmet")
+    .addItem("🌧 Baixar medições do INMET", "menuClimaInmet")
     .addItem("📄 Relatório de hoje em PDF", "menuPdf")
     .addSeparator()
     .addItem("📲 Telegram: configurar bot", "menuTelegramToken")
@@ -224,6 +229,7 @@ function instalar() {
   criarAbaSeFaltar_(ss, ABA.PREVISAO_60, CABECALHOS.PREVISAO_60);
   criarAbaSeFaltar_(ss, ABA.PREVISAO_MODELOS, CABECALHOS.PREVISAO_MODELOS);
   criarAbaSeFaltar_(ss, ABA.PESOS, CABECALHOS.PESOS);
+  criarAbaSeFaltar_(ss, ABA.CLIMA_INMET, CABECALHOS.CLIMA_INMET);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
   abaUsuarios_();
@@ -343,6 +349,7 @@ function normalizarCfg_(cfg) {
   cfg.ponta = { inicioH: cfg.pontaInicio === null ? 18 : cfg.pontaInicio, fimH: cfg.pontaFim === null ? 21 : cfg.pontaFim };
   cfg.fuso = String(cfg.fuso || "America/Sao_Paulo").trim();
   cfg.grupoChuva = String(cfg.grupoChuva || "").trim() || "rainfall";
+  cfg.inmet = String(cfg.inmet || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   cfg.emails = String(cfg.emails || "").split(/[,;\s]+/).filter(function (e) { return e.indexOf("@") > 0; });
   cfg.telegram = String(cfg.telegram == null ? "" : cfg.telegram).split(/[,;\s]+/).filter(function (t) { return /^-?\d{5,}$/.test(t); });
   cfg.nome = String(cfg.nome || FAZENDA_PADRAO).trim() || FAZENDA_PADRAO;
@@ -1299,6 +1306,13 @@ function atualizarPrevisao(fornecidos) {
   var mapa = lerPrevisoes_();
   var linhas = [], resumoLog = [], falhou = false;
   fazendas.forEach(function (cfg) {
+    // medições do INMET do município: baixa uma vez por dia (antes da comparação dos modelos)
+    if (cfg.inmet) {
+      var ultimoInmet = lerClimaInmet_(cfg).length ? inmetBaixadoEm_(cfg) : "";
+      if (ultimoInmet.slice(0, 10) !== Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10)) {
+        try { climaInmet_(cfg); } catch (eI) { resumoLog.push(cfg.nome + " INMET: " + eI.message); }
+      }
+    }
     var r = previsaoDaFazenda_(cfg, fornecidos ? fornecidos[cfg.chave] : null);
     var anterior = mapa[cfg.chave];
     // Open-Meteo falhou nesta rodada (429…): uma previsão boa anterior vale mais que só o texto do INMET
@@ -1376,6 +1390,95 @@ function atualizarPrevisao(fornecidos) {
   return mapa[fazendas[0].chave] || null;
 }
 
+/* ------------------------------ estações automáticas do INMET ------------------------------ */
+
+var DIAS_CLIMA_INMET = 40;
+
+/** Menu: as 5 estações automáticas do INMET mais próximas de cada fazenda, para escolher o código. */
+function menuEstacoesInmet() {
+  var lista;
+  try { lista = Motor.lerEstacoesInmet(buscarJson_(Motor.INMET_ESTACOES_URL)); }
+  catch (e) { aviso_("Não consegui baixar a lista de estações do INMET: " + e.message); return; }
+  var linhas = [];
+  lerFazendas_().forEach(function (f) {
+    var fc = comCoordenadas_(f);
+    if (fc.latitude === null || fc.longitude === null) { linhas.push(f.nome + ": sem latitude/longitude."); return; }
+    linhas.push(f.nome + (f.inmet ? " (hoje: " + f.inmet + ")" : "") + ":");
+    Motor.estacoesProximas(lista, fc.latitude, fc.longitude, 5).forEach(function (e) {
+      linhas.push("   " + e.codigo + " — " + e.nome + "/" + e.uf + " · " + e.distanciaKm + " km · " + e.situacao);
+    });
+  });
+  linhas.push("", "Copie o código escolhido para a coluna \"Estação INMET (código)\" da aba FAZENDAS e rode \"Baixar medições do INMET\".");
+  log_("INMET estações", "ok", linhas.join(" | "));
+  aviso_(linhas.join("\n"));
+}
+
+/** Baixa as medições horárias da estação INMET da fazenda (últimos N dias) e grava por dia local na aba CLIMA INMET. */
+function climaInmet_(cfg, dias) {
+  if (!cfg.inmet) return [];
+  var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
+  var ini = Motor.somarDias(hoje, -(dias || DIAS_CLIMA_INMET));
+  var fim = Motor.somarDias(hoje, 1); // o dia local de hoje avança pela madrugada UTC de amanhã
+  var medidos = Motor.lerInmetEstacao(buscarJson_(Motor.urlInmetEstacao(ini, fim, cfg.inmet)), cfg.fuso);
+  var ss = SpreadsheetApp.getActive();
+  var aba = criarAbaSeFaltar_(ss, ABA.CLIMA_INMET, CABECALHOS.CLIMA_INMET);
+  var cab = CABECALHOS.CLIMA_INMET;
+  var outras = aba.getLastRow() < 2 ? [] : aba.getRange(2, 1, aba.getLastRow() - 1, cab.length).getValues().filter(function (l) { return l[0] && l[6] && chaveFazenda_(String(l[6])) !== cfg.chave; });
+  var agora = Motor.paraLocal(Date.now(), cfg.fuso);
+  var v = function (x) { return x === null || x === undefined ? "" : x; };
+  var minhas = medidos.filter(function (d) { return d.data >= ini; }).map(function (d) { return [d.data, v(d.chuvaMm), v(d.tmax), v(d.tmin), d.horas, cfg.inmet, cfg.nome, agora]; });
+  escreverTabela_(ABA.CLIMA_INMET, cab, outras.concat(minhas));
+  limparMemo_("climaInmet");
+  return medidos;
+}
+
+/** Quando a aba CLIMA INMET foi baixada pela última vez para a fazenda ("" = nunca). */
+function inmetBaixadoEm_(cfg) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CLIMA_INMET);
+  if (!aba || aba.getLastRow() < 2) return "";
+  var vals = aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.CLIMA_INMET.length).getValues();
+  var ult = "";
+  vals.forEach(function (l) { if (l[6] && chaveFazenda_(String(l[6])) === cfg.chave && String(l[7]) > ult) ult = String(l[7]); });
+  return ult;
+}
+
+/** Medições do INMET guardadas para a fazenda (aba CLIMA INMET). */
+function lerClimaInmet_(cfg) {
+  if (!cfg.inmet) return [];
+  var memo = MEMO_.climaInmet || (MEMO_.climaInmet = {});
+  if (memo[cfg.chave]) return memo[cfg.chave];
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.CLIMA_INMET);
+  var out = [];
+  if (aba && aba.getLastRow() >= 2) {
+    aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.CLIMA_INMET.length).getValues().forEach(function (l) {
+      if (!l[0] || !l[6] || chaveFazenda_(String(l[6])) !== cfg.chave) return;
+      var n = function (x) { return x === "" || x === null || x === undefined ? null : Number(x); };
+      out.push({ data: l[0] instanceof Date ? dataIso_(l[0], cfg.fuso) : String(l[0]).slice(0, 10), chuvaMm: n(l[1]), tmax: n(l[2]), tmin: n(l[3]), horas: Number(l[4]) || 0 });
+    });
+  }
+  out.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+  memo[cfg.chave] = out;
+  return out;
+}
+
+/** Gatilho diário (junto da previsão) e menu: baixa o INMET de todas as fazendas que têm código. */
+function atualizarClimaInmet() {
+  var ok = [], erros = [];
+  lerFazendas_().forEach(function (f) {
+    if (!f.inmet) return;
+    try { ok.push(f.nome + ": " + climaInmet_(f).length + " dias (" + f.inmet + ")"); }
+    catch (e) { erros.push(f.nome + " (" + f.inmet + "): " + e.message); }
+  });
+  if (!ok.length && !erros.length) return null;
+  log_("INMET medições", erros.length ? "parcial" : "ok", ok.concat(erros).join(" / "));
+  return { ok: ok, erros: erros };
+}
+function menuClimaInmet() {
+  var r = atualizarClimaInmet();
+  if (!r) { aviso_("Nenhuma fazenda tem o código da estação INMET na aba FAZENDAS. Use \"Estações INMET próximas\" para escolher."); return; }
+  aviso_(r.ok.concat(r.erros).join("\n"));
+}
+
 /* ------------------------------ placar dos modelos ------------------------------ */
 
 var DIAS_PLACAR = 30;          // quantos dias de comparação entram no placar
@@ -1421,7 +1524,9 @@ function placarModelos_(cfg, previsao) {
   mantidas.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : a[3] < b[3] ? -1 : a[3] > b[3] ? 1 : 0; });
   escreverTabela_(ABA.PREVISAO_MODELOS, cab, mantidas);
   // o que a estação mediu (aba CLIMA, por fazenda)
-  var obs = climaHistorico_(DIAS_PLACAR + 2, cfg.fuso, cfg.chave).map(function (c) { return { data: c.data, chuvaMm: c.chuva, tmax: c.tmax, tmin: c.tmin }; });
+  var obsEstacao = climaHistorico_(DIAS_PLACAR + 2, cfg.fuso, cfg.chave).map(function (c) { return { data: c.data, chuvaMm: c.chuva, tmax: c.tmax, tmin: c.tmin }; });
+  // a estação da fazenda manda; dias que ela não tem vêm da estação INMET do município (aba CLIMA INMET)
+  var obs = Motor.juntarObservacoes(obsEstacao, lerClimaInmet_(cfg));
   var pesos = Motor.calcularPesos(registros, obs, emissao, { janelaDias: DIAS_PLACAR, antecedenciaMax: ANTECEDENCIA_PLACAR });
   // aba PESOS MODELOS: todas as fazendas (as outras ficam como estavam)
   var abaP = criarAbaSeFaltar_(ss, ABA.PESOS, CABECALHOS.PESOS);
@@ -1919,7 +2024,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-11";
+var VERSAO_SERVIDOR = "2026.10.16-12";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2172,6 +2277,7 @@ function dadosApp_(u) {
     var fc = comCoordenadas_(f);
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
       ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsaoParaApp_(previsoes[f.chave] || null, fc.fuso),
+      inmet: f.inmet ? { codigo: f.inmet, dias: lerClimaInmet_(f).slice(-8) } : null,
       // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
       previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso), sazonal: Motor.urlOpenMeteoSazonal(fc.latitude, fc.longitude, fc.fuso) } : null };
   });

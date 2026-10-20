@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-13';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-14';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -587,6 +587,7 @@ V.clima = function () {
   return (cardEstacao() || '<div class="card vazio">A estação ainda não mandou nenhuma leitura.</div>') +
     cardRosa24h() +
     (cardPrevisao(r.dia) || cardSemPrevisao()) +
+    '<div id="card-inmet">' + cardInmet() + '</div>' +
     '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
     '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>';
 };
@@ -597,7 +598,7 @@ V.clima_depois = async function () {
   if (!ps.length || !syncUrl()) return;
   try {
     const r = await chamar('GET', { acao: 'historico', pivo: ps[0].nome, dias: 30, fazenda: chaveAtual() });
-    if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; const el = $('#grafico-clima'); if (el) el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; }
+    if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; const el = $('#grafico-clima'); if (el) el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; const ci = $('#card-inmet'); if (ci) ci.innerHTML = cardInmet(); }
   } catch (e) { const el = $('#grafico-clima'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 };
 /** Cartão de um pivô na tela Hoje: o essencial em cima, o resto em "detalhes". */
@@ -817,6 +818,28 @@ function cardPrevisao(dia) {
     tira + resumo + linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
     (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
+}
+
+/* ================= chuva confirmada pelo INMET (estação automática do município) ================= */
+/** Últimos dias: estação da fazenda × estação INMET mais próxima. Confirma a chuva e alimenta o placar. */
+function cardInmet() {
+  const e = estacao(), inm = e && e.inmet; if (!inm || !inm.dias || !inm.dias.length) return '';
+  const porDia = {}; (CLIMA || []).forEach((c) => { porDia[c.data] = c; });
+  const dias = inm.dias.slice(-7);
+  const linhas = dias.map((d) => {
+    const c = porDia[d.data];
+    const dif = c && c.chuva != null && d.chuvaMm != null ? d.chuvaMm - c.chuva : null;
+    return '<tr' + (d.horas < 20 ? ' class="incompleto"' : '') + '><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td>' +
+      '<td>' + (c && c.chuva != null ? br(c.chuva, 1) + ' mm' : '<span class="muted">–</span>') + '</td>' +
+      '<td>' + (d.chuvaMm == null ? '–' : br(d.chuvaMm, 1) + ' mm') + (d.horas < 20 ? ' <small>(' + d.horas + ' h)</small>' : '') + '</td>' +
+      '<td>' + (dif == null ? '–' : (dif > 0 ? '+' : '') + br(dif, 1)) + '</td>' +
+      '<td>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°' : '–') + '</td></tr>';
+  }).join('');
+  const temEstacao = dias.some((d) => porDia[d.data] && porDia[d.data].chuva != null);
+  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Chuva confirmada pelo INMET</h2><span class="muted">estação ' + esc(inm.codigo) + '</span></div>' +
+    '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Fazenda</th><th>INMET</th><th>Dif.</th><th>INMET °C</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+    '<p class="muted" style="margin-top:8px">A estação do INMET fica no município, não na lavoura: diferença de alguns milímetros em chuva de verão é normal. Diferença grande e repetida sugere pluviômetro entupido ou mal nivelado. ' +
+    (temEstacao ? 'A fazenda manda no placar dos modelos; o INMET preenche os dias em que ela falhou.' : 'Sem leituras da fazenda nesses dias: o placar dos modelos está usando o INMET.') + '</p></div>';
 }
 
 /* ================= 60 dias: modelos (14 d) + sazonal CFSv2 ================= */

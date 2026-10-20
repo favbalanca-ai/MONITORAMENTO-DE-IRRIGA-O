@@ -59,7 +59,12 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      na aba **PREVISAO MODELOS** o que cada modelo previu (1 a 7 dias à frente, 37 dias guardados) e compara com
      a aba CLIMA da fazenda (`Motor.calcularPesos`: erro médio de chuva e de temperatura, ponderado pela idade com
      meia-vida de 7 dias, janela de 30 dias); a aba **PESOS MODELOS** mostra o placar e, com 5 dias medidos, a
-     previsão gravada passa a ser o consenso ponderado (`Motor.aplicarPesos`). O app manda também a
+     previsão gravada passa a ser o consenso ponderado (`Motor.aplicarPesos`). **Estação INMET do município:** coluna
+     "Estação INMET (código, ex.: A036)" na aba FAZENDAS; o menu **🌧 Estações INMET próximas** lista as 5
+     estações automáticas mais perto de cada fazenda (apitempo.inmet.gov.br) e **🌧 Baixar medições do INMET**
+     grava chuva, Tmax e Tmin por dia local na aba **CLIMA INMET** (40 dias; a rodada da previsão baixa sozinha uma
+     vez por dia). No placar, a estação da fazenda manda e o INMET preenche os dias em que ela falhou; o app mostra
+     a tabela "Chuva confirmada pelo INMET" (fazenda × INMET, últimos 7 dias). O app manda também a
      **previsão sazonal do NCEP CFSv2** (61 dias, média de 4 rodadas): a aba **PREVISAO 60 DIAS** junta os dias
      dos modelos com o sazonal; sem sazonal na rodada, fica o da rodada anterior. Por dia: chuva, chance,
      tempo, faixa mín–máx entre os modelos e quantos veem chuva, Tmin/Tmax, UR, vento, rajada, ET₀, radiação,

@@ -635,6 +635,54 @@ test("placar dos modelos: depois de 5 dias medidos, quem acertou mais ganha peso
   assert.ok(p1.dias.every((x) => x.consenso === undefined));
 });
 
+test("INMET: lista as estações próximas, baixa as medições da estação escolhida e usa no placar quando a fazenda não mediu", () => {
+  const amb = pronto();
+  const estacoes = [
+    { CD_ESTACAO: "A036", DC_NOME: "POSSE", SG_ESTADO: "GO", VL_LATITUDE: "-14.09", VL_LONGITUDE: "-46.37", CD_SITUACAO: "Operante" },
+    { CD_ESTACAO: "A545", DC_NOME: "CHAPADA GAUCHA", SG_ESTADO: "MG", VL_LATITUDE: "-15.30", VL_LONGITUDE: "-45.62", CD_SITUACAO: "Operante" },
+    { CD_ESTACAO: "A001", DC_NOME: "BRASILIA", SG_ESTADO: "DF", VL_LATITUDE: "-15.79", VL_LONGITUDE: "-47.93", CD_SITUACAO: "Operante" },
+  ];
+  // medições horárias (UTC) de 01 a 09/02: chove 10 mm no dia local 09/02 (UTC 13h = 10h local), 0 nos outros
+  const horas: Record<string, string>[] = [];
+  for (let d = 1; d <= 10; d++) for (let h = 0; h < 24; h++) horas.push({ DT_MEDICAO: "2026-02-" + String(d).padStart(2, "0"), HR_MEDICAO: String(h).padStart(2, "0") + "00", CHUVA: d === 9 && h === 13 ? "10.0" : "0.0", TEM_MAX: String(22 + h / 2), TEM_MIN: String(20 + h / 2) });
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  const inmetPrev = JSON.parse(readFileSync(new URL("./fixtures/previsao_inmet.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("/estacoes/T") ? { code: 200, corpo: estacoes } : url.includes("apitempo.inmet.gov.br/estacao/") ? { code: 200, corpo: horas } : url.includes("apiprevmet3") ? { code: 200, corpo: inmetPrev } : url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  // menu: estações próximas (Posse a ~73 km, Chapada Gaúcha a ~93 km)
+  amb.chamar("menuEstacoesInmet");
+  const logEst = amb.aba("LOG").objetos().filter((l) => l["Ação"] === "INMET estações").pop()!;
+  assert.match(String(logEst["Detalhe"]), /Água Viva:.*A036 — POSSE\/GO · 7\d km · Operante.*A545 — CHAPADA GAUCHA\/MG · 9\d km/);
+  // sem código ainda: nada baixado
+  assert.equal(amb.chamar("atualizarClimaInmet"), null);
+  // código na aba FAZENDAS → baixa e grava por dia local
+  const faz = amb.aba("FAZENDAS"); const cab = faz.getRange(1, 1, 1, faz.getLastColumn()).getValues()[0]!;
+  let col = cab.indexOf("Estação INMET (código, ex.: A036)");
+  if (col < 0) { col = cab.length; faz.getRange(1, col + 1).setValue("Estação INMET (código, ex.: A036)"); }
+  faz.getRange(2, col + 1).setValue("a036");
+  const r = amb.chamar("atualizarClimaInmet") as { ok: string[]; erros: string[] };
+  assert.deepEqual([...r.erros], [], JSON.stringify(r)); // (cópia: a lista vem de outro contexto do VM)
+  assert.match(r.ok[0]!, /Água Viva: \d+ dias \(A036\)/);
+  const ci = amb.aba("CLIMA INMET").objetos();
+  const dia9 = ci.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!;
+  assert.equal(dia9["Chuva (mm)"], 10);
+  assert.equal(dia9["Horas medidas"], 24);
+  assert.equal(dia9["Estação"], "A036");
+  assert.ok(amb.urls.some((u) => /apitempo\.inmet\.gov\.br\/estacao\/2025-12-30\/2026-02-09\/A036$/.test(u)), amb.urls.filter((u) => u.includes("apitempo")).join("\n"));
+  // placar: a fazenda não tem CLIMA para 09/02 → o INMET preenche (10 mm) e os modelos são comparados com isso
+  amb.aba("CLIMA").clearContents();
+  amb.aba("CLIMA").appendRow(["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"]);
+  for (let rnd = 0; rnd < 3; rnd++) { amb.agoraMs = deLocal("2026-02-" + String(7 + rnd).padStart(2, "0") + "T09:00:00", "America/Sao_Paulo"); amb.chamar("atualizarPrevisao"); }
+  const placar = amb.aba("PESOS MODELOS").objetos();
+  assert.ok(placar.length >= 2);
+  assert.ok(Number(placar[0]!["Dias comparados"]) >= 1, JSON.stringify(placar[0]));
+  // o app recebe o INMET da fazenda (últimos dias) para a tabela "chuva confirmada"
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const d = amb.get({ acao: "dados", s: adm });
+  assert.equal(d.estacoes["agua viva"].inmet.codigo, "A036");
+  assert.ok(d.estacoes["agua viva"].inmet.dias.length >= 7 && d.estacoes["agua viva"].inmet.dias.length <= 8);
+  assert.equal(d.estacoes["agua viva"].inmet.dias.find((x: { data: string }) => x.data === "2026-02-09").chuvaMm, 10);
+});
+
 test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas passam de 50.000 caracteres — o CACHE vai em pedaços", () => {
   const amb = pronto();
   amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);

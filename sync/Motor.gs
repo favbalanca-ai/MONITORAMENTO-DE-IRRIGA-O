@@ -1680,6 +1680,115 @@ var Motor = (function () {
           return e;
       });
   }
+  // ---- src/motor/inmet.ts ----
+  /**
+   * Estações automáticas do INMET (API pública apitempo.inmet.gov.br): lista de estações, as mais próximas de um
+   * ponto e as medições horárias agregadas por dia local. Servem para confirmar a chuva da estação da fazenda
+   * e para calibrar os modelos quando a estação falha.
+   */
+  
+  const INMET_ESTACOES_URL = "https://apitempo.inmet.gov.br/estacoes/T";
+  const numInmet_ = (v) => {
+      const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.replace(",", ".")) : NaN;
+      return Number.isFinite(n) ? n : null;
+  };
+  /** Resposta de /estacoes/T → lista limpa. */
+  function lerEstacoesInmet(json) {
+      if (!Array.isArray(json))
+          throw new Error("INMET: lista de estações inválida.");
+      const out = [];
+      for (const e of json) {
+          const lat = numInmet_(e["VL_LATITUDE"]), lon = numInmet_(e["VL_LONGITUDE"]);
+          if (!e["CD_ESTACAO"] || lat === null || lon === null)
+              continue;
+          out.push({ codigo: String(e["CD_ESTACAO"]), nome: String(e["DC_NOME"] ?? ""), uf: String(e["SG_ESTADO"] ?? ""), latitude: lat, longitude: lon, situacao: String(e["CD_SITUACAO"] ?? "") });
+      }
+      return out;
+  }
+  /** Distância em km entre dois pontos (haversine). */
+  function distanciaKm(lat1, lon1, lat2, lon2) {
+      const R = 6371, r = Math.PI / 180;
+      const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  /** As `n` estações mais próximas de um ponto, com a distância. */
+  function estacoesProximas(lista, latitude, longitude, n = 5) {
+      return lista
+          .map((e) => ({ ...e, distanciaKm: Math.round(distanciaKm(latitude, longitude, e.latitude, e.longitude)) }))
+          .sort((a, b) => a.distanciaKm - b.distanciaKm)
+          .slice(0, n);
+  }
+  /** Medições horárias de uma estação entre duas datas (AAAA-MM-DD, em UTC como o INMET guarda). */
+  function urlInmetEstacao(ini, fim, codigo) {
+      return "https://apitempo.inmet.gov.br/estacao/" + ini + "/" + fim + "/" + encodeURIComponent(codigo);
+  }
+  /**
+   * Resposta horária (`DT_MEDICAO` + `HR_MEDICAO` em UTC, `CHUVA`, `TEM_MAX`, `TEM_MIN`) → um item por dia LOCAL.
+   * Também aceita a resposta diária (`CHUVA`, `TEMP_MAX`, `TEMP_MIN`, sem hora).
+   */
+  function lerInmetEstacao(json, fuso) {
+      if (!Array.isArray(json))
+          throw new Error("INMET: medições da estação inválidas.");
+      const porDia = new Map();
+      for (const l of json) {
+          const dt = String(l["DT_MEDICAO"] ?? "").slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dt))
+              continue;
+          const hr = l["HR_MEDICAO"];
+          let dia = dt;
+          if (hr !== undefined && hr !== null && String(hr) !== "") {
+              const h = String(hr).padStart(4, "0");
+              const utcMs = Date.parse(dt + "T" + h.slice(0, 2) + ":" + h.slice(2, 4) + ":00Z");
+              if (!Number.isFinite(utcMs))
+                  continue;
+              // a hora do INMET é o FIM do intervalo medido: a chuva "01:00 UTC" caiu entre 00 e 01 → conta no dia da hora anterior
+              dia = paraLocal(utcMs - 1, fuso).slice(0, 10);
+          }
+          const chuva = numInmet_(l["CHUVA"]);
+          const tmax = numInmet_(l["TEM_MAX"] ?? l["TEMP_MAX"]), tmin = numInmet_(l["TEM_MIN"] ?? l["TEMP_MIN"]);
+          let d = porDia.get(dia);
+          if (!d) {
+              d = { chuva: null, tmax: null, tmin: null, horas: 0 };
+              porDia.set(dia, d);
+          }
+          if (chuva !== null)
+              d.chuva = (d.chuva ?? 0) + chuva;
+          if (tmax !== null)
+              d.tmax = d.tmax === null ? tmax : Math.max(d.tmax, tmax);
+          if (tmin !== null)
+              d.tmin = d.tmin === null ? tmin : Math.min(d.tmin, tmin);
+          d.horas++;
+      }
+      const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
+      return [...porDia.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
+          .map(([data, d]) => ({ data, chuvaMm: r1(d.chuva), tmax: r1(d.tmax), tmin: r1(d.tmin), horas: d.horas }));
+  }
+  /**
+   * Junta a estação da fazenda com o INMET: a estação manda; dias que ela não tem (ou sem chuva medida) vêm do
+   * INMET. Dias incompletos do INMET (menos de 20 horas) não entram como fonte.
+   */
+  function juntarObservacoes(estacao, inmet) {
+      const porDia = new Map();
+      for (const e of estacao)
+          porDia.set(e.data, { ...e, fonte: "estacao" });
+      for (const i of inmet) {
+          const x = porDia.get(i.data);
+          if (x) {
+              x.chuvaInmetMm = i.chuvaMm;
+              if (x.chuvaMm === null && i.horas >= 20)
+                  x.chuvaMm = i.chuvaMm;
+              if (x.tmax === null)
+                  x.tmax = i.tmax;
+              if (x.tmin === null)
+                  x.tmin = i.tmin;
+              continue;
+          }
+          if (i.horas >= 20)
+              porDia.set(i.data, { data: i.data, chuvaMm: i.chuvaMm, tmax: i.tmax, tmin: i.tmin, fonte: "inmet", chuvaInmetMm: i.chuvaMm });
+      }
+      return [...porDia.values()].sort((a, b) => (a.data < b.data ? -1 : 1));
+  }
   // ---- src/motor/ciclo.ts ----
   /**
    * Resumo meteorológico do ciclo de uma área (pivô ou talhão): graus-dia, horas de luz, chuva, ET₀ e extremos
@@ -2535,5 +2644,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, INMET_ESTACOES_URL, lerEstacoesInmet, distanciaKm, estacoesProximas, urlInmetEstacao, lerInmetEstacao, juntarObservacoes, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();
