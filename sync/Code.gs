@@ -1418,8 +1418,14 @@ function climaInmet_(cfg, dias) {
   if (!cfg.inmet) return [];
   var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
   var ini = Motor.somarDias(hoje, -(dias || DIAS_CLIMA_INMET));
-  var fim = Motor.somarDias(hoje, 1); // o dia local de hoje avança pela madrugada UTC de amanhã
-  var medidos = Motor.lerInmetEstacao(buscarJson_(Motor.urlInmetEstacao(ini, fim, cfg.inmet)), cfg.fuso);
+  // o INMET responde "HTTP 204" (sem conteúdo) quando a data final está no futuro ou o código não tem dados:
+  // tenta até amanhã (madrugada UTC de amanhã ainda é hoje local), depois até hoje, depois até ontem
+  var medidos = null, ultimoErro = null;
+  [1, 0, -1].some(function (k) {
+    try { medidos = Motor.lerInmetEstacao(buscarJson_(Motor.urlInmetEstacao(ini, Motor.somarDias(hoje, k), cfg.inmet)), cfg.fuso); return true; }
+    catch (e) { ultimoErro = e; return false; }
+  });
+  if (!medidos) throw new Error(/204/.test(String(ultimoErro && ultimoErro.message)) ? "o INMET não devolveu medições para a estação " + cfg.inmet + " (HTTP 204): confira o código na lista de \"Estações INMET próximas\" ou a estação pode estar em pane" : (ultimoErro && ultimoErro.message) || "erro");
   var ss = SpreadsheetApp.getActive();
   var aba = criarAbaSeFaltar_(ss, ABA.CLIMA_INMET, CABECALHOS.CLIMA_INMET);
   var cab = CABECALHOS.CLIMA_INMET;
@@ -2024,7 +2030,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-12";
+var VERSAO_SERVIDOR = "2026.10.16-13";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;

@@ -668,7 +668,18 @@ test("INMET: lista as estações próximas, baixa as medições da estação esc
   assert.equal(dia9["Horas medidas"], 24);
   assert.equal(dia9["Estação"], "A036");
   assert.ok(amb.urls.some((u) => /apitempo\.inmet\.gov\.br\/estacao\/2025-12-30\/2026-02-09\/A036$/.test(u)), amb.urls.filter((u) => u.includes("apitempo")).join("\n"));
+  // o INMET devolve 204 para data final no futuro: a planilha tenta até hoje e depois até ontem
+  const antes = amb.urls.length;
+  amb.respostaHttp = (url) => (url.includes("apitempo.inmet.gov.br/estacao/") ? (/\/2026-02-0[89]\/A036$/.test(url) ? { code: 204, corpo: {} } : { code: 200, corpo: horas }) : { code: 500, corpo: {} });
+  const r2 = amb.chamar("atualizarClimaInmet") as { ok: string[]; erros: string[] };
+  assert.deepEqual([...r2.erros], []);
+  assert.deepEqual(amb.urls.slice(antes).map((u) => u.replace(/^.*\/estacao\//, "")), ["2025-12-30/2026-02-09/A036", "2025-12-30/2026-02-08/A036", "2025-12-30/2026-02-07/A036"]);
+  // 204 em tudo: erro explicado
+  amb.respostaHttp = () => ({ code: 204, corpo: {} });
+  const r3 = amb.chamar("atualizarClimaInmet") as { ok: string[]; erros: string[] };
+  assert.match(r3.erros[0]!, /não devolveu medições para a estação A036 \(HTTP 204\): confira o código/);
   // placar: a fazenda não tem CLIMA para 09/02 → o INMET preenche (10 mm) e os modelos são comparados com isso
+  amb.respostaHttp = (url) => (url.includes("/estacoes/T") ? { code: 200, corpo: estacoes } : url.includes("apitempo.inmet.gov.br/estacao/") ? { code: 200, corpo: horas } : url.includes("apiprevmet3") ? { code: 200, corpo: inmetPrev } : url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
   amb.aba("CLIMA").clearContents();
   amb.aba("CLIMA").appendRow(["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"]);
   for (let rnd = 0; rnd < 3; rnd++) { amb.agoraMs = deLocal("2026-02-" + String(7 + rnd).padStart(2, "0") + "T09:00:00", "America/Sao_Paulo"); amb.chamar("atualizarPrevisao"); }
