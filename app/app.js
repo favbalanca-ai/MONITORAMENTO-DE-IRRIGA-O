@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-17';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-18';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1306,7 +1306,7 @@ function ndviCfg() { return ler(NDVI_KEY, { on: false, data: '', op: 75, fonte: 
 /** Índices do Sentinel-2 (camadas da configuração do Sentinel Hub): o que cada um mostra e a legenda. */
 const INDICES = {
   ndvi: { nome: 'NDVI', titulo: 'Vigor (NDVI)', legenda: ['solo nu', 'vigor alto'], cor: 'linear-gradient(90deg,#8c6239,#d9c08a,#b8d46a,#4f9a3a,#1a5c1a)', dica: 'Quanta folha verde. Sobe do plantio ao fechamento do dossel e cai na maturação. Mancha clara no meio do verde = falha, praga ou falta d\'água.' },
-  ndmi: { nome: 'NDMI', titulo: 'Umidade da folha (NDMI)', legenda: ['folha seca', 'folha cheia d\'água'], cor: 'linear-gradient(90deg,#8b3a1e,#e0b070,#f2f2d0,#7fb7d6,#1f4e9a)', dica: 'Água dentro da planta. Cai antes de a folha mudar de cor: é o aviso mais cedo de estresse hídrico.' },
+  ndmi: { nome: 'NDMI', titulo: 'Umidade da folha (NDMI)', legenda: ['folha seca', 'folha cheia d\'água'], cor: 'linear-gradient(90deg,#8b3a1e,#e0b070,#f2f2d0,#7fb7d6,#1f4e9a)', dica: 'Água dentro da planta. Cai antes de a folha mudar de cor: é o aviso mais cedo de estresse hídrico. Resolução de 20 m (a banda de infravermelho de ondas curtas é mais grossa que a do NDVI, de 10 m).' },
   cir: { nome: 'Infravermelho', titulo: 'Infravermelho colorido', legenda: ['solo (cinza/azul)', 'vegetação (vermelho vivo)'], cor: 'linear-gradient(90deg,#6b7f8c,#c9c9c9,#e07a7a,#c81e1e)', dica: 'Vegetação vigorosa aparece em vermelho vivo; solo em cinza ou azulado. Bom pra achar falhas e manchas a olho.' },
   cor: { nome: 'Cor natural', titulo: 'Cor natural', legenda: null, cor: '', dica: 'A foto como a gente vê. Serve pra conferir nuvem, solo molhado ou algo estranho na imagem.' },
 };
