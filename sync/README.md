@@ -85,6 +85,9 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      modelos, 8 rodadas de tendência, 50 horas a partir de agora, sem os 60 dias). O cache (aba CACHE, JSON do resumo e das
      previsões) é gravado em pedaços de 40.000 caracteres, coluna a coluna, porque uma célula do Sheets não
      aceita mais de 50.000.
+   - `doGet?acao=fis&pivo=&indice=&fim=`: a planilha pede ao Sentinel Hub (FIS) as estatísticas do índice dentro do
+     polígono do pivô (10 m, 90 dias, até 60 % de nuvem) quando o celular não consegue chamar o Copernicus direto;
+     é o que alimenta o "Pivô em foco" do mapa.
    - **CONFIG APP → COPERNICUS INSTANCE ID** (opcional): liga o NDVI Sentinel-2 (10 m) no mapa do app. Crie uma
      conta gratuita em dataspace.copernicus.eu, abra o **Sentinel Hub Dashboard → Configuration Utility → New
      configuration** (pode partir de um template com Sentinel-2 L2A), garanta uma camada com o ID **NDVI** e copie o

@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-18';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-19';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1375,11 +1375,25 @@ function evalscriptFaixas(indice, lo, hi) {
 async function cenasDoPivo(p, indice, fimIso) {
   const c = copernicus(); if (!c) throw new Error('Sem Instance ID do Copernicus.');
   const fim = fimIso || hojeIso(), ini = new Date(Date.parse(fim + 'T00:00:00Z') - 90 * 86400000).toISOString().slice(0, 10);
-  const q = new URLSearchParams({ LAYER: camadaSentinel('ndvi'), CRS: 'CRS:84', TIME: ini + '/' + fim, RESOLUTION: '10m', GEOMETRY: poligonoWkt(p), MAXCC: '60', BINS: '20', EVALSCRIPT: b64(evalscriptIndice(indice)) });
-  const r = await fetch('https://sh.dataspace.copernicus.eu/ogc/fis/' + encodeURIComponent(c.instancia) + '?' + q.toString());
-  if (!r.ok) throw new Error('Copernicus (estatísticas): HTTP ' + r.status);
-  const j = await r.json();
-  const serie = j.C0 || j[Object.keys(j)[0]] || [];
+  let j;
+  try {
+    // 1º: direto do celular
+    const q = new URLSearchParams({ LAYER: camadaSentinel('ndvi'), CRS: 'CRS:84', TIME: ini + '/' + fim, RESOLUTION: '10m', GEOMETRY: poligonoWkt(p), MAXCC: '60', BINS: '20', EVALSCRIPT: b64(evalscriptIndice(indice)) });
+    const r = await fetch('https://sh.dataspace.copernicus.eu/ogc/fis/' + encodeURIComponent(c.instancia) + '?' + q.toString());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    j = await r.json();
+  } catch (e1) {
+    // 2º: pela planilha (o navegador às vezes bloqueia a chamada direta ao Copernicus)
+    if (!syncUrl()) throw new Error('Copernicus (estatísticas): ' + e1.message);
+    const r2 = await chamar('GET', { acao: 'fis', pivo: p.nome, indice, fim: fimIso || '' });
+    if (!r2 || !r2.ok) throw new Error((r2 && r2.erro) || ('Copernicus (estatísticas): ' + e1.message));
+    j = r2.fis;
+  }
+  return cenasDoFis(j);
+}
+/** Resposta do FIS → [{data, min, max, media, p5, p95}], da mais nova pra mais velha. */
+function cenasDoFis(j) {
+  const serie = (j && (j.C0 || j[Object.keys(j)[0]])) || [];
   const cenas = [];
   serie.forEach((x) => {
     const b = x.basicStats || {}; if (b.min == null || b.max == null || !isFinite(b.min) || !isFinite(b.max)) return;
@@ -1435,7 +1449,14 @@ V.mapa_depois = function () {
       if (info) info.textContent = 'Buscando as passagens do Sentinel-2 sobre ' + foco.nome + '…';
       try {
         if (cenasDe !== chave) { cenas = await cenasDoPivo(foco, indiceAtual(), cfg.data); cenasDe = chave; }
-      } catch (e) { cenas = []; cenasDe = chave; if (info) info.textContent = 'Não consegui as estatísticas do pivô: ' + e.message + ' Mostrando a região inteira.'; ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); if (leg) leg.innerHTML = legendaIndice(); return; }
+      } catch (e) {
+        cenas = []; cenasDe = chave;
+        const msg = 'Não consegui as estatísticas do pivô ' + foco.nome + ': ' + e.message;
+        toast(msg, true);
+        if (info) info.textContent = msg + ' Mostrando a região inteira. Tente de novo em instantes ou confira o Instance ID do Copernicus.';
+        if (selCena) { selCena.disabled = true; selCena.innerHTML = '<option value="">sem passagens (erro)</option>'; }
+        ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); if (leg) leg.innerHTML = legendaIndice(); return;
+      }
       if (ndviCfg().foco !== foco.nome) return;   // trocou de pivô enquanto buscava
       if (!cenas.length) { if (info) info.textContent = 'Nenhuma passagem com pouca nuvem sobre ' + foco.nome + ' nos últimos 90 dias.'; if (leg) leg.innerHTML = ''; if (selCena) { selCena.disabled = true; selCena.innerHTML = '<option value="">nenhuma passagem</option>'; } return; }
       if (selCena) {

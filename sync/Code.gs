@@ -1390,6 +1390,45 @@ function atualizarPrevisao(fornecidos) {
   return mapa[fazendas[0].chave] || null;
 }
 
+/* ------------------------------ Sentinel-2: estatísticas do índice dentro de um pivô (FIS) ------------------------------ */
+
+var FIS_FORMULA = { ndvi: "(s.B08 - s.B04) / (s.B08 + s.B04)", ndmi: "(s.B08 - s.B11) / (s.B08 + s.B11)" };
+
+/** Polígono do pivô em WKT (lon lat): contorno do KMZ ou círculo de 36 pontos com o raio. */
+function poligonoWktPivo_(pv) {
+  var cont = Array.isArray(pv.contorno) ? pv.contorno : contornoLido_(pv.contorno);   // no cadastro o contorno é JSON em texto
+  var pts = cont && cont.length >= 3 ? cont.slice() : null;
+  var lat = Motor.numero(pv.latitude), lon = Motor.numero(pv.longitude);
+  if (!pts) {
+    if (lat === null || lon === null) throw new Error("O pivô não tem posição.");
+    var r = Motor.numero(pv.raioM) || 300, dLat = r / 111320, dLon = r / (111320 * Math.cos((lat * Math.PI) / 180));
+    pts = [];
+    for (var i = 0; i < 36; i++) { var a = (i / 36) * 2 * Math.PI; pts.push([lat + dLat * Math.sin(a), lon + dLon * Math.cos(a)]); }
+  }
+  if (pts[0][0] !== pts[pts.length - 1][0] || pts[0][1] !== pts[pts.length - 1][1]) pts.push(pts[0]);
+  return "POLYGON((" + pts.map(function (q) { return Number(q[1]).toFixed(6) + " " + Number(q[0]).toFixed(6); }).join(",") + "))";
+}
+
+/**
+ * Estatísticas do índice (NDVI/NDMI) dentro do pivô por passagem do Sentinel-2, pelo FIS do Sentinel Hub
+ * (Copernicus Data Space). O app tenta direto do celular; quando o navegador bloqueia, pede aqui.
+ */
+function estatisticasIndice_(nomePivo, indice, fim) {
+  var instancia = configApp_("COPERNICUS INSTANCE ID").replace(/[^A-Za-z0-9_-]/g, "");
+  if (!instancia) throw new Error("Sem Instance ID do Copernicus na CONFIG APP.");
+  if (!FIS_FORMULA[indice]) throw new Error("Índice sem fórmula: " + indice);
+  var pv = cadastroPivos_().pivos.filter(function (x) { return x.nome === nomePivo; })[0];
+  if (!pv) throw new Error("Pivô não encontrado: " + nomePivo);
+  var fimIso = /^\d{4}-\d{2}-\d{2}$/.test(fim) ? fim : hojeLocal_();
+  var ini = Motor.somarDias(fimIso, -90);
+  var camada = configApp_("COPERNICUS CAMADA NDVI") || "VEGETATION_INDEX";
+  var evalscript = "//VERSION=3\nfunction setup(){return{input:[{bands:[\"B04\",\"B08\",\"B11\",\"dataMask\"]}],output:{bands:1,sampleType:\"FLOAT32\"}}}\nfunction evaluatePixel(s){if(!s.dataMask)return[NaN];return[" + FIS_FORMULA[indice] + "];}";
+  var url = "https://sh.dataspace.copernicus.eu/ogc/fis/" + encodeURIComponent(instancia) +
+    "?LAYER=" + encodeURIComponent(camada) + "&CRS=CRS:84&TIME=" + ini + "/" + fimIso + "&RESOLUTION=10m&MAXCC=60&BINS=20" +
+    "&GEOMETRY=" + encodeURIComponent(poligonoWktPivo_(pv)) + "&EVALSCRIPT=" + encodeURIComponent(Utilities.base64Encode(evalscript, Utilities.Charset.UTF_8));
+  return buscarJson_(url);
+}
+
 /* ------------------------------ estações automáticas do INMET ------------------------------ */
 
 var DIAS_CLIMA_INMET = 40;
@@ -2030,7 +2069,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-13";
+var VERSAO_SERVIDOR = "2026.10.16-14";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2064,6 +2103,7 @@ function doGet_(p) {
     return { ok: true, historico: h };
   }
   if (acao === "rosa") { exigirFazenda_(u, faz, faz); return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || ""), faz) }; }
+  if (acao === "fis") return { ok: true, fis: estatisticasIndice_(String(p.pivo || ""), String(p.indice || "ndvi"), String(p.fim || "")) };
   if (acao === "pdf") {
     // relatório do último dia calculado (ou de um dia pedido) em PDF, em base64, para o app baixar
     exigirFazenda_(u, faz, faz);

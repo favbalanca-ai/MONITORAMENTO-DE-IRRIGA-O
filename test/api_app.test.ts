@@ -694,6 +694,38 @@ test("INMET: lista as estações próximas, baixa as medições da estação esc
   assert.equal(d.estacoes["agua viva"].inmet.dias.find((x: { data: string }) => x.data === "2026-02-09").chuvaMm, 10);
 });
 
+test("acao=fis: a planilha busca no Sentinel Hub as estatísticas do índice dentro do pivô (polígono, 10 m, 90 dias)", () => {
+  const amb = pronto();
+  const cfgAba = amb.aba("CONFIG APP"), chaves = cfgAba.dados.map((l) => String(l[0]));
+  cfgAba.set(chaves.indexOf("COPERNICUS INSTANCE ID") + 1, 2, "a1b2-c3d4");
+  const resposta = { C0: [{ date: "2026-02-03", basicStats: { min: 0.05, max: 0.08, mean: 0.064, stDev: 0.006 } }] };
+  amb.respostaHttp = (url) => (url.includes("/ogc/fis/a1b2-c3d4") ? { code: 200, corpo: resposta } : { code: 500, corpo: {} });
+  // o pivô precisa de posição (centro + raio, ou contorno do KMZ)
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const cad = amb.get({ acao: "dados", s: adm }).cadastro;
+  amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "-46,3", raioM: "400" }, original: "Pivô 2" } });
+  const op = entrar(amb, "jose", "4321").token;
+  assert.match(amb.get({ acao: "fis", s: op, pivo: "Pivô 1", indice: "ndvi" }).erro || "", /não tem posição|não encontrado/);
+  const r = amb.get({ acao: "fis", s: op, pivo: "Pivô 2", indice: "ndmi", fim: "2026-02-08" });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.fis.C0[0].date, "2026-02-03");
+  const url = amb.urls.find((u) => u.includes("/ogc/fis/"))!;
+  assert.match(url, /LAYER=VEGETATION_INDEX&CRS=CRS:84&TIME=2025-11-10\/2026-02-08&RESOLUTION=10m&MAXCC=60&BINS=20&GEOMETRY=POLYGON\(\(/);
+  assert.match(url, /&EVALSCRIPT=/);
+  const evalscript = Buffer.from(decodeURIComponent(url.split("EVALSCRIPT=")[1]!), "base64").toString("utf8");
+  assert.match(evalscript, /B11\) \/ \(s\.B08 \+ s\.B11\)/); // NDMI
+  // pivô desconhecido, índice sem fórmula, sem Instance ID
+  assert.match(amb.get({ acao: "fis", s: op, pivo: "Inexistente", indice: "ndvi" }).erro, /Pivô não encontrado/);
+  assert.match(amb.get({ acao: "fis", s: op, pivo: "Pivô 2", indice: "cor" }).erro, /sem fórmula/);
+  // com contorno do KMZ (JSON em texto no cadastro) o polígono é o próprio contorno
+  amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], latitude: "-14,9", longitude: "-46,3", raioM: "400", contorno: JSON.stringify([[-14.9, -46.3], [-14.9, -46.29], [-14.89, -46.29], [-14.89, -46.3]]) }, original: "Pivô 2" } });
+  amb.urls.length = 0;
+  assert.equal(amb.get({ acao: "fis", s: op, pivo: "Pivô 2", indice: "ndvi" }).ok, true);
+  assert.match(amb.urls.find((u) => u.includes("/ogc/fis/"))!, /GEOMETRY=POLYGON\(\(-46\.300000%20-14\.900000%2C-46\.290000%20-14\.900000%2C-46\.290000%20-14\.890000%2C-46\.300000%20-14\.890000%2C-46\.300000%20-14\.900000\)\)/);
+  cfgAba.set(chaves.indexOf("COPERNICUS INSTANCE ID") + 1, 2, "");
+  assert.match(amb.get({ acao: "fis", s: op, pivo: "Pivô 2", indice: "ndvi" }).erro, /Sem Instance ID/);
+});
+
 test("cache grande: duas fazendas com 6 modelos, 21 dias, 72 h e várias rodadas passam de 50.000 caracteres — o CACHE vai em pedaços", () => {
   const amb = pronto();
   amb.aba("FAZENDAS").appendRow(["Novo Pago", "", -15.2, -46.5, 850, 2, "America/Sao_Paulo", "rainfall", "novo@exemplo.com", 3126208, 2, 18, 21]);

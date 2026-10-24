@@ -81,13 +81,7 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
   await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => {
     const u = r.request().url(); ndviPedidos.push(u);
-    if (u.includes("/ogc/fis/")) {   // estatísticas do pivô em foco: duas passagens, a mais nova com variação pequena
-      const hist = (lo: number, passo: number) => ({ bins: Array.from({ length: 20 }, (_, i) => ({ lowEdge: lo + i * passo, count: i === 0 || i === 19 ? 2 : 10 })) });
-      return r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ C0: [
-        { date: "2026-01-20", basicStats: { min: 0.21, max: 0.62, mean: 0.45, stDev: 0.1 }, histogram: hist(0.21, 0.0205) },
-        { date: "2026-02-03", basicStats: { min: 0.05, max: 0.08, mean: 0.064, stDev: 0.006 }, histogram: hist(0.05, 0.0015) },
-      ] }) });
-    }
+    if (u.includes("/ogc/fis/")) return r.fulfill({ status: 403, body: "" });   // o navegador não consegue direto: o app pede à planilha
     return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL });
   });
   // Open-Meteo buscado pelo celular: sem internet por padrão (cada teste libera com a própria resposta, se quiser)
@@ -621,7 +615,14 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   const adm = amb.post({ __login: { login: "fabiana", pin: "1234" } }).token;
   const cad = amb.get({ acao: "dados", s: adm }).cadastro;
   amb.post({ s: adm, __pivo: { dados: { ...cad.pivos[0], nome: "Pivô 3", raioM: "" }, original: null } });
-  const { ctx, page } = await abrir(amb);
+  // estatísticas do pivô em foco (FIS) pela planilha: duas passagens, a mais nova com variação pequena
+  const hist = (lo: number, passo: number) => ({ bins: Array.from({ length: 20 }, (_, i) => ({ lowEdge: lo + i * passo, count: i === 0 || i === 19 ? 2 : 10 })) });
+  const fisResposta = { C0: [
+    { date: "2026-01-20", basicStats: { min: 0.21, max: 0.62, mean: 0.45, stDev: 0.1 }, histogram: hist(0.21, 0.0205) },
+    { date: "2026-02-03", basicStats: { min: 0.05, max: 0.08, mean: 0.064, stDev: 0.006 }, histogram: hist(0.05, 0.0015) },
+  ] };
+  amb.respostaHttp = (url) => (url.includes("/ogc/fis/") ? { code: 200, corpo: fisResposta } : { code: 500, corpo: {} });
+  const { ctx, page, chamadas } = await abrir(amb);
   await configurarEEntrar(page, "fabiana", "1234");
   await page.getByRole("link", { name: /Mapa/ }).click();
   await page.getByText("Nenhum pivô com posição ainda.").waitFor();
@@ -699,10 +700,13 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   const legFoco = await page.locator(".foco-legenda").innerText();
   assert.match(legFoco, /0,05\d – 0,05\d[\s\S]*≥ 0,07\d[\s\S]*NDVI em 03\/02\/2026 · média 0,064 · variação 0,02\d/);
   const fis = ndviPedidos.find((u) => u.includes("/ogc/fis/a1b2-c3d4"));
-  assert.ok(fis, "pediu as estatísticas do pivô");
+  assert.ok(fis, "tentou as estatísticas direto do celular");
   assert.match(fis!, /GEOMETRY=POLYGON/);
   assert.match(fis!, /RESOLUTION=10m/);
   assert.match(fis!, /EVALSCRIPT=/);
+  assert.ok(chamadas.includes("GET fis"), "o celular falhou (403) e o app pediu à planilha");
+  const fisPlanilha = amb.urls.find((u) => u.includes("/ogc/fis/a1b2-c3d4"));
+  assert.ok(fisPlanilha && /GEOMETRY=POLYGON/.test(fisPlanilha) && /RESOLUTION=10m/.test(fisPlanilha) && /EVALSCRIPT=/.test(fisPlanilha), "planilha pediu o FIS com polígono e evalscript");
   await page.waitForTimeout(300);
   const tileFoco = ndviPedidos.find((u) => /\/ogc\/wms\/a1b2-c3d4\?.*evalscript=/i.test(u));
   assert.ok(tileFoco, "tiles com o evalscript das faixas");
