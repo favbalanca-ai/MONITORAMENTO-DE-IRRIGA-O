@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-16';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-17';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1340,7 +1340,8 @@ function camadaNdvi(cfg) {
   const op = (cfg.op || 75) / 100;
   if (fonteNdvi() === 'sentinel') {
     const c = copernicus(), j = sentinelJanela(cfg.data);
-    return L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), { layers: camadaSentinel(indiceAtual()), format: 'image/png', transparent: true, version: '1.3.0', time: j.ini + '/' + j.fim, maxcc: 40, priority: 'mostRecent', showlogo: false, attribution: 'Copernicus Sentinel-2', opacity: op, maxZoom: 18 });
+    // UPSAMPLING=NEAREST: cada pixel de 10 m vem como um quadrado firme, sem o Copernicus suavizar ao ampliar
+    return L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), { layers: camadaSentinel(indiceAtual()), format: 'image/png', transparent: true, version: '1.3.0', time: j.ini + '/' + j.fim, maxcc: 40, priority: 'mostRecent', showlogo: false, upsampling: 'NEAREST', downsampling: 'BICUBIC', className: 'ndvi-nitida', attribution: 'Copernicus Sentinel-2', opacity: op, maxZoom: 20 });
   }
   const ini = ndviPeriodoInicio(cfg.data);
   return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: op, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
@@ -1445,7 +1446,8 @@ V.mapa_depois = function () {
       const c = copernicus();
       ndvi = L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), {
         layers: camadaSentinel('ndvi'), format: 'image/png', transparent: true, version: '1.3.0', time: cena.data + '/' + cena.data, maxcc: 100, showlogo: false,
-        geometry: poligonoWkt(foco), evalscript: b64(evalscriptFaixas(indiceAtual(), cena.p5, cena.p95)), attribution: 'Copernicus Sentinel-2', opacity: (cfg.op || 75) / 100, maxZoom: 18 }).addTo(mapa);
+        upsampling: 'NEAREST', downsampling: 'BICUBIC', className: 'ndvi-nitida',
+        geometry: poligonoWkt(foco), evalscript: b64(evalscriptFaixas(indiceAtual(), cena.p5, cena.p95)), attribution: 'Copernicus Sentinel-2', opacity: (cfg.op || 100) / 100, maxZoom: 20 }).addTo(mapa);
       ndvi.bringToFront();
       if (leg) leg.innerHTML = legendaFoco(cena, indiceAtual());
       if (info) info.textContent = INDICES[indiceAtual()].dica + ' Sentinel-2, 10 m, recortado no pivô; ' + cenas.length + ' passagens com até 60% de nuvem nos 90 dias até ' + dataBrAno(cfg.data || hojeIso()) + '.';
@@ -1454,7 +1456,10 @@ V.mapa_depois = function () {
     window.aplicarNdvi = aplicarNdvi;
     const on = $('#ndvi-on'), dt = $('#ndvi-data'), op = $('#ndvi-op');
     const selFoco = $('#ndvi-foco'), selCena = $('#ndvi-cena');
-    if (selFoco) selFoco.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { foco: selFoco.value, cena: '' })); aplicarNdvi(); });
+    if (selFoco) selFoco.addEventListener('change', () => {
+      const c0 = ndviCfg(), opNovo = selFoco.value && (!c0.op || c0.op === 75) ? 100 : c0.op;   // em foco, opaco por padrão: as cores não se misturam com o satélite
+      grava(NDVI_KEY, Object.assign(c0, { foco: selFoco.value, cena: '', op: opNovo })); if (op) op.value = String(opNovo || 75); aplicarNdvi();
+    });
     if (selCena) selCena.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { cena: selCena.value })); aplicarNdvi(); });
     if (on) on.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { on: on.checked })); aplicarNdvi(); });
     if (dt) dt.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { data: dt.value })); aplicarNdvi(); });

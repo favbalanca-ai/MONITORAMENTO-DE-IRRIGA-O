@@ -708,6 +708,9 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   assert.ok(tileFoco, "tiles com o evalscript das faixas");
   assert.match(tileFoco!, /geometry=POLYGON/i);
   assert.match(tileFoco!, /time=2026-02-03%2F2026-02-03/i);
+  assert.match(tileFoco!, /upsampling=NEAREST/i); // pixels de 10 m firmes, sem suavização
+  assert.equal(await page.inputValue("#ndvi-op"), "100"); // em foco, opaco por padrão
+  assert.ok((await page.locator(".leaflet-tile-pane img.ndvi-nitida, .leaflet-tile-pane .ndvi-nitida img").count()) > 0, "camada com a classe de nitidez");
   assert.deepEqual(await page.locator("#ndvi-cena option").allTextContents(), ["03/02/2026 · média 0,06", "20/01/2026 · média 0,45"]);
   // outra passagem: muda a data dos tiles e a legenda
   ndviPedidos.length = 0;
