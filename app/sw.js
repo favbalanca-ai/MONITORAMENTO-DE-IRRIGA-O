@@ -1,36 +1,64 @@
-/* Service worker do Manejo de Irrigação — SEM CACHE (igual ao Planejamento).
-   Todo arquivo vem SEMPRE da rede, então o app abre sempre na versão publicada mais nova.
-   O worker existe para o app ser "instalável" e para avisar com clareza quando não há internet.
-   Os dados e a fila de lançamentos ficam no localStorage, não aqui. */
-const VERSAO = 'nocache-v3';   // mudar este texto força os aparelhos a trocarem o worker
+/* Service worker do Manejo de Irrigação — REDE PRIMEIRO, COM CÓPIA GUARDADA.
+   Com internet boa, todo arquivo vem da rede (sempre a versão publicada mais nova) e uma cópia fica no
+   aparelho. Com sinal fraco (mais de 4 s) ou sem internet, o app abre na hora com a cópia guardada e os dados
+   do localStorage. A planilha (script.google.com) e os serviços de previsão passam direto, sem cache. */
+const VERSAO = 'cache-v4';   // mudar este texto força os aparelhos a trocarem o worker
+const CACHE = 'manejo-' + VERSAO;
+const SHELL = ['./', './index.html', './app.js', './styles.css', './manifest.webmanifest', './icon.svg'];
+const TEMPO_REDE_MS = 4000;
 
-self.addEventListener('install', () => { self.skipWaiting(); });
+self.addEventListener('install', (e) => {
+  e.waitUntil((async () => {
+    try {
+      const c = await caches.open(CACHE);
+      await Promise.all(SHELL.map(async (u) => { try { const r = await fetch(u, { cache: 'no-store' }); if (r.ok) await c.put(u, r); } catch (err) {} }));
+    } catch (err) {}
+    await self.skipWaiting();
+  })());
+});
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    try { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); } catch (err) {}
+    try { const keys = await caches.keys(); await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))); } catch (err) {}
     await self.clients.claim();
   })());
 });
+
+function paginaOffline() {
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Sem internet</title><body style="font-family:system-ui,sans-serif;padding:32px;text-align:center;color:#16404d">' +
+    '<h2>📴 Sem internet</h2><p>Ainda não há uma cópia do app neste aparelho.<br>Conecte-se uma vez e toque em recarregar.</p>' +
+    '<p><button onclick="location.reload()" style="font-size:16px;padding:10px 18px;border-radius:10px;border:0;background:#16404d;color:#fff">↻ Recarregar</button></p></body>',
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+/** Rede com limite de tempo; se vier, guarda a cópia. Senão, a cópia guardada. */
+async function redePrimeiro(req) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TEMPO_REDE_MS);
+  try {
+    const r = await fetch(req, { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    if (r && r.ok) { try { const c = await caches.open(CACHE); await c.put(req, r.clone()); } catch (err) {} }
+    return r;
+  } catch (err) {
+    clearTimeout(timer);
+    const guardada = await caches.match(req, { ignoreSearch: true });
+    if (guardada) return guardada;
+    if (req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0) {
+      return (await caches.match('./index.html')) || paginaOffline();
+    }
+    return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
+}
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;   // a planilha (script.google.com) passa direto
-  e.respondWith(
-    fetch(req, { cache: 'no-store' }).catch(() => {
-      if (req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0) {
-        return new Response(
-          '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-          '<title>Sem internet</title><body style="font-family:system-ui,sans-serif;padding:32px;text-align:center;color:#16404d">' +
-          '<h2>📴 Sem internet</h2><p>O app não guarda cópia no aparelho para estar sempre na versão mais nova.<br>' +
-          'Conecte-se e toque em recarregar.</p><p><button onclick="location.reload()" style="font-size:16px;padding:10px 18px;border-radius:10px;border:0;background:#16404d;color:#fff">↻ Recarregar</button></p></body>',
-          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
-      }
-      return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
-    })
-  );
+  if (url.origin !== self.location.origin) return;   // planilha, Open-Meteo, INMET e mapas passam direto
+  e.respondWith(redePrimeiro(req));
 });
 
 // toque na notificação: abre (ou traz pra frente) o app na tela Hoje

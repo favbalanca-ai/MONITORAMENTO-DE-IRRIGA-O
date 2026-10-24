@@ -16,8 +16,8 @@
 <meta name="apple-mobile-web-app-title" content="Irrigação">
 <meta http-equiv="Cache-Control" content="no-store">
 <script>try{document.documentElement.dataset.tema=localStorage.getItem('irrigacao_tema')||'claro';}catch(e){document.documentElement.dataset.tema='claro';}</script>
-<!-- sem cache: o CSS é pedido com um carimbo de hora, então nunca vem uma versão velha do cache do navegador -->
-<script>document.write('<link rel="stylesheet" href="styles.css?t=' + Date.now() + '">');</script>
+<!-- o service worker pede sempre à rede (sem cache do navegador) e guarda uma cópia para abrir sem sinal -->
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="app">
@@ -58,8 +58,8 @@
 </div>
 <div id="toast" class="toast" hidden></div>
 <script>
-/* Registra o service worker: mantém o app sempre atualizado (sem cache)
-   e recarrega sozinho quando uma versão nova assume o controle. */
+/* Registra o service worker: rede primeiro (sempre a versão nova quando há sinal), cópia guardada
+   para abrir sem internet, e recarrega sozinho quando uma versão nova do worker assume o controle. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('sw.js').then(function (reg) {
@@ -75,7 +75,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-<!-- sem cache: o app.js também é pedido com carimbo de hora (sempre a versão publicada mais nova) -->
-<script>document.write('<script src="app.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="app.js"></script>
 </body>
 </html>

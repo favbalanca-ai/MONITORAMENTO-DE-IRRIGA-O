@@ -98,6 +98,10 @@ feitos sem internet.
 - Ao abrir, ao voltar para o app e a cada 1 min: envia a fila e pergunta à planilha só o "hash"; baixa
   tudo apenas se algo mudou.
 - O indicador no topo mostra 🟢 Sincronizado · 🟡 Sincronizando · 🔴 Erro / Sem internet.
+- **Carregamento:** o service worker (`sw.js`) pede o app sempre à rede (versão publicada mais nova) e guarda
+  uma cópia no aparelho; se a rede demorar mais de 4 s ou não houver sinal, o app abre na hora com a cópia e
+  os dados do `localStorage`. "Atualizar app" (rodapé) apaga a cópia e o worker e recarrega da rede. O
+  histórico de 30 dias da tela Clima é reaproveitado por 10 minutos.
 
 ## Publicar no GitHub Pages (uma vez)
 
