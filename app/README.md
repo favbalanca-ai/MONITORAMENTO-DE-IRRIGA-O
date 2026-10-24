@@ -66,6 +66,11 @@ feitos sem internet.
   até a data escolhida), com seletor de índice: **NDVI** (vigor), **NDMI** (umidade da folha, aviso cedo de estresse
   hídrico), **Infravermelho colorido** e **Cor natural**, cada um com legenda e dica de leitura. Os IDs das camadas
   vêm da CONFIG APP (padrão: VEGETATION_INDEX, MOISTURE_INDEX, COLOR_INFRARED, TRUE_COLOR).
+  **Pivô em foco** (só com Sentinel-2, índices NDVI e NDMI): escolhe um pivô e o app pede ao Sentinel Hub as
+  estatísticas do índice dentro do polígono dele (FIS, 10 m, 90 dias, até 60 % de nuvem), lista as passagens
+  disponíveis, pinta só o pivô (recorte pelo contorno) em 6 faixas de cor esticadas entre os percentis 5 e 95
+  daquela passagem e mostra a legenda numérica com média e variação, como nos apps de agricultura de precisão.
+  As cores valem só dentro daquele pivô.
 - **Pivôs** — cadastro. Administrador edita (a planilha valida antes de gravar); operador só vê. Cada área tem
   **Fazenda** e **Tipo**: *pivô* (balanço hídrico completo) ou *talhão* (sem pivô: só o relatório do ciclo da
   cultura — graus-dia, fotoperíodo, horas de sol, chuva e ET₀ acumulados; aparece em Hoje, nos Detalhes e no Histórico).

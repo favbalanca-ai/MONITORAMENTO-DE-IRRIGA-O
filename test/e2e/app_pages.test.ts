@@ -79,7 +79,17 @@ async function abrir(amb: Ambiente): Promise<{ ctx: BrowserContext; page: Page; 
   });
   const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
   await ctx.route(/arcgisonline\.com|openstreetmap\.org/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
-  await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => { ndviPedidos.push(r.request().url()); return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL }); });
+  await ctx.route(/gibs\.earthdata\.nasa\.gov|sh\.dataspace\.copernicus\.eu/, (r) => {
+    const u = r.request().url(); ndviPedidos.push(u);
+    if (u.includes("/ogc/fis/")) {   // estatísticas do pivô em foco: duas passagens, a mais nova com variação pequena
+      const hist = (lo: number, passo: number) => ({ bins: Array.from({ length: 20 }, (_, i) => ({ lowEdge: lo + i * passo, count: i === 0 || i === 19 ? 2 : 10 })) });
+      return r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ C0: [
+        { date: "2026-01-20", basicStats: { min: 0.21, max: 0.62, mean: 0.45, stDev: 0.1 }, histogram: hist(0.21, 0.0205) },
+        { date: "2026-02-03", basicStats: { min: 0.05, max: 0.08, mean: 0.064, stDev: 0.006 }, histogram: hist(0.05, 0.0015) },
+      ] }) });
+    }
+    return r.fulfill({ status: 200, contentType: "image/png", body: PIXEL });
+  });
   // Open-Meteo buscado pelo celular: sem internet por padrão (cada teste libera com a própria resposta, se quiser)
   await ctx.route(/open-meteo\.com/, (r) => r.abort("internetdisconnected"));
   const page = await ctx.newPage();
@@ -681,6 +691,35 @@ test("mapa: KMZ importa o contorno de cada pivô pelo nome; KML no cadastro pree
   assert.ok(ndviPedidos.some((u) => /layers=MOISTURE_INDEX/i.test(u)), "pediu a camada NDMI");
   await page.locator('[data-act="ndvi-indice"][data-indice="cor"]').click();
   assert.equal(await page.locator(".ndvi-legenda").count(), 0, "cor natural não tem legenda");
+  // pivô em foco: estatísticas no polígono do pivô, cores esticadas entre os percentis 5 e 95, recorte e passagem escolhida
+  await page.locator('[data-act="ndvi-indice"][data-indice="ndvi"]').click();
+  ndviPedidos.length = 0;
+  await page.selectOption("#ndvi-foco", "Pivô 2");
+  await page.locator(".foco-legenda").waitFor();
+  const legFoco = await page.locator(".foco-legenda").innerText();
+  assert.match(legFoco, /0,05\d – 0,05\d[\s\S]*≥ 0,07\d[\s\S]*NDVI em 03\/02\/2026 · média 0,064 · variação 0,02\d/);
+  const fis = ndviPedidos.find((u) => u.includes("/ogc/fis/a1b2-c3d4"));
+  assert.ok(fis, "pediu as estatísticas do pivô");
+  assert.match(fis!, /GEOMETRY=POLYGON/);
+  assert.match(fis!, /RESOLUTION=10m/);
+  assert.match(fis!, /EVALSCRIPT=/);
+  await page.waitForTimeout(300);
+  const tileFoco = ndviPedidos.find((u) => /\/ogc\/wms\/a1b2-c3d4\?.*evalscript=/i.test(u));
+  assert.ok(tileFoco, "tiles com o evalscript das faixas");
+  assert.match(tileFoco!, /geometry=POLYGON/i);
+  assert.match(tileFoco!, /time=2026-02-03%2F2026-02-03/i);
+  assert.deepEqual(await page.locator("#ndvi-cena option").allTextContents(), ["03/02/2026 · média 0,06", "20/01/2026 · média 0,45"]);
+  // outra passagem: muda a data dos tiles e a legenda
+  ndviPedidos.length = 0;
+  await page.selectOption("#ndvi-cena", "2026-01-20");
+  await page.getByText(/NDVI em 20\/01\/2026 · média 0,450/).waitFor();
+  await page.waitForTimeout(300);
+  assert.ok(ndviPedidos.some((u) => /time=2026-01-20%2F2026-01-20/i.test(u)));
+  assert.ok(!ndviPedidos.some((u) => u.includes("/ogc/fis/")), "não buscou as estatísticas de novo");
+  // volta pra região inteira
+  await page.selectOption("#ndvi-foco", "");
+  await page.locator(".ndvi-legenda").waitFor();
+  assert.equal(await page.locator(".foco-legenda").count(), 0);
   // no MODIS o seletor some
   await page.locator('[data-act="ndvi-fonte"][data-fonte="modis"]').click();
   assert.equal(await page.locator("#ndvi-indices").isHidden(), true);

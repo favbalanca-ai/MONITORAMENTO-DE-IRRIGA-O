@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-15';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-16';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -1292,6 +1292,8 @@ V.mapa = function () {
       '<div class="grid2"><div><label for="ndvi-data">Data (vazio = mais recente)</label><input type="date" id="ndvi-data" value="' + esc(nd.data || '') + '" max="' + hojeIso() + '"></div>' +
       '<div><label for="ndvi-op">Transparência</label><input type="range" id="ndvi-op" min="20" max="100" value="' + esc(nd.op || 75) + '"></div></div>' +
       '<div class="seg seg-sub" id="ndvi-indices" role="tablist"' + (fonteNdvi() === 'sentinel' ? '' : ' hidden') + '>' + Object.keys(INDICES).map((k) => '<button type="button" data-act="ndvi-indice" data-indice="' + k + '" class="' + (indiceAtual() === k ? 'on' : '') + '">' + esc(INDICES[k].nome) + '</button>').join('') + '</div>' +
+      '<div id="ndvi-foco-wrap" class="grid2"' + (fonteNdvi() === 'sentinel' ? '' : ' hidden') + '><div><label for="ndvi-foco">Pivô em foco (cores esticadas no próprio pivô)</label><select id="ndvi-foco"><option value="">— região inteira —</option>' + com.map((p) => '<option value="' + esc(p.nome) + '"' + (nd.foco === p.nome ? ' selected' : '') + '>' + esc(p.nome) + '</option>').join('') + '</select></div>' +
+      '<div><label for="ndvi-cena">Passagem do satélite</label><select id="ndvi-cena" disabled><option value="">escolha um pivô</option></select></div></div>' +
       '<div id="ndvi-legenda">' + legendaIndice() + '</div><p class="muted" id="ndvi-info">' + esc(ndviPeriodo(nd.data)) + '</p></div></div>' : '') +
     '<div class="card"><div class="legenda">' + Object.keys(SEM_COR).map((k) => '<span style="--c:' + SEM_COR[k] + '">' + SEM_ROTULO[k] + '</span>').join('') + '</div>' +
     '<ul class="lista" style="margin-top:8px">' + com.map((p) => '<li><div class="t"><b style="color:' + SEM_COR[semaforo(p)] + '">●</b> ' + esc(p.nome) + ' <span class="muted">' + esc(p.cultura) + (p.decisao ? ' · déficit ' + br(p.deficit, 1) + ' mm' : '') + '</span></div>' +
@@ -1343,6 +1345,61 @@ function camadaNdvi(cfg) {
   const ini = ndviPeriodoInicio(cfg.data);
   return L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', Object.assign({ layers: 'MODIS_Terra_L3_NDVI_16Day', format: 'image/png', transparent: true, version: '1.3.0', attribution: 'NDVI: NASA GIBS / MODIS', opacity: op, maxNativeZoom: 9, maxZoom: 18 }, ini ? { time: ini } : {}));
 }
+/* ---- Pivô em foco: estatísticas do índice dentro do pivô (FIS do Sentinel Hub) e cores esticadas nele ---- */
+const FOCO_CORES = ['#b2182b', '#ef8a62', '#fddbc7', '#d1e5f0', '#67a9cf', '#2166ac'];   // vermelho = baixo … azul = alto (RdBu, boa pra daltônicos)
+const FOCO_FORMULA = { ndvi: '(s.B08 - s.B04) / (s.B08 + s.B04)', ndmi: '(s.B08 - s.B11) / (s.B08 + s.B11)' };
+/** Polígono do pivô em WKT (lon lat): o contorno do KMZ ou um círculo de 36 pontos com o raio. */
+function poligonoWkt(p) {
+  let pts = p.contorno ? p.contorno.slice() : null;
+  if (!pts) {
+    const r = (p.raioM || 300), dLat = r / 111320, dLon = r / (111320 * Math.cos((p.lat * Math.PI) / 180));
+    pts = []; for (let i = 0; i < 36; i++) { const a = (i / 36) * 2 * Math.PI; pts.push([p.lat + dLat * Math.sin(a), p.lon + dLon * Math.cos(a)]); }
+  }
+  if (pts[0][0] !== pts[pts.length - 1][0] || pts[0][1] !== pts[pts.length - 1][1]) pts.push(pts[0]);
+  return 'POLYGON((' + pts.map((q) => q[1].toFixed(6) + ' ' + q[0].toFixed(6)).join(',') + '))';
+}
+function b64(txt) { return btoa(unescape(encodeURIComponent(txt))); }
+/** Evalscript que devolve o índice como número (para as estatísticas). */
+function evalscriptIndice(indice) {
+  return '//VERSION=3\nfunction setup(){return{input:[{bands:["B04","B08","B11","dataMask"]}],output:{bands:1,sampleType:"FLOAT32"}}}\nfunction evaluatePixel(s){if(!s.dataMask)return[NaN];return[' + FOCO_FORMULA[indice] + '];}';
+}
+/** Evalscript que pinta o índice em 6 faixas entre lo e hi (as cores da legenda). */
+function evalscriptFaixas(indice, lo, hi) {
+  const cores = FOCO_CORES.map((h) => [1, 3, 5].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)));
+  return '//VERSION=3\nfunction setup(){return{input:[{bands:["B04","B08","B11","dataMask"]}],output:{bands:4}}}\n' +
+    'var C=[' + cores.map((c) => '[' + c.join(',') + ']').join(',') + '];\n' +
+    'function evaluatePixel(s){if(!s.dataMask)return[0,0,0,0];var v=' + FOCO_FORMULA[indice] + ';var t=(v-(' + lo + '))/((' + hi + ')-(' + lo + '));var k=Math.max(0,Math.min(5,Math.floor(t*6)));return[C[k][0],C[k][1],C[k][2],1];}';
+}
+/** Estatísticas do índice no pivô por passagem (FIS): [{data, min, max, media, p5, p95, nuvem?}], da mais nova pra mais velha. */
+async function cenasDoPivo(p, indice, fimIso) {
+  const c = copernicus(); if (!c) throw new Error('Sem Instance ID do Copernicus.');
+  const fim = fimIso || hojeIso(), ini = new Date(Date.parse(fim + 'T00:00:00Z') - 90 * 86400000).toISOString().slice(0, 10);
+  const q = new URLSearchParams({ LAYER: camadaSentinel('ndvi'), CRS: 'CRS:84', TIME: ini + '/' + fim, RESOLUTION: '10m', GEOMETRY: poligonoWkt(p), MAXCC: '60', BINS: '20', EVALSCRIPT: b64(evalscriptIndice(indice)) });
+  const r = await fetch('https://sh.dataspace.copernicus.eu/ogc/fis/' + encodeURIComponent(c.instancia) + '?' + q.toString());
+  if (!r.ok) throw new Error('Copernicus (estatísticas): HTTP ' + r.status);
+  const j = await r.json();
+  const serie = j.C0 || j[Object.keys(j)[0]] || [];
+  const cenas = [];
+  serie.forEach((x) => {
+    const b = x.basicStats || {}; if (b.min == null || b.max == null || !isFinite(b.min) || !isFinite(b.max)) return;
+    let p5 = b.min, p95 = b.max;
+    const h = x.histogram && x.histogram.bins;
+    if (Array.isArray(h) && h.length) {   // percentis pelo histograma: tira nuvem fina e borda
+      const total = h.reduce((t, bb) => t + (bb.count || 0), 0); let acc = 0, a5 = null, a95 = null;
+      for (const bb of h) { acc += bb.count || 0; if (a5 === null && acc >= total * 0.05) a5 = bb.lowEdge; if (a95 === null && acc >= total * 0.95) { a95 = bb.lowEdge; break; } }
+      if (a5 != null && a95 != null && a95 > a5) { p5 = a5; p95 = a95; }
+    }
+    cenas.push({ data: String(x.date).slice(0, 10), min: b.min, max: b.max, media: b.mean, p5, p95 });
+  });
+  cenas.sort((a, b2) => (a.data < b2.data ? 1 : -1));
+  return cenas;
+}
+/** Legenda de 6 faixas com os números do pivô, como nos apps de agricultura de precisão. */
+function legendaFoco(cena, indice) {
+  const lo = cena.p5, hi = cena.p95, passo = (hi - lo) / 6, f = (v) => v.toFixed(3).replace('.', ',');
+  return '<div class="foco-legenda">' + FOCO_CORES.map((c, i) => '<div><i style="background:' + c + '"></i><span>' + (i === 5 ? '≥ ' + f(lo + passo * 5) : f(lo + passo * i) + ' – ' + f(lo + passo * (i + 1))) + '</span></div>').join('') +
+    '<p class="muted">' + esc(INDICES[indice].nome) + ' em ' + esc(dataBrAno(cena.data)) + ' · média ' + f(cena.media) + ' · <b>variação ' + f(hi - lo) + '</b> (5% a 95% dos pixels). Vermelho = ' + esc(INDICES[indice].legenda ? INDICES[indice].legenda[0] : 'baixo') + ', azul = ' + esc(INDICES[indice].legenda ? INDICES[indice].legenda[1] : 'alto') + ' <u>dentro deste pivô</u>; a mesma cor em outro pivô não quer dizer o mesmo valor.</p></div>';
+}
 V.mapa_depois = function () {
   const com = pivosNoMapa().filter((p) => p.lat != null && p.lon != null); if (!com.length) return;
   carregarLeaflet().then(() => {
@@ -1354,18 +1411,51 @@ V.mapa_depois = function () {
     // NDVI por cima do satélite, ligado pelo cartão abaixo do mapa
     let ndvi = null;
     const formas = [];   // contornos dos pivôs: com a camada de satélite ligada ficam sem preenchimento, pra não cobrir a imagem
-    const aplicarNdvi = () => {
+    let cenas = [], cenasDe = '';   // passagens do pivô em foco (estatísticas), e pra qual pivô/índice/data foram buscadas
+    const focoAtivo = () => { const cfg = ndviCfg(); return cfg.on && fonteNdvi() === 'sentinel' && cfg.foco && FOCO_FORMULA[indiceAtual()] ? com.find((p) => p.nome === cfg.foco) || null : null; };
+    const aplicarNdvi = async () => {
       const cfg = ndviCfg();
       if (ndvi) { mapa.removeLayer(ndvi); ndvi = null; }
-      if (cfg.on) { ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); }
       formas.forEach((f) => { f.setStyle(cfg.on ? { fillOpacity: 0, weight: 3, dashArray: '6 4' } : { fillOpacity: 0.35, weight: 2, dashArray: null }); f.bringToFront(); });
       const ctl = $('.ndvi-ctl'); if (ctl) ctl.hidden = !cfg.on;
       const idx = $('#ndvi-indices'); if (idx) idx.hidden = fonteNdvi() !== 'sentinel';
-      const leg = $('#ndvi-legenda'); if (leg) leg.innerHTML = legendaIndice();
-      const info = $('#ndvi-info'); if (info) info.textContent = ndviPeriodo(cfg.data);
+      const fw = $('#ndvi-foco-wrap'); if (fw) fw.hidden = fonteNdvi() !== 'sentinel';
+      const leg = $('#ndvi-legenda'), info = $('#ndvi-info'), selCena = $('#ndvi-cena');
+      const foco = focoAtivo();
+      if (!foco) {
+        if (cfg.on) { ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); }
+        if (leg) leg.innerHTML = legendaIndice();
+        if (info) info.textContent = (cfg.on && fonteNdvi() === 'sentinel' && cfg.foco && !FOCO_FORMULA[indiceAtual()] ? 'O modo "pivô em foco" vale para NDVI e NDMI. ' : '') + ndviPeriodo(cfg.data);
+        if (selCena) { selCena.disabled = true; selCena.innerHTML = '<option value="">escolha um pivô</option>'; }
+        return;
+      }
+      // pivô em foco: busca as passagens (uma vez por pivô/índice/data) e pinta com as cores esticadas no pivô
+      const chave = foco.nome + '|' + indiceAtual() + '|' + (cfg.data || '');
+      if (info) info.textContent = 'Buscando as passagens do Sentinel-2 sobre ' + foco.nome + '…';
+      try {
+        if (cenasDe !== chave) { cenas = await cenasDoPivo(foco, indiceAtual(), cfg.data); cenasDe = chave; }
+      } catch (e) { cenas = []; cenasDe = chave; if (info) info.textContent = 'Não consegui as estatísticas do pivô: ' + e.message + ' Mostrando a região inteira.'; ndvi = camadaNdvi(cfg).addTo(mapa); ndvi.bringToFront(); if (leg) leg.innerHTML = legendaIndice(); return; }
+      if (ndviCfg().foco !== foco.nome) return;   // trocou de pivô enquanto buscava
+      if (!cenas.length) { if (info) info.textContent = 'Nenhuma passagem com pouca nuvem sobre ' + foco.nome + ' nos últimos 90 dias.'; if (leg) leg.innerHTML = ''; if (selCena) { selCena.disabled = true; selCena.innerHTML = '<option value="">nenhuma passagem</option>'; } return; }
+      if (selCena) {
+        selCena.disabled = false;
+        selCena.innerHTML = cenas.map((c, i) => '<option value="' + esc(c.data) + '"' + ((cfg.cena && cfg.cena === c.data) || (!cfg.cena && i === 0) ? ' selected' : '') + '>' + esc(dataBrAno(c.data)) + ' · média ' + c.media.toFixed(2).replace('.', ',') + '</option>').join('');
+      }
+      const cena = cenas.find((c) => c.data === cfg.cena) || cenas[0];
+      const c = copernicus();
+      ndvi = L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + encodeURIComponent(c.instancia), {
+        layers: camadaSentinel('ndvi'), format: 'image/png', transparent: true, version: '1.3.0', time: cena.data + '/' + cena.data, maxcc: 100, showlogo: false,
+        geometry: poligonoWkt(foco), evalscript: b64(evalscriptFaixas(indiceAtual(), cena.p5, cena.p95)), attribution: 'Copernicus Sentinel-2', opacity: (cfg.op || 75) / 100, maxZoom: 18 }).addTo(mapa);
+      ndvi.bringToFront();
+      if (leg) leg.innerHTML = legendaFoco(cena, indiceAtual());
+      if (info) info.textContent = INDICES[indiceAtual()].dica + ' Sentinel-2, 10 m, recortado no pivô; ' + cenas.length + ' passagens com até 60% de nuvem nos 90 dias até ' + dataBrAno(cfg.data || hojeIso()) + '.';
+      const forma = formas[com.indexOf(foco)]; if (forma && forma.getBounds) mapa.fitBounds(forma.getBounds().pad(0.3));
     };
     window.aplicarNdvi = aplicarNdvi;
     const on = $('#ndvi-on'), dt = $('#ndvi-data'), op = $('#ndvi-op');
+    const selFoco = $('#ndvi-foco'), selCena = $('#ndvi-cena');
+    if (selFoco) selFoco.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { foco: selFoco.value, cena: '' })); aplicarNdvi(); });
+    if (selCena) selCena.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { cena: selCena.value })); aplicarNdvi(); });
     if (on) on.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { on: on.checked })); aplicarNdvi(); });
     if (dt) dt.addEventListener('change', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { data: dt.value })); aplicarNdvi(); });
     if (op) op.addEventListener('input', () => { grava(NDVI_KEY, Object.assign(ndviCfg(), { op: Number(op.value) })); if (ndvi) ndvi.setOpacity(Number(op.value) / 100); });
