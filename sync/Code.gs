@@ -1654,7 +1654,11 @@ function buscarJson_(url) {
     if (code !== 429 && code < 500) break;
     if (i < esperas.length) Utilities.sleep(esperas[i]);
   }
-  throw new Error("HTTP " + code);
+  // o começo da resposta ajuda a entender o erro (o Sentinel Hub e o INMET explicam em texto)
+  var corpo = "";
+  try { corpo = String(resp.getContentText() || "").replace(/\s+/g, " ").trim().slice(0, 240); } catch (e) {}
+  if (corpo === "{}" || corpo === "[]" || /^<!doctype|^<html/i.test(corpo)) corpo = "";
+  throw new Error("HTTP " + code + (corpo ? " — " + corpo : ""));
 }
 
 /** Previsões guardadas, por chave da fazenda. Versão anterior (uma só) vira a da primeira fazenda. */
@@ -2069,7 +2073,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-14";
+var VERSAO_SERVIDOR = "2026.10.16-15";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2103,7 +2107,10 @@ function doGet_(p) {
     return { ok: true, historico: h };
   }
   if (acao === "rosa") { exigirFazenda_(u, faz, faz); return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || ""), faz) }; }
-  if (acao === "fis") return { ok: true, fis: estatisticasIndice_(String(p.pivo || ""), String(p.indice || "ndvi"), String(p.fim || "")) };
+  if (acao === "fis") {
+    try { return { ok: true, fis: estatisticasIndice_(String(p.pivo || ""), String(p.indice || "ndvi"), String(p.fim || "")) }; }
+    catch (eF) { log_("satélite FIS", "erro", String(p.pivo || "") + " / " + String(p.indice || "ndvi") + ": " + eF.message); throw eF; }
+  }
   if (acao === "pdf") {
     // relatório do último dia calculado (ou de um dia pedido) em PDF, em base64, para o app baixar
     exigirFazenda_(u, faz, faz);
