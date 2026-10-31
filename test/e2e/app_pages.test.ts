@@ -562,8 +562,18 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   // cartão "Próximos dias": tempo, faixa dos modelos e, em detalhes, os 14 dias + comparação modelo a modelo
   await page.getByText(/Amanhã: Pancadas de chuva fracas · 5 de 6 modelos veem chuva \(0–19 mm\)/).waitFor();
   await page.getByText(/Tendência: 95% → 80% ↓ caindo · confiança alta \(7\d\)/).waitFor();
-  assert.equal(await page.locator(".prev-dia .tend.tend-caindo").count(), 1); // só 09/02 tem duas rodadas diferentes… os outros dias são "estável"
-  assert.ok((await page.locator(".prev-dia .tend").count()) >= 5);
+  // os selos de tendência saíram dos dias (ficam na tabela de detalhes); cada dia mostra a chuva útil e a faixa
+  assert.equal(await page.locator(".prev-dia .tend").count(), 0);
+  assert.ok((await page.locator(".prev-dia .prev-util").count()) >= 5);
+  assert.match(await page.locator(".prev-dia").first().innerText(), /12,4\s*mm\s+80%\s+0–19 mm\s+útil 12,4\s+19–28°/);
+  // novas peças: resumo com útil, gráfico dos 14 dias, "o que muda no manejo" por pivô, "como ler"
+  assert.match(await page.locator(".prev-resumo").innerText(), /2 DIAS\s+20,5 mm\s+útil 20,5/i);
+  assert.equal(await page.locator(".g14 .g14-chuva").count(), 5); // 5 dos 6 dias têm chuva > 0
+  assert.equal(await page.locator(".g14 .g14-chance").count(), 2); // dias com chance ≥ 70 % (09/02 e 14/02)
+  await page.locator(".prev-manejo").waitFor();
+  assert.match(await page.locator(".prev-manejo").innerText(), /O que isso muda no manejo[\s\S]*Pivô 2 · /);
+  await page.locator(".prev-comoler summary").click();
+  await page.getByText(/parte que entra no solo/).waitFor();
   assert.equal(await page.locator(".prev-dia").count(), 6); // a resposta guardada só tem 6 dias depois de 08/02
   await page.getByText(/Detalhes dos 6 dias e comparação dos modelos/).click();
   await page.getByText("Chuva por modelo (mm)").waitFor();

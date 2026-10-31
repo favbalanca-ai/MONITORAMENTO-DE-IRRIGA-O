@@ -2073,7 +2073,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-15";
+var VERSAO_SERVIDOR = "2026.10.16-16";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2329,7 +2329,7 @@ function dadosApp_(u) {
   fazendas.forEach(function (f) {
     var fc = comCoordenadas_(f);
     estacoes[f.chave] = { nome: f.nome, temEstacao: !!f.temEstacao, latitude: f.latitude, longitude: f.longitude,
-      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsaoParaApp_(previsoes[f.chave] || null, fc.fuso),
+      ultimaLeitura: ultimaLeitura_(f.chave), vento24h: rosaVentos24h_(f.chave), previsao: previsaoParaApp_(previsoes[f.chave] || null, fc),
       inmet: f.inmet ? { codigo: f.inmet, dias: lerClimaInmet_(f).slice(-8) } : null,
       // o app busca o Open-Meteo por aqui (do celular não dá "429") e manda com __previsaoDados
       previsaoUrls: fc.latitude !== null && fc.longitude !== null ? { diario: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso), diarioSimples: Motor.urlOpenMeteo(fc.latitude, fc.longitude, fc.fuso, 14, 7, []), horas: Motor.urlOpenMeteoHoras(fc.latitude, fc.longitude, fc.fuso), ensemble: Motor.urlOpenMeteoEnsemble(fc.latitude, fc.longitude, fc.fuso), sazonal: Motor.urlOpenMeteoSazonal(fc.latitude, fc.longitude, fc.fuso) } : null };
@@ -2364,8 +2364,9 @@ function dadosApp_(u) {
  * as 50 horas a partir da hora atual, sem os 60 dias (ficam na aba PREVISAO 60 DIAS). Corta a resposta a
  * uma fração do tamanho, e tamanho é o que mais pesa no celular.
  */
-function previsaoParaApp_(p, fuso) {
+function previsaoParaApp_(p, cfg) {
   if (!p) return null;
+  var fuso = cfg.fuso;
   var agora = Motor.paraLocal(Date.now(), fuso);
   var ontem = Motor.somarDias(agora.slice(0, 10), -1);
   var horaCorte = agora.slice(0, 13) + ":00";
@@ -2383,7 +2384,42 @@ function previsaoParaApp_(p, fuso) {
     return e;
   });
   q.horas = (p.horas || []).filter(function (h) { return h.quando >= horaCorte; }).slice(0, 50);
+  // chuva útil: o app calcula com a chuva mínima da fazenda (abaixo dela a chuva fica na folha)
+  q.chuvaMinimaMm = cfg.chuvaMinima;
+  // "ontem, previsto × medido": a conferência diária do acerto, em linguagem simples
+  try { q.ontem = conferenciaOntem_(cfg, ontem); } catch (e) { q.ontem = null; }
   return q;
+}
+
+/**
+ * O que a previsão dizia ONTEM para ontem (rodada da véspera, aba PREVISAO HISTORICO) e o que a estação mediu
+ * (aba CLIMA; sem ela, o INMET do município). `null` quando falta um dos dois lados.
+ */
+function conferenciaOntem_(cfg, ontem) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PREVISAO_HIST);
+  if (!aba || aba.getLastRow() < 2) return null;
+  var iso = function (x) { return x instanceof Date ? Motor.paraLocal(x.getTime(), cfg.fuso).slice(0, 10) : String(x).slice(0, 10); };
+  var n = function (x) { return x === "" || x === null || x === undefined ? null : Number(x); };
+  var melhor = null;   // a rodada mais recente ANTES do dia (a da véspera): é a previsão que valia
+  aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.PREVISAO_HIST.length).getValues().forEach(function (l) {
+    if (!l[0] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
+    if (iso(l[2]) !== ontem) return;
+    var em = iso(l[1]);
+    if (em >= ontem) return;
+    if (!melhor || em > melhor.emissao) melhor = { emissao: em, previstoMm: n(l[3]), probPct: n(l[4]) };
+  });
+  if (!melhor || melhor.previstoMm === null) return null;
+  var medido = null, fonte = "";
+  var clima = climaHistorico_(3, cfg.fuso, cfg.chave).filter(function (c) { return c.data === ontem; })[0];
+  if (clima && clima.chuva !== null && clima.chuva !== undefined) { medido = clima.chuva; fonte = "estação"; }
+  else {
+    var inm = lerClimaInmet_(cfg).filter(function (d) { return d.data === ontem && d.horas >= 20; })[0];
+    if (inm && inm.chuvaMm !== null) { medido = inm.chuvaMm; fonte = "INMET"; }
+  }
+  if (medido === null) return null;
+  // acertou se os dois dizem "seco" (< 1 mm), ou se a diferença cabe em 50 % do previsto ou 3 mm
+  var acertou = (melhor.previstoMm < 1 && medido < 1) || Math.abs(melhor.previstoMm - medido) <= Math.max(3, 0.5 * melhor.previstoMm);
+  return { data: ontem, emissao: melhor.emissao, previstoMm: melhor.previstoMm, probPct: melhor.probPct, medidoMm: medido, fonte: fonte, acertou: acertou };
 }
 
 /** Muda quando há cálculo novo, leitura nova ou lançamento novo: o app só baixa tudo se mudou. */

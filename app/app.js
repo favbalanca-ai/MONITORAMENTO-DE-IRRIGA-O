@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-19';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-20';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -752,6 +752,112 @@ function textoModelos(f) {
  * "Detalhes", os 14 dias com UR, vento, ET₀, sol e UV, mais a comparação modelo a modelo.
  * Fontes: Open-Meteo (melhor ajuste + ECMWF, GFS, ICON, GEM, Météo-France) e INMET (texto).
  */
+/* ---- peças do cartão "Próximos dias" ---- */
+/** Chuva útil: abaixo da chuva mínima da fazenda fica na folha (mesma regra do balanço). */
+function chuvaUtil(d, pv) { const min = pv && pv.chuvaMinimaMm != null ? pv.chuvaMinimaMm : 2; return d.chuvaMm == null ? null : d.chuvaMm < min ? 0 : d.chuvaMm; }
+/** Faixa provável do dia: ensemble (p10–p90) ou, sem ele, mín–máx dos modelos. */
+function faixaDia(d) { return d.ensemble ? [d.ensemble.p10Mm, d.ensemble.p90Mm] : d.faixaChuva ? [d.faixaChuva.minMm, d.faixaChuva.maxMm] : null; }
+/** Dias críticos: calor, frio, chuva forte, rajada. */
+const LIMITES_ALERTA = { calorC: 35, frioC: 5, chuvaMm: 25, rajadaKmh: 40 };
+function alertasDias(dias) {
+  const out = [];
+  const agrupa = (lista) => lista.map((d) => diaSemana(d.data) + ' ' + dataBr(d.data)).join(', ');
+  const calor = dias.filter((d) => d.tmax != null && d.tmax >= LIMITES_ALERTA.calorC);
+  if (calor.length) out.push({ cls: 'calor', txt: '🌡️ ' + agrupa(calor.slice(0, 3)) + (calor.length > 3 ? ' +' + (calor.length - 3) : '') + ' · máxima ' + br(Math.max(...calor.map((d) => d.tmax)), 0) + ' °C' });
+  const frio = dias.filter((d) => d.tmin != null && d.tmin <= LIMITES_ALERTA.frioC);
+  if (frio.length) out.push({ cls: 'frio', txt: '❄️ ' + agrupa(frio.slice(0, 3)) + ' · mínima ' + br(Math.min(...frio.map((d) => d.tmin)), 0) + ' °C' });
+  const forte = dias.filter((d) => (d.chuvaMm != null && d.chuvaMm >= LIMITES_ALERTA.chuvaMm) || (d.ensemble && d.ensemble.p90Mm >= LIMITES_ALERTA.chuvaMm * 1.6 && (d.probPct || 0) >= 70));
+  forte.slice(0, 3).forEach((d) => out.push({ cls: 'chuva', txt: '🌧️ ' + diaSemana(d.data) + ' ' + dataBr(d.data) + ' · ' + br(d.chuvaMm, 0) + ' mm' + (d.probPct != null ? ' (' + br(d.probPct, 0) + '%)' : '') }));
+  const vento = dias.filter((d) => d.rajadaKmh != null && d.rajadaKmh >= LIMITES_ALERTA.rajadaKmh);
+  if (vento.length) out.push({ cls: 'vento', txt: '💨 ' + agrupa(vento.slice(0, 3)) + ' · rajadas ' + br(Math.max(...vento.map((d) => d.rajadaKmh)), 0) + ' km/h' });
+  return out.length ? '<div class="prev-alertas">' + out.map((a) => '<span class="chip-alerta ' + a.cls + '">' + a.txt + '</span>').join('') + '</div>' : '';
+}
+/** Horário provável da chuva num dia, pelas horas previstas (≥ 0,3 mm ou chance ≥ 60 %): "15h–18h". */
+function horaChuva(data, horas) {
+  const hs = (horas || []).filter((h) => h.quando.slice(0, 10) === data && ((h.chuvaMm || 0) >= 0.3 || (h.probPct || 0) >= 60));
+  if (!hs.length) return '';
+  const ini = hs[0].quando.slice(11, 13), fim = String(Number(hs[hs.length - 1].quando.slice(11, 13)) + 1).padStart(2, '0');
+  return ini + 'h–' + fim + 'h';
+}
+/** Gráfico dos 14 dias: barras da chuva provável, bigode da faixa, linha de ET₀ e fundo nos dias de chance ≥ 70 %. */
+function grafico14(dias, pv) {
+  if (dias.length < 2) return '';
+  const W = 680, H = 150, mE = 30, mD = 8, mT = 10, mB = 22, w = W - mE - mD, alt = H - mT - mB, n = dias.length;
+  const topo = Math.max(10, ...dias.map((d) => { const f = faixaDia(d); return Math.max(d.chuvaMm || 0, f ? f[1] : 0, d.et0Mm || 0); })) * 1.08;
+  const x = (i) => mE + ((i + 0.5) * w) / n, y = (v) => mT + alt - (v / topo) * alt, bw = (w / n) * 0.42;
+  const passo = topo > 40 ? 20 : topo > 16 ? 10 : 5;
+  let g = '<svg class="g14" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Chuva prevista e ET₀ nos próximos ' + n + ' dias">';
+  for (let v = 0; v <= topo; v += passo) g += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" class="g14-grade"/><text x="' + (mE - 5) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" class="g14-txt">' + v + '</text>';
+  dias.forEach((d, i) => { if ((d.probPct || 0) >= 70) g += '<rect x="' + (x(i) - w / n / 2).toFixed(1) + '" y="' + mT + '" width="' + (w / n).toFixed(1) + '" height="' + alt + '" class="g14-chance"/>'; });
+  dias.forEach((d, i) => {
+    const f = faixaDia(d);
+    if (f && f[1] > f[0]) g += '<line x1="' + x(i).toFixed(1) + '" x2="' + x(i).toFixed(1) + '" y1="' + y(f[1]).toFixed(1) + '" y2="' + y(f[0]).toFixed(1) + '" class="g14-faixa"/><line x1="' + (x(i) - 4).toFixed(1) + '" x2="' + (x(i) + 4).toFixed(1) + '" y1="' + y(f[1]).toFixed(1) + '" y2="' + y(f[1]).toFixed(1) + '" class="g14-faixa"/>';
+    if ((d.chuvaMm || 0) > 0) g += '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + y(d.chuvaMm).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(d.chuvaMm)).toFixed(1) + '" rx="2" class="g14-chuva"><title>' + esc(diaSemana(d.data) + ' ' + dataBr(d.data) + ': ' + br(d.chuvaMm, 1) + ' mm' + (d.probPct != null ? ' (' + br(d.probPct, 0) + '%)' : '') + (f ? ' · faixa ' + br(f[0], 0) + '–' + br(f[1], 0) + ' mm' : '') + (d.et0Mm != null ? ' · ET₀ ' + br(d.et0Mm, 1) + ' mm' : '')) + '</title></rect>';
+  });
+  const et0 = dias.map((d, i) => (d.et0Mm == null ? '' : (i && dias[i - 1].et0Mm != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.et0Mm).toFixed(1))).join(' ');
+  if (et0) g += '<path d="' + et0 + '" class="g14-et0"/>';
+  const cada = n > 8 ? 2 : 1;
+  dias.forEach((d, i) => { if (i % cada === 0) g += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" class="g14-txt">' + esc(dataBr(d.data)) + '</text>'; });
+  g += '</svg>';
+  return '<div class="g14-wrap">' + g + '<div class="g14-leg"><span><i class="l-barra"></i>Chuva provável (consenso)</span><span><i class="l-faixa"></i>Faixa provável</span><span><i class="l-et0"></i>ET₀ prevista</span><span><i class="l-chance"></i>Chance ≥ 70%</span></div></div>';
+}
+/**
+ * "O que isso muda no manejo": para cada pivô, a próxima irrigação sem chuva (projeção da planilha) e com a
+ * chuva provável (chance ≥ 50 %, só a parte útil), pela mesma regra do balanço: ETc acumula, chuva útil abate,
+ * irriga quando o déficit chega na lâmina mínima.
+ */
+function manejoPrevisto(dias, pv) {
+  const ps = pivosResumo().filter((p) => p.decisao && p.decisao !== 'SEM DADOS' && !p.semBalanco);
+  if (!ps.length) return '';
+  const porData = {}; dias.forEach((d) => { porData[d.data] = d; });
+  const itens = ps.map((p) => {
+    const proj = p.projecao && p.projecao.dias ? p.projecao.dias : [];
+    let def = p.deficit || 0, proximaCom = null, chuvaContada = 0;
+    const util = (d) => (d && (d.probPct == null || d.probPct >= 50) ? chuvaUtil(d, pv) || 0 : 0);
+    const hoje = pv.dias.find((d) => d.data === (DADOS.resumo && DADOS.resumo.dia));
+    const utilHoje = hoje ? util(hoje) : 0;
+    let anterior = p.deficit || 0;
+    for (const q of proj) {
+      const etc = Math.max(0, q.deficit - anterior); anterior = q.deficit;
+      const u = util(porData[q.data]); chuvaContada += u;
+      def = Math.max(0, def + etc - u);
+      if (proximaCom === null && def >= (p.laminaMinimaMm || 0) && (p.laminaMinimaMm || 0) > 0) proximaCom = q.data;
+    }
+    const sem = p.projecao ? p.projecao.proximaIrrigacao : null;
+    let texto, detalhe;
+    if (p.decisao === 'IRRIGAR') {
+      if (utilHoje >= 0.8 * (p.deficit || 0) && utilHoje > 0) { texto = 'a chuva de hoje pode cobrir o déficit'; detalhe = br(hoje.chuvaMm, 1) + ' mm hoje (' + br(hoje.probPct, 0) + '%), ~' + br(utilHoje, 1) + ' mm úteis contra ' + br(p.deficit, 1) + ' mm de déficit. Avalie esperar.'; }
+      else { texto = 'irrigar hoje continua valendo'; detalhe = hoje && hoje.chuvaMm ? br(hoje.chuvaMm, 1) + ' mm hoje (' + br(hoje.probPct, 0) + '%) rendem ~' + br(utilHoje, 1) + ' mm úteis: não cobrem o déficit de ' + br(p.deficit, 1) + ' mm.' : 'Sem chuva útil prevista para hoje; o déficit é de ' + br(p.deficit, 1) + ' mm.'; }
+    } else if (sem && proximaCom && proximaCom > sem) {
+      texto = 'próxima irrigação passa de ' + dataBr(sem) + ' para ' + dataBr(proximaCom); detalhe = 'se cair a chuva provável (' + br(chuvaContada, 0) + ' mm úteis até ' + dataBr(proximaCom) + '); se não cair, segue ' + dataBr(sem) + '.';
+    } else if (sem && !proximaCom && chuvaContada > 0) {
+      texto = 'sem irrigação até ' + dataBr(proj[proj.length - 1].data) + ' se a chuva vier'; detalhe = br(chuvaContada, 0) + ' mm úteis prováveis no período; sem chuva, irrigaria em ' + dataBr(sem) + '.';
+    } else if (sem) {
+      texto = 'próxima irrigação em ' + dataBr(sem); detalhe = chuvaContada > 0 ? 'a chuva provável (' + br(chuvaContada, 0) + ' mm úteis) não muda a data.' : 'sem chuva útil provável até lá.';
+    } else {
+      texto = 'sem irrigação prevista nos próximos ' + (p.projecao ? p.projecao.horizonte : 7) + ' dias'; detalhe = chuvaContada > 0 ? br(chuvaContada, 0) + ' mm úteis prováveis reforçam o perfil.' : 'déficit baixo e ET₀ moderada.';
+    }
+    return '<li><i style="background:' + SEM_COR[semaforo(p)] + '"></i><div><b>' + esc(p.nome) + '</b> · ' + esc(texto) + '<small>' + esc(detalhe) + '</small></div></li>';
+  });
+  return '<div class="prev-manejo"><h3>' + ico('gota') + ' O que isso muda no manejo</h3><ul>' + itens.join('') + '</ul><p class="muted">Conta só a chuva com chance de 50% ou mais, e só a parte útil (acima de ' + br(pv.chuvaMinimaMm != null ? pv.chuvaMinimaMm : 2, 0) + ' mm). A decisão de hoje continua sendo a do balanço medido.</p></div>';
+}
+/** "Ontem, previsto × medido": o acerto de ontem em linguagem simples. */
+function cardOntem(pv) {
+  const o = pv.ontem; if (!o) return '';
+  return '<div class="prev-ontem"><div><small>Ontem, previsto</small><b>' + br(o.previstoMm, 1) + ' mm' + (o.probPct != null ? ' · ' + br(o.probPct, 0) + '%' : '') + '</b></div>' +
+    '<div><small>' + (o.fonte === 'INMET' ? 'INMET mediu' : 'Estação mediu') + '</small><b>' + br(o.medidoMm, 1) + ' mm</b></div>' +
+    '<span class="ontem-selo ' + (o.acertou ? 'ok' : 'erro') + '">' + (o.acertou ? '✓ acertou' : '✗ errou') + '</span></div>';
+}
+function comoLer(pv) {
+  return '<details class="prev-comoler"><summary>Como ler os dias</summary><dl>' +
+    '<dt>4,4 mm · 70%</dt><dd>chuva mais provável (média dos modelos pesada pelo acerto deles aqui) e chance de chover pelo menos 1 mm' + (pv.dias.some((d) => d.ensemble) ? ' (contada nas 51 rodadas do ECMWF)' : '') + '</dd>' +
+    '<dt>0–6 mm</dt><dd>faixa em que a chuva deve cair (5% a 95% das rodadas)</dd>' +
+    '<dt>útil 2,1</dt><dd>parte que entra no solo: só chuva acima de ' + br(pv.chuvaMinimaMm != null ? pv.chuvaMinimaMm : 2, 0) + ' mm (abaixo disso fica na folha)</dd>' +
+    '<dt>15h–18h</dt><dd>horário provável da chuva, nos dois primeiros dias</dd>' +
+    '<dt>borda amarela</dt><dd>os modelos discordam: chuva duvidosa</dd>' +
+    '<dt>fundo azul</dt><dd>chuva de 5 mm ou mais</dd></dl></details>';
+}
+
 function cardPrevisao(dia) {
   const pv = estacao().previsao; if (!pv || !pv.dias || !pv.dias.length) return '';
   const todos = pv.dias.filter((d) => d.data > (dia || '')).slice(0, 14);
@@ -761,21 +867,19 @@ function cardPrevisao(dia) {
   const r7 = resumoPrevisao(todos, 7), r14 = resumoPrevisao(todos, 14);
   const temModelos = todos.some((d) => d.faixaChuva);
   const classe = (d) => ((d.chuvaMm || 0) >= 5 ? ' chuva' : '') + (d.faixaChuva && d.faixaChuva.modelos >= 3 && d.faixaChuva.comChuva > 0 && d.faixaChuva.comChuva < d.faixaChuva.modelos / 2 ? ' duvida' : '');
-  const tira = '<div class="prev">' + prox.map((d) => '<div class="prev-dia' + classe(d) + '" title="' + esc((d.tempo || '') + (d.faixaChuva ? ' · ' + textoModelos(d.faixaChuva) : '')) + '">' +
+  const tira = '<div class="prev">' + prox.map((d, i) => '<div class="prev-dia' + classe(d) + '" title="' + esc((d.tempo || '') + (d.faixaChuva ? ' · ' + textoModelos(d.faixaChuva) : '') + (d.tendencia && d.tendencia.emissoes >= 2 ? ' · tendência ' + d.tendencia.texto : '')) + '">' +
     '<small>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</small>' +
     '<span class="prev-ico" aria-label="' + esc(d.tempo || '') + '">' + (iconeTempo(d.codigoTempo) || '·') + '</span>' +
     '<b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
     '<span' + (d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
-    (d.ensemble ? '<span class="prev-faixa">' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm</span>' : '') +
+    (faixaDia(d) ? '<span class="prev-faixa">' + br(faixaDia(d)[0], 0) + '–' + br(faixaDia(d)[1], 0) + ' mm</span>' : '') +
+    (d.chuvaMm != null ? '<span class="prev-util">útil ' + br(chuvaUtil(d, pv), 1) + '</span>' : '') +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
-    (d.faixaChuva ? '<span class="prev-mod">' + d.faixaChuva.comChuva + '/' + d.faixaChuva.modelos + ' ' + ico('chuva') + '</span>' : '') +
-    (d.tendencia && d.tendencia.emissoes >= 2 && d.chuvaMm != null ? '<span class="prev-tend">' + seloTendencia(d.tendencia, true) + '</span>' : '') +
+    (i < 2 && horaChuva(d.data, pv.horas) ? '<span class="prev-hora">' + horaChuva(d.data, pv.horas) + '</span>' : '') +
     '</div>').join('') + '</div>';
-  const resumo = '<div class="prev-resumo">' +
-    '<span><small>2 dias</small><b>' + br(soma2, 1) + ' mm</b></span>' +
-    '<span><small>' + r7.n + ' dias</small><b>' + br(r7.chuva, 0) + ' mm</b>' + (r7.et0 != null ? '<em>ET₀ ' + br(r7.et0, 0) + ' mm · saldo ' + (r7.saldo >= 0 ? '+' : '') + br(r7.saldo, 0) + '</em>' : '') + '</span>' +
-    (r14.n > 7 ? '<span><small>' + r14.n + ' dias</small><b>' + br(r14.chuva, 0) + ' mm</b>' + (r14.et0 != null ? '<em>ET₀ ' + br(r14.et0, 0) + ' mm · saldo ' + (r14.saldo >= 0 ? '+' : '') + br(r14.saldo, 0) + '</em>' : '') + '</span>' : '') +
-    '</div>';
+  const util = (n) => todos.slice(0, n).reduce((t, d) => t + (chuvaUtil(d, pv) || 0), 0);
+  const bloco = (rot, n, r) => '<span><small>' + rot + '</small><b>' + br(r.chuva, n <= 2 ? 1 : 0) + ' mm</b><em>útil <i>' + br(util(n), n <= 2 ? 1 : 0) + '</i>' + (r.et0 != null ? ' · ET₀ ' + br(r.et0, 0) + ' · saldo ' + (util(n) - r.et0 >= 0 ? '+' : '') + br(util(n) - r.et0, 0) : '') + '</em></span>';
+  const resumo = '<div class="prev-resumo">' + bloco('2 dias', 2, { chuva: soma2, et0: null }) + bloco(r7.n + ' dias', 7, r7) + (r14.n > 7 ? bloco(r14.n + ' dias', 14, r14) : '') + '</div>' + alertasDias(todos);
   const amanha = prox[0];
   const pesos = pv.pesos || null, comPlacar = !!(pesos && pesos.suficiente);
   const soInmet = !todos.some((d) => d.chuvaMm != null);
@@ -817,8 +921,9 @@ function cardPrevisao(dia) {
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
-  return '<div class="card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
-    tira + resumo + linhaAmanha + detalhes +
+  return '<div class="card prev-card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
+    resumo + '<div class="prev-corpo"><div class="prev-col">' + grafico14(todos, pv) + tira + comoLer(pv) + '</div><div class="prev-col">' + manejoPrevisto(todos, pv) + cardOntem(pv) + '</div></div>' +
+    linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
     (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
 }

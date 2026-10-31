@@ -290,6 +290,39 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-resumo b{font-size:16px;color:var(--blue);font-variant-numeric:tabular-nums}
 .prev-resumo em{font-style:normal;font-size:11px;color:var(--muted)}
 .prev-amanha{margin-top:8px}
+/* cartão Próximos dias: resumo com útil, alertas, gráfico 14 dias, manejo, ontem */
+.prev-resumo em i{font-style:normal;color:var(--text);font-weight:600}
+.prev-alertas{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip-alerta{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+.chip-alerta.calor{background:var(--red-soft);color:var(--red)}.chip-alerta.frio{background:var(--blue-soft);color:var(--blue)}
+.chip-alerta.chuva{background:var(--blue-soft);color:var(--blue)}.chip-alerta.vento{background:var(--amber-soft);color:var(--amber)}
+.prev-corpo{display:grid;grid-template-columns:1fr;gap:4px 18px;margin-top:4px}
+@media (min-width:900px){.prev-corpo{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}}
+.prev-col{min-width:0}
+.g14-wrap{margin-top:12px}.g14{display:block;width:100%;height:auto}
+.g14-grade{stroke:var(--line);stroke-width:1}.g14-txt{font-size:10px;fill:var(--muted)}
+.g14-chance{fill:var(--blue-soft);opacity:.7}.g14-chuva{fill:var(--g-chuva)}
+.g14-faixa{stroke:var(--text);stroke-opacity:.55;stroke-width:1.5}.g14-et0{fill:none;stroke:var(--g-def);stroke-width:2;stroke-linejoin:round}
+.g14-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--muted);margin-top:6px}
+.g14-leg i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+.g14-leg .l-barra{background:var(--g-chuva)}.g14-leg .l-faixa{width:2px;background:var(--text);opacity:.6}.g14-leg .l-et0{height:0;border-top:2px solid var(--g-def);vertical-align:3px}.g14-leg .l-chance{background:var(--blue-soft);border:1px solid var(--line)}
+.prev-util{font-size:11px;color:var(--text)}
+.prev-hora{font-size:10.5px;color:var(--blue);background:var(--card);border-radius:6px;padding:1px 4px;margin-top:3px;display:inline-block}
+.prev-manejo{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+@media (min-width:900px){.prev-manejo{border-top:0;padding-top:0;margin-top:12px}}
+.prev-manejo h3{font-size:13px;color:var(--ink);display:flex;align-items:center;gap:6px}
+.prev-manejo ul{list-style:none;margin-top:8px;display:grid;gap:8px}
+.prev-manejo li{display:grid;grid-template-columns:10px 1fr;gap:10px;align-items:start;font-size:13px}
+.prev-manejo li i{width:10px;height:10px;border-radius:50%;margin-top:5px;display:block}
+.prev-manejo li b{color:var(--ink)}.prev-manejo li small{display:block;color:var(--muted);font-size:12px}
+.prev-manejo .muted{margin-top:8px}
+.prev-comoler{margin-top:8px;font-size:12px}.prev-comoler summary{cursor:pointer;color:var(--muted);font-weight:600}
+.prev-comoler dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:6px;color:var(--muted)}.prev-comoler dt{color:var(--text);font-weight:600;white-space:nowrap}
+.prev-ontem{margin-top:14px;background:var(--bg);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;font-size:13px}
+.prev-ontem small{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.prev-ontem b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+.ontem-selo{font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;justify-self:end}
+.ontem-selo.ok{color:var(--green);background:var(--green-soft)}.ontem-selo.erro{color:var(--red);background:var(--red-soft)}
 .prev-placar{margin-top:8px}.prev-placar .svg{width:13px;height:13px;vertical-align:-2px}
 .prev-placar-tab tr.melhor td{font-weight:700}
 tr.incompleto td{color:var(--muted)}

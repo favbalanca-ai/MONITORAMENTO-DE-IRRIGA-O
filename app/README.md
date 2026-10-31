@@ -20,7 +20,12 @@ feitos sem internet.
   parênteses nos detalhes) e a tabela do placar mostra peso, erro de chuva, erro de temperatura e acerto
   chove/não chove por modelo. Cartão **Chuva confirmada pelo INMET** (quando a fazenda tem o código da estação
   automática do INMET na aba FAZENDAS): últimos 7 dias, chuva da fazenda × chuva do INMET, diferença e
-  temperaturas; o INMET preenche o placar nos dias em que a estação da fazenda falhou. Totais de chuva × ET₀ (saldo) em 7 e 14 dias. **Tendência** de cada dia: o que as rodadas anteriores
+  temperaturas; o INMET preenche o placar nos dias em que a estação da fazenda falhou. Totais de chuva × ET₀ (saldo) em 7 e 14 dias, com a **chuva útil** (acima da chuva mínima da
+  fazenda); fichas de **dias críticos** (máxima ≥ 35 °C, mínima ≤ 5 °C, chuva ≥ 25 mm, rajadas ≥ 40 km/h);
+  **gráfico dos 14 dias** (barras da chuva provável, bigode da faixa, linha de ET₀, fundo nos dias com chance
+  ≥ 70 %); **"O que isso muda no manejo"** por pivô (próxima irrigação sem chuva × com a chuva provável de chance
+  ≥ 50 %, pela regra do balanço); nos dois primeiros dias o **horário provável da chuva**; "Como ler os dias"; e
+  **"Ontem, previsto × medido"** (rodada da véspera × estação, ou INMET). **Tendência** de cada dia: o que as rodadas anteriores
   (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
   confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
   chuva prevista cobre o déficit. **O próprio app busca o Open-Meteo** (o Open-Meteo bloqueia os endereços
