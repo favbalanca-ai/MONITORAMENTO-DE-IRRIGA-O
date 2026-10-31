@@ -570,8 +570,7 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(await page.locator(".prev-resumo").innerText(), /2 DIAS\s+20,5 mm\s+útil 20,5/i);
   assert.equal(await page.locator(".g14 .g14-chuva").count(), 5); // 5 dos 6 dias têm chuva > 0
   assert.equal(await page.locator(".g14 .g14-chance").count(), 2); // dias com chance ≥ 70 % (09/02 e 14/02)
-  await page.locator(".prev-manejo").waitFor();
-  assert.match(await page.locator(".prev-manejo").innerText(), /O que isso muda no manejo[\s\S]*Pivô 2 · /);
+  assert.equal(await page.locator(".prev-manejo").count(), 0); // o bloco "o que muda no manejo" saiu da tela a pedido da dona
   await page.locator(".prev-comoler summary").click();
   await page.getByText(/parte que entra no solo/).waitFor();
   assert.equal(await page.locator(".prev-dia").count(), 6); // a resposta guardada só tem 6 dias depois de 08/02

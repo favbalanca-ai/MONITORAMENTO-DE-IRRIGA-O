@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-20';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-21';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -801,46 +801,6 @@ function grafico14(dias, pv) {
   g += '</svg>';
   return '<div class="g14-wrap">' + g + '<div class="g14-leg"><span><i class="l-barra"></i>Chuva provável (consenso)</span><span><i class="l-faixa"></i>Faixa provável</span><span><i class="l-et0"></i>ET₀ prevista</span><span><i class="l-chance"></i>Chance ≥ 70%</span></div></div>';
 }
-/**
- * "O que isso muda no manejo": para cada pivô, a próxima irrigação sem chuva (projeção da planilha) e com a
- * chuva provável (chance ≥ 50 %, só a parte útil), pela mesma regra do balanço: ETc acumula, chuva útil abate,
- * irriga quando o déficit chega na lâmina mínima.
- */
-function manejoPrevisto(dias, pv) {
-  const ps = pivosResumo().filter((p) => p.decisao && p.decisao !== 'SEM DADOS' && !p.semBalanco);
-  if (!ps.length) return '';
-  const porData = {}; dias.forEach((d) => { porData[d.data] = d; });
-  const itens = ps.map((p) => {
-    const proj = p.projecao && p.projecao.dias ? p.projecao.dias : [];
-    let def = p.deficit || 0, proximaCom = null, chuvaContada = 0;
-    const util = (d) => (d && (d.probPct == null || d.probPct >= 50) ? chuvaUtil(d, pv) || 0 : 0);
-    const hoje = pv.dias.find((d) => d.data === (DADOS.resumo && DADOS.resumo.dia));
-    const utilHoje = hoje ? util(hoje) : 0;
-    let anterior = p.deficit || 0;
-    for (const q of proj) {
-      const etc = Math.max(0, q.deficit - anterior); anterior = q.deficit;
-      const u = util(porData[q.data]); chuvaContada += u;
-      def = Math.max(0, def + etc - u);
-      if (proximaCom === null && def >= (p.laminaMinimaMm || 0) && (p.laminaMinimaMm || 0) > 0) proximaCom = q.data;
-    }
-    const sem = p.projecao ? p.projecao.proximaIrrigacao : null;
-    let texto, detalhe;
-    if (p.decisao === 'IRRIGAR') {
-      if (utilHoje >= 0.8 * (p.deficit || 0) && utilHoje > 0) { texto = 'a chuva de hoje pode cobrir o déficit'; detalhe = br(hoje.chuvaMm, 1) + ' mm hoje (' + br(hoje.probPct, 0) + '%), ~' + br(utilHoje, 1) + ' mm úteis contra ' + br(p.deficit, 1) + ' mm de déficit. Avalie esperar.'; }
-      else { texto = 'irrigar hoje continua valendo'; detalhe = hoje && hoje.chuvaMm ? br(hoje.chuvaMm, 1) + ' mm hoje (' + br(hoje.probPct, 0) + '%) rendem ~' + br(utilHoje, 1) + ' mm úteis: não cobrem o déficit de ' + br(p.deficit, 1) + ' mm.' : 'Sem chuva útil prevista para hoje; o déficit é de ' + br(p.deficit, 1) + ' mm.'; }
-    } else if (sem && proximaCom && proximaCom > sem) {
-      texto = 'próxima irrigação passa de ' + dataBr(sem) + ' para ' + dataBr(proximaCom); detalhe = 'se cair a chuva provável (' + br(chuvaContada, 0) + ' mm úteis até ' + dataBr(proximaCom) + '); se não cair, segue ' + dataBr(sem) + '.';
-    } else if (sem && !proximaCom && chuvaContada > 0) {
-      texto = 'sem irrigação até ' + dataBr(proj[proj.length - 1].data) + ' se a chuva vier'; detalhe = br(chuvaContada, 0) + ' mm úteis prováveis no período; sem chuva, irrigaria em ' + dataBr(sem) + '.';
-    } else if (sem) {
-      texto = 'próxima irrigação em ' + dataBr(sem); detalhe = chuvaContada > 0 ? 'a chuva provável (' + br(chuvaContada, 0) + ' mm úteis) não muda a data.' : 'sem chuva útil provável até lá.';
-    } else {
-      texto = 'sem irrigação prevista nos próximos ' + (p.projecao ? p.projecao.horizonte : 7) + ' dias'; detalhe = chuvaContada > 0 ? br(chuvaContada, 0) + ' mm úteis prováveis reforçam o perfil.' : 'déficit baixo e ET₀ moderada.';
-    }
-    return '<li><i style="background:' + SEM_COR[semaforo(p)] + '"></i><div><b>' + esc(p.nome) + '</b> · ' + esc(texto) + '<small>' + esc(detalhe) + '</small></div></li>';
-  });
-  return '<div class="prev-manejo"><h3>' + ico('gota') + ' O que isso muda no manejo</h3><ul>' + itens.join('') + '</ul><p class="muted">Conta só a chuva com chance de 50% ou mais, e só a parte útil (acima de ' + br(pv.chuvaMinimaMm != null ? pv.chuvaMinimaMm : 2, 0) + ' mm). A decisão de hoje continua sendo a do balanço medido.</p></div>';
-}
 /** "Ontem, previsto × medido": o acerto de ontem em linguagem simples. */
 function cardOntem(pv) {
   const o = pv.ontem; if (!o) return '';
@@ -922,7 +882,7 @@ function cardPrevisao(dia) {
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
   return '<div class="card prev-card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
-    resumo + '<div class="prev-corpo"><div class="prev-col">' + grafico14(todos, pv) + tira + comoLer(pv) + '</div><div class="prev-col">' + manejoPrevisto(todos, pv) + cardOntem(pv) + '</div></div>' +
+    resumo + grafico14(todos, pv) + tira + cardOntem(pv) + comoLer(pv) +
     linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
     (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
