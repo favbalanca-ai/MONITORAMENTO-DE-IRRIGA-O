@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-22';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-23';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -340,8 +340,7 @@ function blocoAplicacao(u, x) {
   return '<div class="aplic"><div class="aplic-top"><div class="est-rotulo">' + ico('gota') + ' Pulverização agora</div><div class="deltat sem-' + nivelDT + '"><small>Delta T</small><b>' + br(c.deltaT, 1) + '<span> °C</span></b><em>' + (nivelDT === 'bom' ? 'ideal 2–8' : nivelDT === 'atencao' ? 'alto (8–10)' : c.deltaT < 2 ? 'abaixo de 2' : 'acima de 10') + '</em></div></div>' +
     '<div class="aplic-modal sem-' + c.nivel + '"><div class="aplic-cab"><b>Condição pra aplicar</b><span class="badge aplic-' + c.nivel + '">' + SEM_ICONE[c.nivel] + ' ' + APLIC_ROTULO[c.nivel] + '</span></div>' +
     '<ul>' + (ruins.length ? ruins.map((m) => '<li class="m-' + m[0] + '">' + esc(m[1]) + '</li>').join('') : '<li class="m-bom">Delta T, vento, UR e temperatura dentro da faixa.</li>') + '</ul></div>' +
-    janelas48h(horas, pv && pv.luz) +
-    '<p class="muted">Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h, UR &gt; 55 %, temperatura &lt; 30 °C, sem chuva. Confirme com o agrônomo e a bula.</p></div>';
+    janelas48h(horas, pv && pv.luz) + '</div>';
 }
 /** Próximas 48 h hora a hora (previsão Open-Meteo) e as melhores janelas de cada modalidade. */
 function janelasBoas(horas, apartirDe, minHoras, max, ateNivel) {
@@ -377,10 +376,12 @@ function janelas48h(horas, luz) {
   };
   const faixa = () => '<div class="faixa48"><div class="horas48">' + prox.map((h) => '<i class="h-' + h.nivel + (h.luz === false ? ' h-noite' : '') + '" title="' + esc(dd(h.quando) + ' ' + hh(h.quando) + (h.luz === false ? ' · sem luz (avião não aplica)' : '') + ' · Delta T ' + br(h.deltaT, 1) + (h.ventoKmh != null ? ' · vento ' + h.ventoKmh + ' km/h' : '') + (h.chuvaMm ? ' · chuva ' + br(h.chuvaMm, 1) + ' mm' : '')) + '"></i>').join('') + '</div></div>';
   const luzHoje = luz && luz.length ? luz.find((l) => l.data === ini.slice(0, 10)) || luz[0] : null;
-  const luzTxt = luzHoje && luzHoje.primeiraLuz ? '<p class="muted j48-luz">' + ico('sol') + ' Luz do dia ' + esc(dataBr(luzHoje.data)) + ': primeira luz <b>' + esc(luzHoje.primeiraLuz) + '</b> · sol ' + esc(luzHoje.nascer) + '–' + esc(luzHoje.por) + ' · última luz <b>' + esc(luzHoje.ultimaLuz) + '</b>. Aplicação aérea só nesse período; as horas escuras na faixa ficam de fora.</p>' : '';
-  return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)</div>' + faixa() +
+  // luz do dia e faixas de referência ficam curtas (o detalhe vai no título, ao tocar/passar o mouse)
+  const luzTxt = luzHoje && luzHoje.primeiraLuz ? '<span class="j48-luz" title="Primeira luz ' + esc(luzHoje.primeiraLuz) + ' · sol ' + esc(luzHoje.nascer) + '–' + esc(luzHoje.por) + ' · última luz ' + esc(luzHoje.ultimaLuz) + '. Aplicação aérea só nesse período; as horas escuras na faixa ficam de fora.">' + ico('sol') + ' Luz ' + esc(luzHoje.primeiraLuz) + '–' + esc(luzHoje.ultimaLuz) + '</span>' : '';
+  const faixasRef = '<span class="j48-ref" title="Faixas usuais (Embrapa/ANDEF): Delta T 2–8 °C, vento 3–10 km/h, UR acima de 55 %, temperatura abaixo de 30 °C, sem chuva. Confirme com o agrônomo e a bula.">ⓘ faixas usuais</span>';
+  return '<div class="j48"><div class="est-rotulo" style="margin-top:12px">' + ico('calendario') + ' Próximas 48 h (previsão)' + (temLuz ? ' <span class="est-sub">· avião, da primeira à última luz</span>' : '') + '</div>' + faixa() +
     '<div class="horas48-rotulos">' + prox.filter((h, i) => i % 6 === 0).map((h) => '<span>' + hh(h.quando) + '</span>').join('') + '</div>' +
-    '<p class="j48-txt"><b>Melhor hora pra aplicar' + (temLuz ? ' (avião, da primeira à última luz)' : '') + ':</b> ' + esc(texto()) + '</p>' + luzTxt + '</div>';
+    '<p class="j48-txt"><b>Melhor hora:</b> ' + esc(texto()) + '</p><p class="muted j48-rodape">' + [luzTxt, faixasRef].filter(Boolean).join(' · ') + '</p></div>';
 }
 
 /**
@@ -809,13 +810,13 @@ function cardOntem(pv) {
     '<span class="ontem-selo ' + (o.acertou ? 'ok' : 'erro') + '">' + (o.acertou ? '✓ acertou' : '✗ errou') + '</span></div>';
 }
 function comoLer(pv) {
-  return '<details class="prev-comoler"><summary>Como ler os dias</summary><dl>' +
+  return '<div class="prev-comoler"><p class="muted"><b>Como ler os dias</b></p><dl>' +
     '<dt>4,4 mm · 70%</dt><dd>chuva mais provável (média dos modelos pesada pelo acerto deles aqui) e chance de chover pelo menos 1 mm' + (pv.dias.some((d) => d.ensemble) ? ' (contada nas 51 rodadas do ECMWF)' : '') + '</dd>' +
     '<dt>0–6 mm</dt><dd>faixa em que a chuva deve cair (5% a 95% das rodadas)</dd>' +
     '<dt>útil 2,1</dt><dd>parte que entra no solo: só chuva acima de ' + br(pv.chuvaMinimaMm != null ? pv.chuvaMinimaMm : 2, 0) + ' mm (abaixo disso fica na folha)</dd>' +
     '<dt>15h–18h</dt><dd>horário provável da chuva, nos dois primeiros dias</dd>' +
     '<dt>borda amarela</dt><dd>os modelos discordam: chuva duvidosa</dd>' +
-    '<dt>fundo azul</dt><dd>chuva de 5 mm ou mais</dd></dl></details>';
+    '<dt>fundo azul</dt><dd>chuva de 5 mm ou mais</dd></dl></div>';
 }
 
 function cardPrevisao(dia) {
@@ -878,12 +879,12 @@ function cardPrevisao(dia) {
       pesos.modelos.map((m, i) => '<tr' + (i === 0 && comPlacar ? ' class="melhor"' : '') + '><td>' + esc(m.modelo) + '</td><td><span class="peso-barra" style="--p:' + Math.round(m.peso * 100) + '%"></span> ' + br(m.peso * 100, 0) + '%</td><td>' + (m.maeChuva == null ? '–' : br(m.maeChuva, 1) + ' mm') + '</td><td>' + (m.maeTemp == null ? '–' : br(m.maeTemp, 1) + ' °C') + '</td><td>' + (m.acertoChuvaPct == null ? '–' : br(m.acertoChuvaPct, 0) + '%') + '</td><td>' + m.n + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
-  const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + inmetTexto + tabela + modelos + placar +
+  const detalhes = '<details class="kc-det prev-det"><summary>Como ler · detalhes dos ' + todos.length + ' dias · modelos e placar</summary>' + comoLer(pv) + inmetTexto + tabela + modelos + placar +
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
   return '<div class="card prev-card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
-    resumo + grafico14(todos, pv) + tira + cardOntem(pv) + comoLer(pv) +
+    resumo + grafico14(todos, pv) + tira + cardOntem(pv) +
     linhaAmanha + detalhes +
     '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
     (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';

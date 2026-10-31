@@ -23,8 +23,9 @@ feitos sem internet.
   temperaturas; o INMET preenche o placar nos dias em que a estação da fazenda falhou. Totais de chuva × ET₀ (saldo) em 7 e 14 dias, com a **chuva útil** (acima da chuva mínima da
   fazenda); fichas de **dias críticos** (máxima ≥ 35 °C, mínima ≤ 5 °C, chuva ≥ 25 mm, rajadas ≥ 40 km/h);
   **gráfico dos 14 dias** (barras da chuva provável, bigode da faixa, linha de ET₀, fundo nos dias com chance
-  ≥ 70 %); nos dois primeiros dias o **horário provável da chuva**; "Como ler os dias"; e
-  **"Ontem, previsto × medido"** (rodada da véspera × estação, ou INMET). **Tendência** de cada dia: o que as rodadas anteriores
+  ≥ 70 %); nos dois primeiros dias o **horário provável da chuva**; **"Ontem, previsto ×
+  medido"** (rodada da véspera × estação, ou INMET); "Como ler os dias", o texto do INMET, a tabela dos 14 dias, a
+  comparação dos modelos e o placar ficam num só dobrável. **Tendência** de cada dia: o que as rodadas anteriores
   (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
   confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
   chuva prevista cobre o déficit. **O próprio app busca o Open-Meteo** (o Open-Meteo bloqueia os endereços
@@ -61,7 +62,7 @@ feitos sem internet.
   Open-Meteo) e a melhor hora pra aplicar (janelas boas; senão as de atenção; senão a hora menos ruim).
   A aplicação é **aérea**: só conta da **primeira à última luz do dia** (crepúsculo civil, calculado pela
   latitude/longitude da fazenda); as horas escuras aparecem hachuradas na faixa e ficam fora das janelas.
-  Mostra a primeira luz, o nascer, o pôr e a última luz do dia.
+  Mostra "Luz 05:07–18:29" (nascer e pôr no toque) e as faixas de referência no toque em "ⓘ faixas usuais".
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede). Chave **NDVI por
   satélite**: camada de vigor da vegetação do NASA GIBS (MODIS Terra, 250 m, composto de 16 dias), com data

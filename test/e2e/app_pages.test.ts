@@ -554,8 +554,9 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(j48, /Próximas 48 h \(previsão\)/i);
   assert.equal(await page.locator(".horas48 i").count(), 48);
   // aplicação aérea: só da primeira à última luz — de noite (fixture: boa) o avião não voa; o que sobra é 05h–07h (22 °C, UR 75 %)
-  assert.match(j48, /Melhor hora pra aplicar \(avião, da primeira à última luz\): (hoje|amanhã) 0[456]h–0[678]h \(\d h\)/);
-  assert.match(j48, /Luz do dia \d\d\/\d\d: primeira luz \d\d:\d\d · sol \d\d:\d\d–\d\d:\d\d · última luz \d\d:\d\d/);
+  assert.match(j48, /avião, da primeira à última luz[\s\S]*Melhor hora: (hoje|amanhã) 0[456]h–0[678]h \(\d h\)/);
+  assert.match(j48, /Luz \d\d:\d\d–\d\d:\d\d\s*·\s*ⓘ faixas usuais/); // (itens de um flex: o innerText quebra linha entre eles)
+  assert.match(await page.locator(".j48-ref").getAttribute("title") || "", /Delta T 2–8 °C, vento 3–10 km\/h/);
   assert.ok((await page.locator(".horas48 i.h-noite").count()) >= 15);
   await page.getByText("20,5 mm em 2 dias").waitFor();
   // o texto do INMET foi para dentro de "Detalhes"
@@ -573,11 +574,12 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.equal(await page.locator(".g14 .g14-chuva").count(), 5); // 5 dos 6 dias têm chuva > 0
   assert.equal(await page.locator(".g14 .g14-chance").count(), 2); // dias com chance ≥ 70 % (09/02 e 14/02)
   assert.equal(await page.locator(".prev-manejo").count(), 0); // o bloco "o que muda no manejo" saiu da tela a pedido da dona
-  await page.locator(".prev-comoler summary").click();
+  // "Como ler" e os detalhes ficam num dobrável só
+  assert.equal(await page.locator(".prev-det").count(), 1);
+  await page.getByText(/Como ler · detalhes dos 6 dias · modelos e placar/).click();
   await page.getByText(/parte que entra no solo/).waitFor();
   assert.equal(await page.locator(".prev-dia").count(), 6); // a resposta guardada só tem 6 dias depois de 08/02
-  await page.getByText(/Detalhes dos 6 dias e comparação dos modelos/).click();
-  await page.getByText("Chuva por modelo (mm)").waitFor();
+  await page.getByText("Chuva por modelo (mm)").waitFor(); // já aberto: é o mesmo dobrável
   assert.deepEqual(await page.locator(".prev-modelos tbody tr td:first-child").allInnerTexts(), ["Melhor ajuste", "ECMWF", "GFS", "ICON", "GEM", "Météo-France"]);
   // placar dos modelos: sem nenhum dia medido ainda, só o aviso (a tabela aparece quando há comparações)
   await page.getByText(/Placar dos modelos: 0 de 5 dias medidos/).waitFor();
