@@ -312,7 +312,9 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-ontem b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
 .ontem-selo{font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;justify-self:end}
 .ontem-selo.ok{color:var(--green);background:var(--green-soft)}.ontem-selo.erro{color:var(--red);background:var(--red-soft)}
-.prev-placar{margin-top:8px}.prev-placar .svg{width:13px;height:13px;vertical-align:-2px}
+.prev-linha{margin-top:10px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.prev-linha .sep{font-style:normal;opacity:.5}
+.prev-placar .svg{width:13px;height:13px;vertical-align:-2px}
 .prev-placar-tab tr.melhor td{font-weight:700}
 tr.incompleto td{color:var(--muted)}
 .peso-barra{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;position:relative;overflow:hidden}

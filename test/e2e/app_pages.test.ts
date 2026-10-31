@@ -558,7 +558,9 @@ test("previsão na tela Hoje e semáforo no cartão do pivô", async () => {
   assert.match(j48, /Luz do dia \d\d\/\d\d: primeira luz \d\d:\d\d · sol \d\d:\d\d–\d\d:\d\d · última luz \d\d:\d\d/);
   assert.ok((await page.locator(".horas48 i.h-noite").count()) >= 15);
   await page.getByText("20,5 mm em 2 dias").waitFor();
-  await page.getByText(/INMET amanhã — manhã: chuva/).waitFor();
+  // o texto do INMET foi para dentro de "Detalhes"
+  assert.equal(await page.getByText(/INMET amanhã/).count(), 1);
+  assert.ok(await page.locator(".prev-det").evaluate((el) => el.textContent!.includes("INMET amanhã")));
   // cartão "Próximos dias": tempo, faixa dos modelos e, em detalhes, os 14 dias + comparação modelo a modelo
   await page.getByText(/Amanhã: Pancadas de chuva fracas · 5 de 6 modelos veem chuva \(0–19 mm\)/).waitFor();
   await page.getByText(/Tendência: 95% → 80% ↓ caindo · confiança alta \(7\d\)/).waitFor();

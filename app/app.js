@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-21';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-22';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -844,11 +844,12 @@ function cardPrevisao(dia) {
   const pesos = pv.pesos || null, comPlacar = !!(pesos && pesos.suficiente);
   const soInmet = !todos.some((d) => d.chuvaMm != null);
   const avisoInmet = soInmet ? '<p class="muted prev-so-inmet">⚠️ Só o texto do INMET chegou: o Open-Meteo (mm, chance, modelos) não respondeu. Toque em <b>Atualizar</b> para o celular buscar.</p>' : '';
-  const avisoPlacar = comPlacar ? '<p class="muted prev-placar">' + ico('historico') + ' <b>Consenso ponderado:</b> a chuva e a temperatura de cada dia são a média dos ' + esc(pesos.modelos.length) + ' modelos pesada pelo acerto deles na sua estação nos últimos ' + esc(pesos.diasComparados) + ' dias. Melhor no momento: <b>' + esc(pesos.modelos[0].modelo) + '</b> (' + br(pesos.modelos[0].peso * 100, 0) + '% do peso).</p>' :
-    (pesos ? '<p class="muted prev-placar">Placar dos modelos: ' + esc(pesos.diasComparados) + ' de 5 dias medidos. Quando chegar a 5, a previsão passa a dar mais peso a quem acerta mais na sua estação.</p>' : '');
-  const linhaAmanha = avisoInmet + avisoPlacar + (amanha.tempo || amanha.faixaChuva ? '<p class="muted prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</p>' : '') +
-    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<p class="muted prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</p>' : '') +
-    (amanha.resumo ? '<p class="muted">INMET amanhã — ' + esc(amanha.resumo) + '</p>' : '');
+  // uma linha só: consenso (ou placar em formação) + o que vem amanhã; o texto do INMET e a explicação longa ficam nos detalhes
+  const avisoPlacar = comPlacar ? '<span class="prev-placar" title="A chuva e a temperatura de cada dia são a média dos ' + esc(pesos.modelos.length) + ' modelos pesada pelo acerto deles na sua estação nos últimos ' + esc(pesos.diasComparados) + ' dias.">' + ico('historico') + ' Consenso de ' + esc(pesos.modelos.length) + ' modelos · melhor: <b>' + esc(pesos.modelos[0].modelo) + '</b> (' + br(pesos.modelos[0].peso * 100, 0) + '%)</span>' :
+    (pesos ? '<span class="prev-placar" title="Quando chegar a 5 dias medidos, a previsão passa a dar mais peso a quem acerta mais na sua estação.">Placar dos modelos: ' + esc(pesos.diasComparados) + ' de 5 dias medidos</span>' : '');
+  const linhaAmanha = avisoInmet + '<p class="muted prev-linha">' + [avisoPlacar, (amanha.tempo || amanha.faixaChuva ? '<span class="prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</span>' : ''),
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join(' <i class="sep">·</i> ') + '</p>';
+  const inmetTexto = amanha.resumo ? '<p class="muted" style="margin-top:8px"><b>INMET amanhã</b> — ' + esc(amanha.resumo) + '</p>' : '';
   const n = (x, c) => (x == null ? '–' : br(x, c));
   const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Ensemble</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
     todos.map((d) => '<tr class="' + classe(d).trim() + '"><td>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</td><td class="esq">' + iconeTempo(d.codigoTempo) + ' ' + esc(d.tempo || (d.resumo ? 'INMET: ' + d.resumo : '–')) + '</td>' +
@@ -877,7 +878,7 @@ function cardPrevisao(dia) {
       pesos.modelos.map((m, i) => '<tr' + (i === 0 && comPlacar ? ' class="melhor"' : '') + '><td>' + esc(m.modelo) + '</td><td><span class="peso-barra" style="--p:' + Math.round(m.peso * 100) + '%"></span> ' + br(m.peso * 100, 0) + '%</td><td>' + (m.maeChuva == null ? '–' : br(m.maeChuva, 1) + ' mm') + '</td><td>' + (m.maeTemp == null ? '–' : br(m.maeTemp, 1) + ' °C') + '</td><td>' + (m.acertoChuvaPct == null ? '–' : br(m.acertoChuvaPct, 0) + '%') + '</td><td>' + m.n + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
-  const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + tabela + modelos + placar +
+  const detalhes = '<details class="kc-det prev-det"><summary>Detalhes dos ' + todos.length + ' dias e comparação dos modelos</summary>' + inmetTexto + tabela + modelos + placar +
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
