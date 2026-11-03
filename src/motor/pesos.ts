@@ -169,3 +169,47 @@ export function aplicarPesos(dias: DiaPrevisao[], pesos: PesosModelos | null): D
     return e;
   });
 }
+
+
+/* ------------------------------ veredito de um dia: choveu ou não, e quanto ------------------------------ */
+
+export type Veredito = "acertou" | "parcial" | "errou";
+
+export interface VereditoPrevisao {
+  previstoMm: number;
+  probPct: number | null;
+  medidoMm: number;
+  /** Choveu de verdade (≥ 1 mm). */
+  choveu: boolean;
+  /** A previsão dizia que ia chover (chance ≥ 50 %; sem chance, previsto ≥ 1 mm). */
+  disseChuva: boolean;
+  /** Acertou "chove ou não chove". */
+  acertoChuva: boolean;
+  /** Quando choveu e a previsão dizia chuva: a quantidade bateu (diferença ≤ 50 % ou ≤ 3 mm)? `null` nos outros casos. */
+  acertoQtd: boolean | null;
+  veredito: Veredito;
+  /** Frase pronta: "não choveu, como previsto (46%)". */
+  texto: string;
+}
+
+export const CHUVA_CONTA_MM = 1;
+
+/** Veredito de um dia-alvo: compara chance e quantidade previstas com o medido. */
+export function vereditoPrevisao(previstoMm: number, probPct: number | null, medidoMm: number): VereditoPrevisao {
+  const choveu = medidoMm >= CHUVA_CONTA_MM;
+  const disseChuva = probPct !== null ? probPct >= 50 : previstoMm >= CHUVA_CONTA_MM;
+  const acertoChuva = choveu === disseChuva;
+  const n1 = (x: number) => x.toFixed(1).replace(".", ",");
+  const chance = probPct !== null ? Math.round(probPct) + "%" : n1(previstoMm) + " mm";
+  let acertoQtd: boolean | null = null;
+  let veredito: Veredito, texto: string;
+  if (!choveu && !disseChuva) { veredito = "acertou"; texto = "não choveu, como previsto (" + chance + ")"; }
+  else if (!choveu && disseChuva) { veredito = "errou"; texto = "não choveu; a previsão dava " + chance + (previstoMm >= CHUVA_CONTA_MM ? " e " + n1(previstoMm) + " mm" : ""); }
+  else if (choveu && !disseChuva) { veredito = "errou"; texto = "choveu " + n1(medidoMm) + " mm; a previsão dava só " + chance; }
+  else {
+    acertoQtd = Math.abs(previstoMm - medidoMm) <= Math.max(3, 0.5 * previstoMm);
+    veredito = acertoQtd ? "acertou" : "parcial";
+    texto = "choveu " + n1(medidoMm) + " mm; previsto " + n1(previstoMm) + " mm (" + chance + ")" + (acertoQtd ? "" : medidoMm > previstoMm ? ": veio mais" : ": veio menos");
+  }
+  return { previstoMm, probPct, medidoMm, choveu, disseChuva, acertoChuva, acertoQtd, veredito, texto };
+}

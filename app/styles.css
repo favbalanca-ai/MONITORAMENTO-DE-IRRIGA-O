@@ -314,7 +314,8 @@ svg text{fill:var(--muted);font-size:13px}
 .prev-ontem small{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .prev-ontem b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
 .ontem-selo{font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;justify-self:end}
-.ontem-selo.ok{color:var(--green);background:var(--green-soft)}.ontem-selo.erro{color:var(--red);background:var(--red-soft)}
+.ontem-selo.ok{color:var(--green);background:var(--green-soft)}.ontem-selo.erro{color:var(--red);background:var(--red-soft)}.ontem-selo.meio{color:var(--amber);background:var(--amber-soft)}
+.ontem-txt{grid-column:1/-1;color:var(--muted);font-size:12px}
 .prev-linha{margin-top:10px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
 .prev-linha .sep{font-style:normal;opacity:.5}
 .prev-placar .svg{width:13px;height:13px;vertical-align:-2px}

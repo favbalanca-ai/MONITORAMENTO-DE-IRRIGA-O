@@ -1680,6 +1680,35 @@ var Motor = (function () {
           return e;
       });
   }
+  const CHUVA_CONTA_MM = 1;
+  /** Veredito de um dia-alvo: compara chance e quantidade previstas com o medido. */
+  function vereditoPrevisao(previstoMm, probPct, medidoMm) {
+      const choveu = medidoMm >= CHUVA_CONTA_MM;
+      const disseChuva = probPct !== null ? probPct >= 50 : previstoMm >= CHUVA_CONTA_MM;
+      const acertoChuva = choveu === disseChuva;
+      const n1 = (x) => x.toFixed(1).replace(".", ",");
+      const chance = probPct !== null ? Math.round(probPct) + "%" : n1(previstoMm) + " mm";
+      let acertoQtd = null;
+      let veredito, texto;
+      if (!choveu && !disseChuva) {
+          veredito = "acertou";
+          texto = "não choveu, como previsto (" + chance + ")";
+      }
+      else if (!choveu && disseChuva) {
+          veredito = "errou";
+          texto = "não choveu; a previsão dava " + chance + (previstoMm >= CHUVA_CONTA_MM ? " e " + n1(previstoMm) + " mm" : "");
+      }
+      else if (choveu && !disseChuva) {
+          veredito = "errou";
+          texto = "choveu " + n1(medidoMm) + " mm; a previsão dava só " + chance;
+      }
+      else {
+          acertoQtd = Math.abs(previstoMm - medidoMm) <= Math.max(3, 0.5 * previstoMm);
+          veredito = acertoQtd ? "acertou" : "parcial";
+          texto = "choveu " + n1(medidoMm) + " mm; previsto " + n1(previstoMm) + " mm (" + chance + ")" + (acertoQtd ? "" : medidoMm > previstoMm ? ": veio mais" : ": veio menos");
+      }
+      return { previstoMm, probPct, medidoMm, choveu, disseChuva, acertoChuva, acertoQtd, veredito, texto };
+  }
   // ---- src/motor/inmet.ts ----
   /**
    * Estações automáticas do INMET (API pública apitempo.inmet.gov.br): lista de estações, as mais próximas de um
@@ -2644,5 +2673,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, INMET_ESTACOES_URL, lerEstacoesInmet, distanciaKm, estacoesProximas, urlInmetEstacao, lerInmetEstacao, juntarObservacoes, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, CHUVA_CONTA_MM, vereditoPrevisao, INMET_ESTACOES_URL, lerEstacoesInmet, distanciaKm, estacoesProximas, urlInmetEstacao, lerInmetEstacao, juntarObservacoes, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

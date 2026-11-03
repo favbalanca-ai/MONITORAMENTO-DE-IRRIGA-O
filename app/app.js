@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-23';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-24';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -805,9 +805,12 @@ function grafico14(dias, pv) {
 /** "Ontem, previsto × medido": o acerto de ontem em linguagem simples. */
 function cardOntem(pv) {
   const o = pv.ontem; if (!o) return '';
+  const v = o.veredito || (o.acertou ? 'acertou' : 'errou');
+  const selo = { acertou: '✓ acertou', parcial: '~ parcial', errou: '✗ errou' }[v];
   return '<div class="prev-ontem"><div><small>Ontem, previsto</small><b>' + br(o.previstoMm, 1) + ' mm' + (o.probPct != null ? ' · ' + br(o.probPct, 0) + '%' : '') + '</b></div>' +
     '<div><small>' + (o.fonte === 'INMET' ? 'INMET mediu' : 'Estação mediu') + '</small><b>' + br(o.medidoMm, 1) + ' mm</b></div>' +
-    '<span class="ontem-selo ' + (o.acertou ? 'ok' : 'erro') + '">' + (o.acertou ? '✓ acertou' : '✗ errou') + '</span></div>';
+    '<span class="ontem-selo ' + (v === 'acertou' ? 'ok' : v === 'parcial' ? 'meio' : 'erro') + '" title="Chove ou não: chance ≥ 50% contra 1 mm medido. Quantidade: diferença de até 50% ou 3 mm.">' + selo + '</span>' +
+    (o.texto ? '<small class="ontem-txt">' + esc(o.texto) + '</small>' : '') + '</div>';
 }
 function comoLer(pv) {
   return '<div class="prev-comoler"><p class="muted"><b>Como ler os dias</b></p><dl>' +

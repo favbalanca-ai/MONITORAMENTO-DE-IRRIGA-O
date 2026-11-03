@@ -626,6 +626,12 @@ test("placar dos modelos: depois de 5 dias medidos, quem acertou mais ganha peso
   assert.ok(dia14.chuvaMm > 15 && dia14.chuvaMm <= 18, "consenso " + dia14.chuvaMm);
   assert.equal(dia14.consenso.modelos, 4); // GEM e Météo-France não chegam a 14/02 no fixture
   assert.equal(amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-14")!["Melhor ajuste (mm)"], 15);
+  // "ontem, previsto × medido": rodada da véspera (13/02 emitida em 13/02? não: a de 12/02) contra a aba CLIMA
+  const ontem = pv.ontem;
+  assert.ok(ontem && ontem.data === "2026-02-13" && ontem.emissao === "2026-02-12", JSON.stringify(ontem));
+  assert.equal(ontem.fonte, "estação");
+  assert.ok(["acertou", "parcial", "errou"].includes(ontem.veredito));
+  assert.ok(/choveu|não choveu/.test(ontem.texto));
   // primeiro dia (sem história): pesos iguais e nada de consenso
   const amb2 = pronto();
   amb2.respostaHttp = amb.respostaHttp;

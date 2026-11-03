@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { calcularPesos, consensoPonderado, aplicarPesos, lerOpenMeteo, type RegistroModelo, type ObservacaoDia } from "../src/motor/index.ts";
+import { calcularPesos, consensoPonderado, aplicarPesos, lerOpenMeteo, vereditoPrevisao, type RegistroModelo, type ObservacaoDia } from "../src/motor/index.ts";
 
 const omModelos = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
 
@@ -84,4 +84,34 @@ test("consenso ponderado: chuva e temperatura pela média dos pesos; chance mist
   assert.equal(dias[0]!.chuvaMm, c.chuvaMm);
   assert.equal(dias[0]!.consenso!.modelos, 3);
   assert.equal(aplicarPesos([dia], { ...pesos, suficiente: false })[0]!.consenso, undefined);
+});
+
+
+test("veredito de ontem: chove ou não (chance ≥ 50 % × medido ≥ 1 mm) e, se choveu, a quantidade", () => {
+  // não choveu e a chance era 46 %: acertou (antes era "acertou" por serem dois valores < 1 mm, sem olhar a chance)
+  const seco = vereditoPrevisao(0.8, 46, 0);
+  assert.equal(seco.veredito, "acertou");
+  assert.equal(seco.texto, "não choveu, como previsto (46%)");
+  assert.deepEqual([seco.choveu, seco.disseChuva, seco.acertoChuva, seco.acertoQtd], [false, false, true, null]);
+  // não choveu com chance alta: errou
+  const furou = vereditoPrevisao(8, 93, 0.4);
+  assert.equal(furou.veredito, "errou");
+  assert.equal(furou.texto, "não choveu; a previsão dava 93% e 8,0 mm");
+  // choveu sem a previsão avisar: errou
+  const surpresa = vereditoPrevisao(0.5, 20, 7.1);
+  assert.equal(surpresa.veredito, "errou");
+  assert.equal(surpresa.texto, "choveu 7,1 mm; a previsão dava só 20%");
+  // choveu como previsto e a quantidade bateu: acertou
+  const cheio = vereditoPrevisao(8, 93, 7.1);
+  assert.equal(cheio.veredito, "acertou");
+  assert.equal(cheio.acertoQtd, true);
+  assert.equal(cheio.texto, "choveu 7,1 mm; previsto 8,0 mm (93%)");
+  // choveu como previsto mas bem menos: parcial
+  const pouco = vereditoPrevisao(12, 80, 2);
+  assert.equal(pouco.veredito, "parcial");
+  assert.equal(pouco.texto, "choveu 2,0 mm; previsto 12,0 mm (80%): veio menos");
+  assert.equal(vereditoPrevisao(4, 70, 15).texto, "choveu 15,0 mm; previsto 4,0 mm (70%): veio mais");
+  // sem chance guardada: "disse chuva" pela quantidade prevista
+  assert.equal(vereditoPrevisao(3, null, 0).texto, "não choveu; a previsão dava 3,0 mm e 3,0 mm");
+  assert.equal(vereditoPrevisao(0.3, null, 0).veredito, "acertou");
 });

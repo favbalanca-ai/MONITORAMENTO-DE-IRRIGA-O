@@ -2073,7 +2073,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-16";
+var VERSAO_SERVIDOR = "2026.10.16-17";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2417,9 +2417,7 @@ function conferenciaOntem_(cfg, ontem) {
     if (inm && inm.chuvaMm !== null) { medido = inm.chuvaMm; fonte = "INMET"; }
   }
   if (medido === null) return null;
-  // acertou se os dois dizem "seco" (< 1 mm), ou se a diferença cabe em 50 % do previsto ou 3 mm
-  var acertou = (melhor.previstoMm < 1 && medido < 1) || Math.abs(melhor.previstoMm - medido) <= Math.max(3, 0.5 * melhor.previstoMm);
-  return { data: ontem, emissao: melhor.emissao, previstoMm: melhor.previstoMm, probPct: melhor.probPct, medidoMm: medido, fonte: fonte, acertou: acertou };
+  return Object.assign({ data: ontem, emissao: melhor.emissao, fonte: fonte }, Motor.vereditoPrevisao(melhor.previstoMm, melhor.probPct, medido));
 }
 
 /** Muda quando há cálculo novo, leitura nova ou lançamento novo: o app só baixa tudo se mudou. */
