@@ -173,7 +173,11 @@ export function aplicarPesos(dias: DiaPrevisao[], pesos: PesosModelos | null): D
 
 /* ------------------------------ veredito de um dia: choveu ou não, e quanto ------------------------------ */
 
-export type Veredito = "acertou" | "parcial" | "errou";
+export type Veredito = "acertou" | "parcial" | "errou" | "indefinida";
+
+/** Chance abaixo disto = "não chove"; acima = "chove"; no meio a previsão ficou em cima do muro. */
+export const CHANCE_SECO_PCT = 30;
+export const CHANCE_CHUVA_PCT = 70;
 
 export interface VereditoPrevisao {
   previstoMm: number;
@@ -181,9 +185,11 @@ export interface VereditoPrevisao {
   medidoMm: number;
   /** Choveu de verdade (≥ 1 mm). */
   choveu: boolean;
-  /** A previsão dizia que ia chover (chance ≥ 50 %; sem chance, previsto ≥ 1 mm). */
+  /** A previsão dizia que ia chover (chance ≥ 70 %; sem chance, previsto ≥ 1 mm). */
   disseChuva: boolean;
-  /** Acertou "chove ou não chove". */
+  /** A previsão ficou em cima do muro (chance entre 30 % e 70 %): não vale acerto nem erro. */
+  indefinida: boolean;
+  /** Acertou "chove ou não chove" (`false` também quando indefinida). */
   acertoChuva: boolean;
   /** Quando choveu e a previsão dizia chuva: a quantidade bateu (diferença ≤ 50 % ou ≤ 3 mm)? `null` nos outros casos. */
   acertoQtd: boolean | null;
@@ -197,13 +203,15 @@ export const CHUVA_CONTA_MM = 1;
 /** Veredito de um dia-alvo: compara chance e quantidade previstas com o medido. */
 export function vereditoPrevisao(previstoMm: number, probPct: number | null, medidoMm: number): VereditoPrevisao {
   const choveu = medidoMm >= CHUVA_CONTA_MM;
-  const disseChuva = probPct !== null ? probPct >= 50 : previstoMm >= CHUVA_CONTA_MM;
-  const acertoChuva = choveu === disseChuva;
+  const indefinida = probPct !== null && probPct >= CHANCE_SECO_PCT && probPct < CHANCE_CHUVA_PCT;
+  const disseChuva = probPct !== null ? probPct >= CHANCE_CHUVA_PCT : previstoMm >= CHUVA_CONTA_MM;
+  const acertoChuva = !indefinida && choveu === disseChuva;
   const n1 = (x: number) => x.toFixed(1).replace(".", ",");
   const chance = probPct !== null ? Math.round(probPct) + "%" : n1(previstoMm) + " mm";
   let acertoQtd: boolean | null = null;
   let veredito: Veredito, texto: string;
-  if (!choveu && !disseChuva) { veredito = "acertou"; texto = "não choveu, como previsto (" + chance + ")"; }
+  if (indefinida) { veredito = "indefinida"; texto = (choveu ? "choveu " + n1(medidoMm) + " mm" : "não choveu") + "; a previsão ficou em cima do muro (" + chance + ")"; }
+  else if (!choveu && !disseChuva) { veredito = "acertou"; texto = "não choveu, como previsto (" + chance + ")"; }
   else if (!choveu && disseChuva) { veredito = "errou"; texto = "não choveu; a previsão dava " + chance + (previstoMm >= CHUVA_CONTA_MM ? " e " + n1(previstoMm) + " mm" : ""); }
   else if (choveu && !disseChuva) { veredito = "errou"; texto = "choveu " + n1(medidoMm) + " mm; a previsão dava só " + chance; }
   else {
@@ -211,5 +219,5 @@ export function vereditoPrevisao(previstoMm: number, probPct: number | null, med
     veredito = acertoQtd ? "acertou" : "parcial";
     texto = "choveu " + n1(medidoMm) + " mm; previsto " + n1(previstoMm) + " mm (" + chance + ")" + (acertoQtd ? "" : medidoMm > previstoMm ? ": veio mais" : ": veio menos");
   }
-  return { previstoMm, probPct, medidoMm, choveu, disseChuva, acertoChuva, acertoQtd, veredito, texto };
+  return { previstoMm, probPct, medidoMm, choveu, disseChuva, indefinida, acertoChuva, acertoQtd, veredito, texto };
 }

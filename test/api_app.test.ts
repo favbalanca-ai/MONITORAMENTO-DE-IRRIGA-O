@@ -630,8 +630,8 @@ test("placar dos modelos: depois de 5 dias medidos, quem acertou mais ganha peso
   const ontem = pv.ontem;
   assert.ok(ontem && ontem.data === "2026-02-13" && ontem.emissao === "2026-02-12", JSON.stringify(ontem));
   assert.equal(ontem.fonte, "estação");
-  assert.ok(["acertou", "parcial", "errou"].includes(ontem.veredito));
-  assert.ok(/choveu|não choveu/.test(ontem.texto));
+  assert.ok(["acertou", "parcial", "errou", "indefinida"].includes(ontem.veredito));
+  assert.ok(/choveu|não choveu/.test(ontem.texto), ontem.texto);
   // primeiro dia (sem história): pesos iguais e nada de consenso
   const amb2 = pronto();
   amb2.respostaHttp = amb.respostaHttp;

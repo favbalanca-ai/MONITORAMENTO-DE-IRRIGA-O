@@ -87,12 +87,22 @@ test("consenso ponderado: chuva e temperatura pela média dos pesos; chance mist
 });
 
 
-test("veredito de ontem: chove ou não (chance ≥ 50 % × medido ≥ 1 mm) e, se choveu, a quantidade", () => {
-  // não choveu e a chance era 46 %: acertou (antes era "acertou" por serem dois valores < 1 mm, sem olhar a chance)
-  const seco = vereditoPrevisao(0.8, 46, 0);
+test("veredito de ontem: chove ou não (chance ≥ 70 % / < 30 % × medido ≥ 1 mm), meio = indefinida; se choveu, a quantidade", () => {
+  // não choveu e a chance era 24 %: a previsão foi decisiva ("não chove") e acertou
+  const seco = vereditoPrevisao(1.0, 24, 0);
   assert.equal(seco.veredito, "acertou");
-  assert.equal(seco.texto, "não choveu, como previsto (46%)");
-  assert.deepEqual([seco.choveu, seco.disseChuva, seco.acertoChuva, seco.acertoQtd], [false, false, true, null]);
+  assert.equal(seco.texto, "não choveu, como previsto (24%)");
+  assert.deepEqual([seco.choveu, seco.disseChuva, seco.indefinida, seco.acertoChuva, seco.acertoQtd], [false, false, false, true, null]);
+  // chance entre 30 % e 70 %: em cima do muro, não vale acerto nem erro
+  const muro = vereditoPrevisao(0.8, 46, 0);
+  assert.equal(muro.veredito, "indefinida");
+  assert.equal(muro.texto, "não choveu; a previsão ficou em cima do muro (46%)");
+  assert.equal(muro.acertoChuva, false);
+  assert.equal(vereditoPrevisao(5, 60, 6).texto, "choveu 6,0 mm; a previsão ficou em cima do muro (60%)");
+  assert.equal(vereditoPrevisao(5, 69, 6).veredito, "indefinida");
+  assert.equal(vereditoPrevisao(5, 70, 6).veredito, "acertou");
+  assert.equal(vereditoPrevisao(0.5, 29, 0).veredito, "acertou");
+  assert.equal(vereditoPrevisao(0.5, 30, 0).veredito, "indefinida");
   // não choveu com chance alta: errou
   const furou = vereditoPrevisao(8, 93, 0.4);
   assert.equal(furou.veredito, "errou");
