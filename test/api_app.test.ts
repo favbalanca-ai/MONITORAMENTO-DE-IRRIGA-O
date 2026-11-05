@@ -631,6 +631,13 @@ test("placar dos modelos: depois de 5 dias medidos, quem acertou mais ganha peso
   assert.ok(ontem && ontem.data === "2026-02-13" && ontem.emissao === "2026-02-12", JSON.stringify(ontem));
   assert.equal(ontem.fonte, "estação");
   assert.ok(["acertou", "parcial", "errou", "indefinida"].includes(ontem.veredito));
+  // placar dos últimos 7 dias: dias com previsão da véspera e medição (09 a 13/02 = 5 dias; 07 e 08/02 sem rodada da véspera)
+  const ps = pv.placarSemana;
+  assert.equal(ps.dias.length, 7);
+  assert.equal(ps.dias[6].data, "2026-02-13");
+  assert.equal(ps.conferidos, 5);
+  assert.equal(ps.acertou + ps.parcial + ps.errou + ps.indefinida, 5);
+  assert.equal(ps.dias.filter((x: { veredito: string | null }) => x.veredito === null).length, 2);
   assert.ok(/choveu|não choveu/.test(ontem.texto), ontem.texto);
   // primeiro dia (sem história): pesos iguais e nada de consenso
   const amb2 = pronto();

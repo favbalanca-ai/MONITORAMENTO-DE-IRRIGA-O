@@ -317,6 +317,13 @@ svg text{fill:var(--muted);font-size:13px}
 .ontem-selo{font-size:12px;font-weight:600;border-radius:999px;padding:3px 9px;justify-self:end}
 .ontem-selo.ok{color:var(--green);background:var(--green-soft)}.ontem-selo.erro{color:var(--red);background:var(--red-soft)}.ontem-selo.meio{color:var(--amber);background:var(--amber-soft)}.ontem-selo.neutro{color:var(--muted);background:var(--line)}
 .ontem-txt{grid-column:1/-1;color:var(--muted);font-size:12px}
+.placar-semana{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line);font-size:12.5px}
+.placar-semana .bolas{display:flex;gap:4px}
+.placar-semana .bola{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-style:normal;background:var(--line);color:var(--muted)}
+.placar-semana .bola small{font-size:10px;font-weight:700}
+.placar-semana .bola.ok{background:var(--green-soft);color:var(--green)}.placar-semana .bola.meio{background:var(--amber-soft);color:var(--amber)}
+.placar-semana .bola.erro{background:var(--red-soft);color:var(--red)}.placar-semana .bola.neutro{background:var(--line);color:var(--muted)}.placar-semana .bola.vazio{opacity:.4}
+.placar-txt{min-width:0}
 .prev-linha{margin-top:10px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
 .prev-linha .sep{font-style:normal;opacity:.5}
 .prev-placar .svg{width:13px;height:13px;vertical-align:-2px}

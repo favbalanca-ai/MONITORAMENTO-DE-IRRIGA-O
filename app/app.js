@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-26';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-27';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -803,8 +803,22 @@ function grafico14(dias, pv) {
   return '<div class="g14-wrap">' + g + '<div class="g14-leg"><span><i class="l-barra"></i>Chuva provável (consenso)</span><span><i class="l-faixa"></i>Faixa provável</span><span><i class="l-et0"></i>ET₀ prevista</span><span><i class="l-chance"></i>Chance ≥ 70%</span></div></div>';
 }
 /** "Ontem, previsto × medido": o acerto de ontem em linguagem simples. */
+/** Placar dos últimos 7 dias: uma bolinha por dia (acertou / parcial / errou / indefinida) e o total. */
+function placarSemana(pv) {
+  const p = pv.placarSemana; if (!p || !p.conferidos) return '';
+  const cor = { acertou: 'ok', parcial: 'meio', errou: 'erro', indefinida: 'neutro' };
+  const bolas = p.dias.map((d) => '<i class="bola ' + (d.veredito ? cor[d.veredito] : 'vazio') + '" title="' + esc(diaSemana(d.data) + ' ' + dataBr(d.data) + ': ' + (d.texto || 'sem conferência')) + '"><small>' + esc(diaSemana(d.data).slice(0, 1).toUpperCase()) + '</small></i>').join('');
+  const partes = [];
+  if (p.acertou) partes.push(p.acertou + (p.acertou === 1 ? ' acerto' : ' acertos'));
+  if (p.parcial) partes.push(p.parcial + (p.parcial === 1 ? ' parcial' : ' parciais'));
+  if (p.errou) partes.push(p.errou + (p.errou === 1 ? ' erro' : ' erros'));
+  if (p.indefinida) partes.push(p.indefinida + (p.indefinida === 1 ? ' indefinida' : ' indefinidas'));
+  const decisivos = p.acertou + p.parcial + p.errou;
+  const taxa = decisivos ? Math.round((100 * (p.acertou + 0.5 * p.parcial)) / decisivos) : null;
+  return '<div class="placar-semana"><div class="bolas">' + bolas + '</div><div class="placar-txt"><b>Últimos 7 dias:</b> ' + esc(partes.join(' · ')) + (taxa != null ? ' <span class="muted">· ' + taxa + '% de acerto nas previsões decisivas</span>' : '') + '</div></div>';
+}
 function cardOntem(pv) {
-  const o = pv.ontem; if (!o) return '';
+  const o = pv.ontem; if (!o) return placarSemana(pv);
   const v = o.veredito || (o.acertou ? 'acertou' : 'errou');
   const selo = { acertou: '✓ acertou', parcial: '~ parcial', errou: '✗ errou', indefinida: '? indefinida' }[v] || v;
   // o que a previsão DISSE (não a média de mm): "sem chuva (24%)", "chuva ~8 mm (93%)" ou "incerta (46%)"
@@ -814,7 +828,7 @@ function cardOntem(pv) {
   return '<div class="prev-ontem"><div><small>Ontem, a previsão dizia</small><b>' + disse + '</b></div>' +
     '<div><small>' + (o.fonte === 'INMET' ? 'INMET mediu' : 'Estação mediu') + '</small><b>' + (o.medidoMm >= 1 ? 'chuva de ' + br(o.medidoMm, 1) + ' mm' : 'sem chuva' + (o.medidoMm > 0 ? ' <em>(' + br(o.medidoMm, 1) + ' mm)</em>' : '')) + '</b></div>' +
     '<span class="ontem-selo ' + (v === 'acertou' ? 'ok' : v === 'parcial' ? 'meio' : v === 'indefinida' ? 'neutro' : 'erro') + '" title="Chove ou não: chance ≥ 70% = disse que chove; < 30% = disse que não; entre 30% e 70% a previsão ficou em cima do muro (indefinida). Choveu = 1 mm ou mais medido. Quantidade: diferença de até 50% ou 3 mm.">' + selo + '</span>' +
-    (o.texto ? '<small class="ontem-txt">' + esc(o.texto) + '</small>' : '') + '</div>';
+    (o.texto ? '<small class="ontem-txt">' + esc(o.texto) + '</small>' : '') + placarSemana(pv) + '</div>';
 }
 function comoLer(pv) {
   return '<div class="prev-comoler"><p class="muted"><b>Como ler os dias</b></p><dl>' +

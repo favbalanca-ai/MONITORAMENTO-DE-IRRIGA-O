@@ -2073,7 +2073,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-18";
+var VERSAO_SERVIDOR = "2026.10.16-19";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2388,29 +2388,53 @@ function previsaoParaApp_(p, cfg) {
   q.chuvaMinimaMm = cfg.chuvaMinima;
   // "ontem, previsto × medido": a conferência diária do acerto, em linguagem simples
   try { q.ontem = conferenciaOntem_(cfg, ontem); } catch (e) { q.ontem = null; }
+  // placar dos últimos 7 dias: o veredito de cada dia, da véspera contra o medido
+  try { q.placarSemana = placarSemana_(cfg, ontem, 7); } catch (e2) { q.placarSemana = null; }
   return q;
+}
+
+/** Vereditos dos últimos `n` dias (até ontem) e a contagem. Dias sem previsão ou sem medição ficam de fora. */
+function placarSemana_(cfg, ontem, n) {
+  var dias = [], cont = { acertou: 0, parcial: 0, errou: 0, indefinida: 0 };
+  for (var i = n - 1; i >= 0; i--) {
+    var data = Motor.somarDias(ontem, -i);
+    var c = conferenciaOntem_(cfg, data);
+    if (!c) { dias.push({ data: data, veredito: null }); continue; }
+    dias.push({ data: data, veredito: c.veredito, texto: c.texto, previstoMm: c.previstoMm, probPct: c.probPct, medidoMm: c.medidoMm, disseChuva: c.disseChuva, indefinida: c.indefinida });
+    if (cont[c.veredito] !== undefined) cont[c.veredito]++;
+  }
+  return { dias: dias, acertou: cont.acertou, parcial: cont.parcial, errou: cont.errou, indefinida: cont.indefinida, conferidos: cont.acertou + cont.parcial + cont.errou + cont.indefinida };
 }
 
 /**
  * O que a previsão dizia ONTEM para ontem (rodada da véspera, aba PREVISAO HISTORICO) e o que a estação mediu
  * (aba CLIMA; sem ela, o INMET do município). `null` quando falta um dos dois lados.
  */
-function conferenciaOntem_(cfg, ontem) {
+function linhasHistoricoFazenda_(cfg) {
+  var memo = MEMO_.histPrev || (MEMO_.histPrev = {});
+  if (memo[cfg.chave]) return memo[cfg.chave];
   var aba = SpreadsheetApp.getActive().getSheetByName(ABA.PREVISAO_HIST);
-  if (!aba || aba.getLastRow() < 2) return null;
   var iso = function (x) { return x instanceof Date ? Motor.paraLocal(x.getTime(), cfg.fuso).slice(0, 10) : String(x).slice(0, 10); };
   var n = function (x) { return x === "" || x === null || x === undefined ? null : Number(x); };
+  var out = [];
+  if (aba && aba.getLastRow() >= 2) {
+    aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.PREVISAO_HIST.length).getValues().forEach(function (l) {
+      if (!l[0] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
+      out.push({ emissao: iso(l[1]), alvo: iso(l[2]), previstoMm: n(l[3]), probPct: n(l[4]) });
+    });
+  }
+  memo[cfg.chave] = out;
+  return out;
+}
+function conferenciaOntem_(cfg, ontem) {
   var melhor = null;   // a rodada mais recente ANTES do dia (a da véspera): é a previsão que valia
-  aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.PREVISAO_HIST.length).getValues().forEach(function (l) {
-    if (!l[0] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
-    if (iso(l[2]) !== ontem) return;
-    var em = iso(l[1]);
-    if (em >= ontem) return;
-    if (!melhor || em > melhor.emissao) melhor = { emissao: em, previstoMm: n(l[3]), probPct: n(l[4]) };
+  linhasHistoricoFazenda_(cfg).forEach(function (l) {
+    if (l.alvo !== ontem || l.emissao >= ontem) return;
+    if (!melhor || l.emissao > melhor.emissao) melhor = l;
   });
   if (!melhor || melhor.previstoMm === null) return null;
   var medido = null, fonte = "";
-  var clima = climaHistorico_(3, cfg.fuso, cfg.chave).filter(function (c) { return c.data === ontem; })[0];
+  var clima = climaHistorico_(10, cfg.fuso, cfg.chave).filter(function (c) { return c.data === ontem; })[0];
   if (clima && clima.chuva !== null && clima.chuva !== undefined) { medido = clima.chuva; fonte = "estação"; }
   else {
     var inm = lerClimaInmet_(cfg).filter(function (d) { return d.data === ontem && d.horas >= 20; })[0];
