@@ -560,3 +560,22 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .gfx-legenda .lp-estresse::before{background:var(--g-estresse)}
 .gfx-legenda .lp-medicao::before{background:var(--card);border:2px solid var(--g-def);width:6px;height:6px}
 .solo-calc{margin-top:8px;background:var(--teal-soft);border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.5}
+
+/* Últimos 30 dias na estação: três painéis (chuva × ET₀, temperatura, UR) */
+.gc-resumo{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
+.gc-resumo span{display:flex;flex-direction:column}
+.gc-resumo small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.gc-resumo b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+.gc-resumo em{font-style:normal;font-size:11px;color:var(--muted)}
+.gc-wrap{position:relative;margin-top:6px}
+.gc{display:block;height:auto}.gc-eixo{height:18px}
+.gc-rotulo{font-size:12px;color:var(--muted);margin:8px 0 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.gc-rotulo .l{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--c)}
+.gc-rotulo .l.ln{height:3px;border-radius:2px;width:14px}
+.gc-grade{stroke:var(--line);stroke-width:1}.gc-txt{font-size:10px;fill:var(--muted)}
+.gc-chuva{fill:var(--g-chuva)}.gc-et0{fill:none;stroke:var(--g-def);stroke-width:2;stroke-linejoin:round}
+.gc-faixa{fill:var(--g-def);opacity:.08}
+.gc-tmax{fill:none;stroke:var(--g-def);stroke-width:2;stroke-linejoin:round}.gc-tmin{fill:none;stroke:var(--g-lam);stroke-width:2;stroke-linejoin:round}
+.gc-ur{fill:none;stroke:var(--g-afd);stroke-width:2;stroke-linejoin:round}.gc-ur-ok{fill:var(--g-afd);opacity:.06}
+.gc-cursor{position:absolute;top:0;bottom:18px;width:1px;background:var(--ink);opacity:.5;pointer-events:none}
+.gc-tip{position:absolute;top:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.35;box-shadow:0 2px 8px rgba(0,0,0,.12);pointer-events:none;min-width:160px}

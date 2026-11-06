@@ -66,6 +66,10 @@ feitos sem internet.
   A aplicação é **aérea**: só conta da **primeira à última luz do dia** (crepúsculo civil, calculado pela
   latitude/longitude da fazenda); as horas escuras aparecem hachuradas na faixa e ficam fora das janelas.
   Mostra "Luz 05:07–18:29" (nascer e pôr no toque) e as faixas de referência no toque em "ⓘ faixas usuais".
+  Cartão **Últimos 30 dias na estação**: totais de chuva, ET₀ (com o saldo chuva − ET₀) e a faixa de
+  temperatura do período, e três painéis empilhados com o mesmo eixo de datas — chuva (barras) × ET₀ (linha)
+  em mm, máxima/mínima em °C com a faixa entre elas, e umidade do ar em % (faixa clara acima de 55 %).
+  Toque ou passe o dedo pra ver os números de cada dia.
 - **Mapa** — imagem de satélite com o contorno (ou círculo do raio) de cada pivô na cor do semáforo; toque
   abre decisão, déficit e percentímetro. Precisa de internet (Leaflet e imagens vêm da rede). Chave **NDVI por
   satélite**: camada de vigor da vegetação do NASA GIBS (MODIS Terra, 250 m, composto de 16 dias), com data

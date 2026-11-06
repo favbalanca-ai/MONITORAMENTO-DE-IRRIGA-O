@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-27';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-28';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -489,23 +489,75 @@ function sensoresSolo(x) {
   }).join('');
 }
 /** Gráfico do clima diário da estação (Tmáx/Tmín, UR e chuva) para o Histórico. */
+/**
+ * Últimos 30 dias na estação: três painéis empilhados com o mesmo eixo de datas e um eixo por painel
+ * (nada de dois eixos no mesmo gráfico): chuva × ET₀ (mm), temperatura (máxima/mínima com a faixa) e UR (%).
+ * Cursor e balão ao passar o dedo (ligarHoverClima).
+ */
+let GCLIMA = null;
 function graficoClima(cl) {
   if (!cl || cl.length < 2) return '';
-  const W = 640, H = 220, mE = 34, mD = 34, mT = 12, mB = 26, w = W - mE - mD, alt = H - mT - mB;
-  const tmax = Math.max(40, ...cl.map((d) => d.tmax || 0)), chMax = Math.max(20, ...cl.map((d) => d.chuva || 0));
-  const x = (i) => mE + (i * w) / (cl.length - 1), yT = (v) => mT + alt - (v / tmax) * alt, yC = (v) => mT + alt - (v / chMax) * alt;
-  const bw = Math.max(2, Math.min(12, (w / cl.length) * 0.5));
-  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Clima da estação">';
-  [0, 10, 20, 30, 40].forEach((v) => { s += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + yT(v) + '" y2="' + yT(v) + '" stroke="var(--line)"/><text x="' + (mE - 6) + '" y="' + (yT(v) + 4) + '" text-anchor="end">' + v + '°</text>'; });
-  [0, chMax / 2, chMax].forEach((v) => { s += '<text x="' + (W - mD + 6) + '" y="' + (yC(v) + 4) + '">' + br(v, 0) + '</text>'; });
-  cl.forEach((d, i) => { if (d.chuva > 0) s += '<rect x="' + (x(i) - bw / 2) + '" y="' + yC(d.chuva) + '" width="' + bw + '" height="' + (mT + alt - yC(d.chuva)) + '" fill="var(--chuva)" rx="1"><title>' + dataBr(d.data) + ': ' + br(d.chuva, 1) + ' mm</title></rect>'; });
-  const linha = (campo, yy) => cl.map((d, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yy(d[campo] || 0).toFixed(1)).join(' ');
-  s += '<path d="' + linha('tmax', yT) + '" fill="none" stroke="var(--deficit)" stroke-width="2.2" stroke-linejoin="round"/>';
-  s += '<path d="' + linha('tmin', yT) + '" fill="none" stroke="var(--blue)" stroke-width="2.2" stroke-linejoin="round"/>';
-  s += '<path d="' + cl.map((d, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + (mT + alt - ((d.ur || 0) / 100) * alt).toFixed(1)).join(' ') + '" fill="none" stroke="var(--afd)" stroke-width="1.5" stroke-dasharray="4 3"/>';
-  const passo = Math.max(1, Math.ceil(cl.length / 7));
-  cl.forEach((d, i) => { const ult = i === cl.length - 1; if ((i % passo === 0 && cl.length - 1 - i >= passo / 2) || ult) s += '<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="' + (i === 0 ? 'start' : ult ? 'end' : 'middle') + '">' + dataBr(d.data) + '</text>'; });
-  return s + '</svg>';
+  const W = 360, mE = 30, mD = 6, w = W - mE - mD, n = cl.length;
+  const x = (i) => mE + ((i + 0.5) * w) / n, bw = Math.max(2, (w / n) * 0.6);
+  const painel = (altura, desenha, ticks, fmt) => {
+    const mT = 8, mB = 4, alt = altura - mT - mB;
+    let g = '<svg class="gc" viewBox="0 0 ' + W + ' ' + altura + '" width="100%" preserveAspectRatio="none" aria-hidden="true">';
+    ticks.forEach(([v, y]) => { g += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" class="gc-grade"/><text x="' + (mE - 5) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end" class="gc-txt">' + fmt(v) + '</text>'; });
+    g += desenha(mT, alt);
+    return g + '</svg>';
+  };
+  const chuvaMax = Math.max(10, ...cl.map((d) => Math.max(d.chuva || 0, d.et0 || 0))) * 1.08;
+  const pChuva = painel(110, (mT, alt) => {
+    const y = (v) => mT + alt - (v / chuvaMax) * alt;
+    let g = cl.map((d, i) => (d.chuva > 0 ? '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + y(d.chuva).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (mT + alt - y(d.chuva)).toFixed(1) + '" rx="1.5" class="gc-chuva"/>' : '')).join('');
+    g += '<path d="' + cl.map((d, i) => (d.et0 == null ? '' : (i && cl[i - 1].et0 != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.et0).toFixed(1))).join(' ') + '" class="gc-et0"/>';
+    return g;
+  }, [[chuvaMax / 1.08, 8 + (110 - 12) * (1 - 1 / 1.08)], [chuvaMax / 2, 8 + (110 - 12) * 0.5], [0, 8 + (110 - 12)]], (v) => br(v, 0));
+  const tMin = Math.floor(Math.min(10, ...cl.map((d) => (d.tmin == null ? 99 : d.tmin))) / 5) * 5, tMax = Math.ceil(Math.max(35, ...cl.map((d) => d.tmax || 0)) / 5) * 5;
+  const pTemp = painel(110, (mT, alt) => {
+    const y = (v) => mT + alt - ((v - tMin) / (tMax - tMin)) * alt;
+    const linha = (k) => cl.map((d, i) => (d[k] == null ? '' : (i && cl[i - 1][k] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d[k]).toFixed(1))).join(' ');
+    const com = cl.filter((d) => d.tmax != null && d.tmin != null);
+    const area = com.length > 1 ? 'M' + com.map((d) => x(cl.indexOf(d)).toFixed(1) + ' ' + y(d.tmax).toFixed(1)).join(' L') + ' L' + com.slice().reverse().map((d) => x(cl.indexOf(d)).toFixed(1) + ' ' + y(d.tmin).toFixed(1)).join(' L') + ' Z' : '';
+    return (area ? '<path d="' + area + '" class="gc-faixa"/>' : '') + '<path d="' + linha('tmax') + '" class="gc-tmax"/><path d="' + linha('tmin') + '" class="gc-tmin"/>';
+  }, [[tMax, 8], [(tMax + tMin) / 2, 8 + (110 - 12) / 2], [tMin, 8 + (110 - 12)]], (v) => br(v, 0) + '°');
+  const pUr = painel(80, (mT, alt) => {
+    const y = (v) => mT + alt - (v / 100) * alt;
+    return '<rect x="' + mE + '" y="' + y(100).toFixed(1) + '" width="' + w + '" height="' + (y(55) - y(100)).toFixed(1) + '" class="gc-ur-ok"/><path d="' + cl.map((d, i) => (d.ur == null ? '' : (i && cl[i - 1].ur != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.ur).toFixed(1))).join(' ') + '" class="gc-ur"/>';
+  }, [[100, 8], [55, 8 + (80 - 12) * 0.45], [0, 8 + (80 - 12)]], (v) => br(v, 0) + '%');
+  let eixo = '<svg class="gc gc-eixo" viewBox="0 0 ' + W + ' 18" width="100%" preserveAspectRatio="none" aria-hidden="true">';
+  const passo = Math.max(1, Math.ceil(n / 6));
+  cl.forEach((d, i) => { if (i % passo === 0 || i === n - 1) eixo += '<text x="' + x(i).toFixed(1) + '" y="13" text-anchor="middle" class="gc-txt">' + esc(dataBr(d.data)) + '</text>'; });
+  eixo += '</svg>';
+  const soma = (k) => cl.reduce((t, d) => t + (d[k] || 0), 0);
+  const diasChuva = cl.filter((d) => (d.chuva || 0) >= 1).length;
+  GCLIMA = { cl, W, mE, mD };
+  return '<div class="gc-resumo"><span><small>Chuva</small><b>' + br(soma('chuva'), 0) + ' mm</b><em>' + diasChuva + (diasChuva === 1 ? ' dia' : ' dias') + ' com chuva</em></span>' +
+    '<span><small>ET₀</small><b>' + br(soma('et0'), 0) + ' mm</b><em>saldo ' + (soma('chuva') - soma('et0') >= 0 ? '+' : '') + br(soma('chuva') - soma('et0'), 0) + '</em></span>' +
+    '<span><small>Temperatura</small><b>' + br(Math.min(...cl.map((d) => (d.tmin == null ? 99 : d.tmin))), 0) + '–' + br(Math.max(...cl.map((d) => d.tmax || 0)), 0) + '°</b><em>mínima · máxima</em></span></div>' +
+    '<div class="gc-wrap">' +
+    '<div class="gc-rotulo"><i class="l" style="--c:var(--g-chuva)"></i> Chuva (mm/dia) <i class="l ln" style="--c:var(--g-def);margin-left:10px"></i> ET₀ (mm/dia)</div>' + pChuva.replace('aria-hidden="true"', 'aria-label="Clima da estação" role="img"') +
+    '<div class="gc-rotulo"><i class="l ln" style="--c:var(--g-def)"></i> Máxima <i class="l ln" style="--c:var(--g-lam);margin-left:10px"></i> Mínima (°C)</div>' + pTemp +
+    '<div class="gc-rotulo"><i class="l ln" style="--c:var(--g-afd)"></i> Umidade do ar (%) <span class="muted">· faixa clara: acima de 55%</span></div>' + pUr + eixo +
+    '<div class="gc-cursor" hidden></div><div class="gc-tip" hidden></div></div>';
+}
+/** Cursor + balão nos três painéis (mesmo eixo de datas). */
+function ligarHoverClima() {
+  const wrap = $('#grafico-clima .gc-wrap'); if (!wrap || !GCLIMA) return;
+  const cursor = $('.gc-cursor', wrap), tip = $('.gc-tip', wrap);
+  const mostrar = (clientX) => {
+    const r = wrap.getBoundingClientRect(); const fx = ((clientX - r.left) / r.width) * GCLIMA.W;
+    const n = GCLIMA.cl.length, i = Math.max(0, Math.min(n - 1, Math.floor(((fx - GCLIMA.mE) / (GCLIMA.W - GCLIMA.mE - GCLIMA.mD)) * n)));
+    const d = GCLIMA.cl[i]; const px = ((GCLIMA.mE + ((i + 0.5) * (GCLIMA.W - GCLIMA.mE - GCLIMA.mD)) / n) / GCLIMA.W) * r.width;
+    cursor.hidden = false; cursor.style.left = px + 'px';
+    tip.hidden = false;
+    tip.innerHTML = '<b>' + esc(diaSemana(d.data)) + ' ' + esc(dataBrAno(d.data)) + '</b><br>Chuva ' + br(d.chuva || 0, 1) + ' mm · ET₀ ' + (d.et0 == null ? '–' : br(d.et0, 1)) + ' mm<br>' + (d.tmin != null && d.tmax != null ? br(d.tmin, 0) + '–' + br(d.tmax, 0) + ' °C · ' : '') + (d.ur == null ? '' : 'UR ' + br(d.ur, 0) + '%') + (d.vento != null ? ' · vento ' + br(d.vento, 1) + ' m/s' : '');
+    tip.style.left = Math.min(Math.max(0, px - 80), Math.max(0, r.width - 175)) + 'px';
+  };
+  wrap.addEventListener('mousemove', (ev) => mostrar(ev.clientX));
+  wrap.addEventListener('touchstart', (ev) => mostrar(ev.touches[0].clientX), { passive: true });
+  wrap.addEventListener('touchmove', (ev) => mostrar(ev.touches[0].clientX), { passive: true });
+  wrap.addEventListener('mouseleave', () => { cursor.hidden = true; tip.hidden = true; });
 }
 
 /* ================= HOJE ================= */
@@ -589,12 +641,12 @@ V.clima = function () {
     cardRosa24h() +
     (cardPrevisao(r.dia) || cardSemPrevisao()) +
     '<div id="card-inmet">' + cardInmet() + '</div>' +
-    '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div>' +
-    '<div class="legenda"><span class="l" style="--c:var(--deficit)">Tmáx</span><span class="l" style="--c:var(--blue)">Tmín</span><span class="l" style="--c:var(--afd)">UR (0–100%)</span><span style="--c:var(--chuva)">Chuva (eixo da direita)</span></div></div>';
+    '<div class="card"><div class="row"><h2>Últimos 30 dias na estação</h2><span class="muted">toque pra ver o dia</span></div><div id="grafico-clima">' + (CLIMA ? graficoClima(CLIMA) : '<div class="esqueleto"><div class="sk sk-t"></div><div class="sk"></div><div class="sk sk-c"></div></div>') + '</div></div>';
 };
 let CLIMA_DE = '';   // fazenda + hora da última busca do histórico de 30 dias (reaproveitado por 10 min)
 V.clima_depois = async function () {
   if (V.hoje_depois) V.hoje_depois();
+  ligarHoverClima();   // gráfico já desenhado do cache
   const ps = pivosCadastro();
   if (!ps.length || !syncUrl()) return;
   // o histórico de 30 dias muda uma vez por dia (18h): não precisa buscar de novo a cada entrada na tela
@@ -602,7 +654,7 @@ V.clima_depois = async function () {
   if (CLIMA && CLIMA_DE.startsWith(chave + '|') && Date.now() - Number(CLIMA_DE.split('|').pop()) < 10 * 60 * 1000) return;
   try {
     const r = await chamar('GET', { acao: 'historico', pivo: ps[0].nome, dias: 30, fazenda: chaveAtual() });
-    if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; CLIMA_DE = chave + '|' + Date.now(); const el = $('#grafico-clima'); if (el) el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; const ci = $('#card-inmet'); if (ci) ci.innerHTML = cardInmet(); }
+    if (r && r.ok && r.historico) { CLIMA = r.historico.clima || []; CLIMA_DE = chave + '|' + Date.now(); const el = $('#grafico-clima'); if (el) { el.innerHTML = graficoClima(CLIMA) || '<div class="vazio">Sem dias calculados ainda.</div>'; ligarHoverClima(); } const ci = $('#card-inmet'); if (ci) ci.innerHTML = cardInmet(); }
   } catch (e) { const el = $('#grafico-clima'); if (el) el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; }
 };
 /** Cartão de um pivô na tela Hoje: o essencial em cima, o resto em "detalhes". */
