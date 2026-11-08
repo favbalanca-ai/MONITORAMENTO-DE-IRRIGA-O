@@ -231,6 +231,9 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
   await page.getByRole("link", { name: /Clima/ }).click();
   await page.getByText(/Última tentativa da planilha: .* — erro/).waitFor();
   await page.getByText(/Open-Meteo: HTTP 503/).waitFor();
+  // a busca automática (1,5 s depois de sincronizar) falha com a internet "caída" e fica no LOG; espera ela acabar
+  // antes de trocar a resposta, senão ela emenda com a do botão e as duas rodadas são contadas
+  await page.waitForFunction(() => (localStorage.getItem("irrigacao_log") || "").includes("Previsão pelo celular"));
   // "Atualizar": o celular busca o Open-Meteo (a planilha continua sem conseguir: 503) e manda pra planilha
   const om = JSON.parse(readFileSync(new URL("../fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
   const time: string[] = [], temperature_2m: number[] = [], relative_humidity_2m: number[] = [], wind_speed_10m: number[] = [], wind_gusts_10m: number[] = [], precipitation: number[] = [], precipitation_probability: number[] = [];

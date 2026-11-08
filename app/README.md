@@ -26,9 +26,10 @@ feitos sem internet.
   ≥ 70 %); nos dois primeiros dias o **horário provável da chuva**; **"Ontem, previsto ×
   medido"** (rodada da véspera × estação, ou INMET; veredito em duas partes: chove ou não = chance ≥ 70 % ("disse
   que chove") ou < 30 % ("disse que não") contra 1 mm medido, chance entre 30 % e 70 % = indefinida; a quantidade =
-  diferença até 50 % ou 3 mm; selo acertou / parcial / errou / indefinida e uma frase só: "a previsão dizia
-  **chuva ~9 mm (88 %)** e a estação mediu **sem chuva**") e o **placar dos últimos 7 dias**
-  (uma bolinha por dia e o total: acertos, parciais, erros, indefinidas, % de acerto nas decisivas). Abaixo, uma
+  diferença até 50 % ou 3 mm; selo acertou / parcial / errou / indefinida e dois quadros lado a lado com ícone
+  grande: **Previsão** (🌧️ 88 % · chuva ~9 mm, ☀️ sem chuva ou 🌦️ em cima do muro) × **Estação/INMET** (mm
+  medidos)) e o **placar dos últimos 7 dias**: uma bolinha por dia com ✓ ~ ✗ ?, o % de acerto em destaque e a
+  contagem de cada tipo. Abaixo, uma
   linha por assunto: consenso dos modelos (o melhor e o peso), amanhã, tendência. "Como ler os dias", o texto do
   INMET, a tabela dos 14 dias, a comparação dos modelos, o placar e a lista de fontes ficam num só dobrável; o
   rodapé só diz quando atualizou. **Tendência** de cada dia: o que as rodadas anteriores
