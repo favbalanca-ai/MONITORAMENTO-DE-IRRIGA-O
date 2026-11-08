@@ -30,7 +30,8 @@ before(async () => {
   });
   await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
   base = `http://127.0.0.1:${(servidor.address() as { port: number }).port}/`;
-  browser = await chromium.launch();
+  // CHROMIUM_PATH: usa um Chromium já instalado quando a versão do Playwright não baixou o dela
+  browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 });
 after(async () => { await browser?.close(); servidor?.close(); });
 
