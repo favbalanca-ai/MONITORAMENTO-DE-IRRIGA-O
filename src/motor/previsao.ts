@@ -65,6 +65,8 @@ export interface FaixaChuva {
   /** Quantos modelos preveem chuva de pelo menos 1 mm, e quantos responderam. */
   comChuva: number;
   modelos: number;
+  /** Menor chuva entre os modelos que veem chuva (≥ 1 mm): a faixa "x de N veem chuva (a–b mm)" começa aqui, não em 0. */
+  minComChuvaMm: number | null;
 }
 
 /**
@@ -184,7 +186,8 @@ export function faixaChuva(modelos: ModeloDia[]): FaixaChuva | undefined {
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const meio = v.length / 2;
   const mediana = v.length % 2 ? v[Math.floor(meio)]! : (v[meio - 1]! + v[meio]!) / 2;
-  return { minMm: r1(v[0]!), maxMm: r1(v[v.length - 1]!), medianaMm: r1(mediana), comChuva: v.filter((x) => x >= 1).length, modelos: v.length };
+  const comChuva = v.filter((x) => x >= 1);
+  return { minMm: r1(v[0]!), maxMm: r1(v[v.length - 1]!), medianaMm: r1(mediana), comChuva: comChuva.length, modelos: v.length, minComChuvaMm: comChuva.length ? r1(comChuva[0]!) : null };
 }
 
 /** Código WMO (Open-Meteo `weather_code`) → texto curto em português. */

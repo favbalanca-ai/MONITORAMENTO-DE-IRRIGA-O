@@ -29,7 +29,7 @@ test("vários modelos: o melhor ajuste é o principal, os outros entram em `mode
   assert.equal(dia.chuvaMm, 12.4); // best_match
   assert.equal(dia.tempo, "Pancadas de chuva fracas");
   assert.deepEqual(dia.modelos!.map((m) => [m.nome, m.chuvaMm]), [["Melhor ajuste", 12.4], ["ECMWF", 14.9], ["GFS", 6.2], ["ICON", 12.4], ["GEM", 0], ["Météo-France", 18.6]]);
-  assert.deepEqual(dia.faixaChuva, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6 });
+  assert.deepEqual(dia.faixaChuva, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6, minComChuvaMm: 6.2 });
   // modelos de horizonte curto somem nos dias que não cobrem (Météo-France: 4 dias; GEM: 3)
   assert.deepEqual(d[12]!.modelos!.map((m) => m.nome), ["Melhor ajuste", "ECMWF", "GFS", "ICON"]);
   assert.equal(d[12]!.faixaChuva!.modelos, 4);

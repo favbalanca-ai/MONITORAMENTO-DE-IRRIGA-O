@@ -10,7 +10,8 @@ feitos sem internet.
   toque abre o resto e o app lembra quais ficaram abertos. A decisão de cada pivô (IRRIGAR · NÃO IRRIGAR · SEM DADOS), déficit × AFD, percentímetro,
   tempo da volta, lâmina bruta, custo de energia e alertas. Botão **Recalcular**. Cartão **Próximos dias**
   (na tela Clima) com 7 dias em destaque — tempo (ícone), chuva, chance, temperatura e **quantos modelos
-  veem chuva** (Open-Meteo: melhor ajuste + ECMWF, GFS, ICON, GEM, Météo-France, UKMO, JMA e ECMWF AIFS; texto do INMET;
+  veem chuva** com a faixa só desses modelos — "7 de 8 veem chuva (2–10 mm)", 0 mm não é chuva — (Open-Meteo: melhor
+  ajuste + ECMWF, GFS, ICON, GEM, Météo-France, UKMO, JMA e ECMWF AIFS; texto do INMET;
   **ensemble do ECMWF**: 51 rodadas, de onde sai a chance de chuva mostrada e a faixa p10–p90 de cada dia). A previsão sazonal do NCEP (CFSv2, 60 dias) também é buscada pelo celular, mas só vai para a aba
   PREVISAO 60 DIAS da planilha (o cartão no app foi retirado a pedido da dona) — e, em
   "Detalhes", 14 dias com UR, vento/rajada, ET₀, horas de sol e UV e a tabela de chuva modelo a modelo.

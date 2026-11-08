@@ -451,7 +451,7 @@ test("previsão com vários modelos: faixa e concordância vão para a aba e o a
   let p = amb.chamar("atualizarPrevisao") as { dias: { data: string; chuvaMm: number | null; tempo?: string; faixaChuva?: { comChuva: number; modelos: number; minMm: number; maxMm: number }; modelos?: { nome: string }[] }[]; fontes: string[] };
   assert.deepEqual([...p.fontes], ["Open-Meteo (6 modelos)", "INMET"]);
   assert.equal(p.dias[8]!.tempo, "Pancadas de chuva fracas");
-  assert.deepEqual({ ...p.dias[8]!.faixaChuva }, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6 });
+  assert.deepEqual({ ...p.dias[8]!.faixaChuva }, { minMm: 0, maxMm: 18.6, medianaMm: 12.4, comChuva: 5, modelos: 6, minComChuvaMm: 6.2 });
   assert.equal(p.dias[8]!.modelos!.length, 6);
   const linha = amb.aba("PREVISAO").objetos().find((l) => String(l["Data"]).slice(0, 10) === "2026-02-09")!;
   assert.equal(linha["Tempo"], "Pancadas de chuva fracas");

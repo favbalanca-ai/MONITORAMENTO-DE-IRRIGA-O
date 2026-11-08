@@ -12,6 +12,12 @@ function br_(x: number, casas: number): string {
   return `${x < 0 && Number(x.toFixed(casas)) !== 0 ? "-" : ""}${milhar}${dec ? "," + dec : ""}`;
 }
 const n1 = (x: number) => br_(x, 1);
+/** "5 de 6 preveem chuva (6,2 a 18,6 mm)": a faixa é só dos modelos que veem chuva — 0 mm não é chuva. */
+function textoFaixaModelos(f: { comChuva: number; modelos: number; minMm: number; maxMm: number; minComChuvaMm?: number | null }): string {
+  if (!f.comChuva) return `nenhum dos ${f.modelos} prevê chuva`;
+  const min = f.minComChuvaMm ?? (f.minMm >= 1 ? f.minMm : null);
+  return `${f.comChuva} de ${f.modelos} preveem chuva (${min === null ? "até " + n1(f.maxMm) : n1(min) + " a " + n1(f.maxMm)} mm)`;
+}
 const n2 = (x: number) => br_(x, 2);
 const n0 = (x: number) => br_(x, 0);
 const br = (d: DataISO) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
@@ -130,7 +136,7 @@ export function montarMensagem(
     const r = prox[0]?.resumo;
     if (r) l.push(`   INMET amanhã: ${r}`);
     const f = prox[0]?.faixaChuva;
-    if (f) l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+    if (f) l.push(`   Modelos amanhã: ${textoFaixaModelos(f)}`);
     const t = prox[0]?.tendencia;
     if (t && t.emissoes >= 2) l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
     const r7 = resumoPrevisao(previsao, data, 7);
@@ -215,7 +221,7 @@ export function montarMensagemHtml(
   if (clima.estimados?.length) html += `<br><span style="color:#b7791f">⚠️ Estação sem dado de ${h(clima.estimados.join(", "))}: valores do dia vizinho.</span>`;
   if (prox.length) html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
   const f1 = prox[0]?.faixaChuva;
-  if (f1) html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+  if (f1) html += `<br><span style="color:#64757d">Modelos amanhã: ${h(textoFaixaModelos(f1))}</span>`;
   const t1 = prox[0]?.tendencia;
   if (t1 && t1.emissoes >= 2) html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;
   const r7 = resumoPrevisao(previsao, data, 7);

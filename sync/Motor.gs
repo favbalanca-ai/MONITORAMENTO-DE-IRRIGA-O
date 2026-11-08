@@ -1016,7 +1016,8 @@ var Motor = (function () {
       const r1 = (x) => Math.round(x * 10) / 10;
       const meio = v.length / 2;
       const mediana = v.length % 2 ? v[Math.floor(meio)] : (v[meio - 1] + v[meio]) / 2;
-      return { minMm: r1(v[0]), maxMm: r1(v[v.length - 1]), medianaMm: r1(mediana), comChuva: v.filter((x) => x >= 1).length, modelos: v.length };
+      const comChuva = v.filter((x) => x >= 1);
+      return { minMm: r1(v[0]), maxMm: r1(v[v.length - 1]), medianaMm: r1(mediana), comChuva: comChuva.length, modelos: v.length, minComChuvaMm: comChuva.length ? r1(comChuva[0]) : null };
   }
   /** Código WMO (Open-Meteo `weather_code`) → texto curto em português. */
   function descricaoTempo(codigo) {
@@ -2382,6 +2383,13 @@ var Motor = (function () {
       return `${x < 0 && Number(x.toFixed(casas)) !== 0 ? "-" : ""}${milhar}${dec ? "," + dec : ""}`;
   }
   const n1 = (x) => br_(x, 1);
+  /** "5 de 6 preveem chuva (6,2 a 18,6 mm)": a faixa é só dos modelos que veem chuva — 0 mm não é chuva. */
+  function textoFaixaModelos(f) {
+      if (!f.comChuva)
+          return `nenhum dos ${f.modelos} prevê chuva`;
+      const min = f.minComChuvaMm ?? (f.minMm >= 1 ? f.minMm : null);
+      return `${f.comChuva} de ${f.modelos} preveem chuva (${min === null ? "até " + n1(f.maxMm) : n1(min) + " a " + n1(f.maxMm)} mm)`;
+  }
   const n2 = (x) => br_(x, 2);
   const n0 = (x) => br_(x, 0);
   const br = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
@@ -2477,7 +2485,7 @@ var Motor = (function () {
               l.push(`   INMET amanhã: ${r}`);
           const f = prox[0]?.faixaChuva;
           if (f)
-              l.push(`   Modelos amanhã: ${f.comChuva} de ${f.modelos} preveem chuva (${n1(f.minMm)} a ${n1(f.maxMm)} mm)`);
+              l.push(`   Modelos amanhã: ${textoFaixaModelos(f)}`);
           const t = prox[0]?.tendencia;
           if (t && t.emissoes >= 2)
               l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
@@ -2573,7 +2581,7 @@ var Motor = (function () {
           html += `<br>🌧 Previsão: ${prox.map((d) => `${h(br(d.data))} <b>${d.chuvaMm === null ? "?" : n1(d.chuvaMm)}</b> mm${d.probPct === null ? "" : ` (${n0(d.probPct)}%)`}`).join(" · ")} — ${n1(p2.mm)} mm em 2 dias${prox[0]?.resumo ? `<br><span style="color:#64757d">INMET amanhã: ${h(prox[0].resumo)}</span>` : ""}`;
       const f1 = prox[0]?.faixaChuva;
       if (f1)
-          html += `<br><span style="color:#64757d">Modelos amanhã: ${f1.comChuva} de ${f1.modelos} preveem chuva (${n1(f1.minMm)} a ${n1(f1.maxMm)} mm)</span>`;
+          html += `<br><span style="color:#64757d">Modelos amanhã: ${h(textoFaixaModelos(f1))}</span>`;
       const t1 = prox[0]?.tendencia;
       if (t1 && t1.emissoes >= 2)
           html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;

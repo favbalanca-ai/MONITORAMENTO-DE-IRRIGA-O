@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-31';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-32';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -797,8 +797,11 @@ function seloTendencia(t, curto) {
 function textoModelos(f) {
   if (!f) return '';
   if (f.comChuva === 0) return f.modelos + ' modelos: nenhum vê chuva';
-  if (f.comChuva === f.modelos) return 'todos os ' + f.modelos + ' modelos veem chuva (' + br(f.minMm, 0) + '–' + br(f.maxMm, 0) + ' mm)';
-  return f.comChuva + ' de ' + f.modelos + ' modelos veem chuva (' + br(f.minMm, 0) + '–' + br(f.maxMm, 0) + ' mm)';
+  // a faixa é só dos modelos que veem chuva: 0 mm não é chuva (planilha antiga sem minComChuvaMm → "até X mm")
+  const min = f.minComChuvaMm != null ? f.minComChuvaMm : f.minMm >= 1 ? f.minMm : null;
+  const faixa = min == null ? 'até ' + br(f.maxMm, 0) + ' mm' : br(min, 0) + '–' + br(f.maxMm, 0) + ' mm';
+  if (f.comChuva === f.modelos) return 'todos os ' + f.modelos + ' modelos veem chuva (' + faixa + ')';
+  return f.comChuva + ' de ' + f.modelos + ' modelos veem chuva (' + faixa + ')';
 }
 /**
  * Cartão "Próximos dias": 7 dias em destaque (tempo, chuva, chance, temperatura, faixa dos modelos) e, em
@@ -928,7 +931,7 @@ function cardPrevisao(dia) {
   const avisoPlacar = comPlacar ? '<span class="prev-placar" title="A chuva e a temperatura de cada dia são a média dos ' + esc(pesos.modelos.length) + ' modelos pesada pelo acerto deles na sua estação nos últimos ' + esc(pesos.diasComparados) + ' dias.">' + ico('historico') + ' Consenso de ' + esc(pesos.modelos.length) + ' modelos · melhor: <b>' + esc(pesos.modelos[0].modelo) + '</b> (' + br(pesos.modelos[0].peso * 100, 0) + '%)</span>' :
     (pesos ? '<span class="prev-placar" title="Quando chegar a 5 dias medidos, a previsão passa a dar mais peso a quem acerta mais na sua estação.">Placar dos modelos: ' + esc(pesos.diasComparados) + ' de 5 dias medidos</span>' : '');
   const linhaAmanha = avisoInmet + '<div class="muted prev-linha">' + [avisoPlacar, (amanha.tempo || amanha.faixaChuva ? '<span class="prev-amanha"><b>Amanhã:</b> ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</span>' : ''),
-    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend"><b>Tendência:</b> ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join('') + '</div>';
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend"><b>Tendência pra ' + esc(diaSemana(amanha.data)) + ' ' + esc(dataBr(amanha.data)) + ':</b> ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join('') + '</div>';
   const inmetTexto = amanha.resumo ? '<p class="muted" style="margin-top:8px"><b>INMET amanhã</b> — ' + esc(amanha.resumo) + '</p>' : '';
   const n = (x, c) => (x == null ? '–' : br(x, c));
   const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Ensemble</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
