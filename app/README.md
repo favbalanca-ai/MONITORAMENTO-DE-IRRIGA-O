@@ -26,9 +26,12 @@ feitos sem internet.
   ≥ 70 %); nos dois primeiros dias o **horário provável da chuva**; **"Ontem, previsto ×
   medido"** (rodada da véspera × estação, ou INMET; veredito em duas partes: chove ou não = chance ≥ 70 % ("disse
   que chove") ou < 30 % ("disse que não") contra 1 mm medido, chance entre 30 % e 70 % = indefinida; a quantidade =
-  diferença até 50 % ou 3 mm; acertou / parcial / errou / indefinida, com a frase do que houve) e o **placar dos últimos 7 dias**
-  (uma bolinha por dia e o total: acertos, parciais, erros, indefinidas, % de acerto nas decisivas); "Como ler os dias", o texto do INMET, a tabela dos 14 dias, a
-  comparação dos modelos e o placar ficam num só dobrável. **Tendência** de cada dia: o que as rodadas anteriores
+  diferença até 50 % ou 3 mm; selo acertou / parcial / errou / indefinida e uma frase só: "a previsão dizia
+  **chuva ~9 mm (88 %)** e a estação mediu **sem chuva**") e o **placar dos últimos 7 dias**
+  (uma bolinha por dia e o total: acertos, parciais, erros, indefinidas, % de acerto nas decisivas). Abaixo, uma
+  linha por assunto: consenso dos modelos (o melhor e o peso), amanhã, tendência. "Como ler os dias", o texto do
+  INMET, a tabela dos 14 dias, a comparação dos modelos, o placar e a lista de fontes ficam num só dobrável; o
+  rodapé só diz quando atualizou. **Tendência** de cada dia: o que as rodadas anteriores
   (uma por dia) diziam da chance de chuva daquele dia (95% → 80% ↓ caindo), com mini-gráfico e um **índice de
   confiança** 0–100 (chance atual + concordância dos modelos + estabilidade entre rodadas). Aviso quando a
   chuva prevista cobre o déficit. **O próprio app busca o Open-Meteo** (o Open-Meteo bloqueia os endereços

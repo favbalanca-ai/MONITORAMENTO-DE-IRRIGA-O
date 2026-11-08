@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-28';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-29';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -873,14 +873,17 @@ function cardOntem(pv) {
   const o = pv.ontem; if (!o) return placarSemana(pv);
   const v = o.veredito || (o.acertou ? 'acertou' : 'errou');
   const selo = { acertou: '✓ acertou', parcial: '~ parcial', errou: '✗ errou', indefinida: '? indefinida' }[v] || v;
-  // o que a previsão DISSE (não a média de mm): "sem chuva (24%)", "chuva ~8 mm (93%)" ou "incerta (46%)"
-  const disse = o.indefinida ? 'incerta <em>(' + br(o.probPct, 0) + '%)</em>'
-    : o.disseChuva ? 'chuva' + (o.previstoMm >= 1 ? ' ~' + br(o.previstoMm, 0) + ' mm' : '') + (o.probPct != null ? ' <em>(' + br(o.probPct, 0) + '%)</em>' : '')
-    : 'sem chuva' + (o.probPct != null ? ' <em>(' + br(o.probPct, 0) + '%)</em>' : '');
-  return '<div class="prev-ontem"><div><small>Ontem, a previsão dizia</small><b>' + disse + '</b></div>' +
-    '<div><small>' + (o.fonte === 'INMET' ? 'INMET mediu' : 'Estação mediu') + '</small><b>' + (o.medidoMm >= 1 ? 'chuva de ' + br(o.medidoMm, 1) + ' mm' : 'sem chuva' + (o.medidoMm > 0 ? ' <em>(' + br(o.medidoMm, 1) + ' mm)</em>' : '')) + '</b></div>' +
-    '<span class="ontem-selo ' + (v === 'acertou' ? 'ok' : v === 'parcial' ? 'meio' : v === 'indefinida' ? 'neutro' : 'erro') + '" title="Chove ou não: chance ≥ 70% = disse que chove; < 30% = disse que não; entre 30% e 70% a previsão ficou em cima do muro (indefinida). Choveu = 1 mm ou mais medido. Quantidade: diferença de até 50% ou 3 mm.">' + selo + '</span>' +
-    (o.texto ? '<small class="ontem-txt">' + esc(o.texto) + '</small>' : '') + placarSemana(pv) + '</div>';
+  const pct = o.probPct != null ? ' <em>(' + br(o.probPct, 0) + '%)</em>' : '';
+  // o que a previsão DISSE (não a média de mm): "sem chuva (24%)", "chuva ~8 mm (93%)" ou "em cima do muro (46%)"
+  const disse = o.indefinida ? 'em cima do muro' + pct
+    : o.disseChuva ? 'chuva' + (o.previstoMm >= 1 ? ' ~' + br(o.previstoMm, 0) + ' mm' : '') + pct
+    : 'sem chuva' + pct;
+  const mediu = o.medidoMm >= 1 ? br(o.medidoMm, 1) + ' mm' : 'sem chuva' + (o.medidoMm > 0 ? ' <em>(' + br(o.medidoMm, 1) + ' mm)</em>' : '');
+  const quem = o.fonte === 'INMET' ? 'o INMET mediu' : 'a estação mediu';
+  const explica = v === 'parcial' ? (o.texto || '') : v === 'indefinida' ? 'chance entre 30% e 70% não conta como acerto nem erro' : '';
+  return '<div class="prev-ontem"><span class="ontem-selo ' + (v === 'acertou' ? 'ok' : v === 'parcial' ? 'meio' : v === 'indefinida' ? 'neutro' : 'erro') + '" title="Chove ou não: chance ≥ 70% = disse que chove; < 30% = disse que não; entre 30% e 70% a previsão ficou em cima do muro (indefinida). Choveu = 1 mm ou mais medido. Quantidade: diferença de até 50% ou 3 mm.">' + selo + '</span>' +
+    '<div class="ontem-frase"><small>Ontem' + (o.data ? ', ' + esc(diaSemana(o.data)) + ' ' + esc(dataBr(o.data)) : '') + '</small>a previsão dizia <b>' + disse + '</b> e ' + quem + ' <b>' + mediu + '</b>' +
+    (explica ? '<span class="ontem-txt">' + esc(explica) + '</span>' : '') + '</div>' + placarSemana(pv) + '</div>';
 }
 function comoLer(pv) {
   return '<div class="prev-comoler"><p class="muted"><b>Como ler os dias</b></p><dl>' +
@@ -921,8 +924,8 @@ function cardPrevisao(dia) {
   // uma linha só: consenso (ou placar em formação) + o que vem amanhã; o texto do INMET e a explicação longa ficam nos detalhes
   const avisoPlacar = comPlacar ? '<span class="prev-placar" title="A chuva e a temperatura de cada dia são a média dos ' + esc(pesos.modelos.length) + ' modelos pesada pelo acerto deles na sua estação nos últimos ' + esc(pesos.diasComparados) + ' dias.">' + ico('historico') + ' Consenso de ' + esc(pesos.modelos.length) + ' modelos · melhor: <b>' + esc(pesos.modelos[0].modelo) + '</b> (' + br(pesos.modelos[0].peso * 100, 0) + '%)</span>' :
     (pesos ? '<span class="prev-placar" title="Quando chegar a 5 dias medidos, a previsão passa a dar mais peso a quem acerta mais na sua estação.">Placar dos modelos: ' + esc(pesos.diasComparados) + ' de 5 dias medidos</span>' : '');
-  const linhaAmanha = avisoInmet + '<p class="muted prev-linha">' + [avisoPlacar, (amanha.tempo || amanha.faixaChuva ? '<span class="prev-amanha">Amanhã: ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</span>' : ''),
-    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend">Tendência: ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join(' <i class="sep">·</i> ') + '</p>';
+  const linhaAmanha = avisoInmet + '<div class="muted prev-linha">' + [avisoPlacar, (amanha.tempo || amanha.faixaChuva ? '<span class="prev-amanha"><b>Amanhã:</b> ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</span>' : ''),
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend"><b>Tendência:</b> ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join('') + '</div>';
   const inmetTexto = amanha.resumo ? '<p class="muted" style="margin-top:8px"><b>INMET amanhã</b> — ' + esc(amanha.resumo) + '</p>' : '';
   const n = (x, c) => (x == null ? '–' : br(x, c));
   const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Ensemble</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
@@ -955,12 +958,12 @@ function cardPrevisao(dia) {
   const detalhes = '<details class="kc-det prev-det"><summary>Como ler · detalhes dos ' + todos.length + ' dias · modelos e placar</summary>' + comoLer(pv) + inmetTexto + tabela + modelos + placar +
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
-    '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p></details>';
+    '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p>' +
+    '<p class="muted"><b>Fonte:</b> ' + esc((pv.fontes || []).join(' + ')) + (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '.</p></details>';
   return '<div class="card prev-card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     resumo + grafico14(todos, pv) + tira + cardOntem(pv) +
     linhaAmanha + detalhes +
-    '<p class="muted">Fonte: ' + esc((pv.fontes || []).join(' + ')) + ' · atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) +
-    (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '. A previsão não entra no balanço; só avisa.</p></div>';
+    '<p class="muted prev-rodape">Atualizado ' + esc(dataBr(pv.atualizadoEm)) + ' ' + esc((pv.atualizadoEm || '').slice(11, 16)) + (pv.diasDe ? ' <b>⚠️ com números da rodada ' + esc(dataBr(pv.diasDe)) + '</b>' : '') + ' · a previsão não entra no balanço; só avisa.</p></div>';
 }
 
 /* ================= chuva confirmada pelo INMET (estação automática do município) ================= */

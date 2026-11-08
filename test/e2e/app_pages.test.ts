@@ -255,7 +255,9 @@ test("clima sem previsão: mostra o motivo do LOG e o administrador atualiza pel
   assert.equal(await page.getByText("Próximos 60 dias").count(), 0);
   assert.equal(await page.locator(".mini-mapa").count(), 0);
   assert.ok(chamadas.includes("POST __previsaoDados"));
-  await page.getByText(/Fonte: Open-Meteo \(6 modelos\) via app \+ ECMWF ensemble \(51 rodadas\) via app/).waitFor();
+  // a lista de fontes fica dentro dos detalhes; o rodapé só diz quando atualizou
+  await page.locator(".prev-rodape", { hasText: /^Atualizado \d\d\/\d\d \d\d:\d\d · a previsão não entra no balanço; só avisa\.$/ }).waitFor();
+  await page.locator(".prev-det").getByText(/Fonte: Open-Meteo \(6 modelos\) via app \+ ECMWF ensemble \(51 rodadas\) via app/).waitFor({ state: "attached" });
   // a chance de 09/02 é a do ensemble (100%, 11 rodadas no fixture) e a faixa p10–p90 aparece no dia
   const dia9 = page.locator(".prev-dia", { hasText: "09/02" });
   await dia9.locator(".prev-ens", { hasText: "100%" }).waitFor();
