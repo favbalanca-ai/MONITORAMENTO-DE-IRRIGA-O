@@ -24,6 +24,7 @@ var ABA = {
   PREVISAO_60: "PREVISAO 60 DIAS",
   PREVISAO_MODELOS: "PREVISAO MODELOS",
   CLIMA_INMET: "CLIMA INMET",
+  SINAIS: "SINAIS ESTACAO",
   PESOS: "PESOS MODELOS",
   FAZENDAS: "FAZENDAS",
   RESERVATORIOS: "RESERVATORIOS",
@@ -147,9 +148,10 @@ var CABECALHOS = {
   PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
   PREVISAO_MODELOS: ["Fazenda", "Emitida em", "Dia previsto", "Modelo", "Chuva (mm)", "Tmax", "Tmin"],
   CLIMA_INMET: ["Data", "Chuva (mm)", "Tmax", "Tmin", "Horas medidas", "Estação", "Fazenda", "Baixado em"],
+  SINAIS: ["Fazenda", "Data", "Vento oeste (% do dia)", "Direção predominante", "Pressão média (hPa)", "Pressão 24 h (hPa)", "Leituras", "Chuva 2 dias depois (mm)"],
   PESOS: ["Fazenda", "Modelo", "Peso (%)", "Erro chuva (mm)", "Erro temperatura (°C)", "Acerto chove/não chove (%)", "Comparações", "Dias comparados", "Calculado em", "Vale?"],
   PREVISAO_60: ["Data", "Fonte", "Chuva (mm)", "Chance (%)", "Tmin", "Tmax", "Radiação (MJ/m²)", "Atualizado em", "Fazenda"],
-  PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)"],
+  PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)", "Probabilidade modelos (%)"],
   LEITURAS: ["Quando (hora local)", "Chuva acum. dia (mm)", "Temp (°C)", "UR (%)", "Radiação (W/m²)", "Vento (m/s)", "Intervalo (min)", "Fonte", "Extras (JSON)", "Fazenda"],
   CLIMA: ["Data", "Tmax", "Tmin", "Tmed", "UR", "Vento", "Radiação (MJ/m²)", "Chuva (mm)", "Leituras (eq. 10 min)", "Estimado", "ET0 PM (mm)", "ET0 Hargreaves (mm)", "Horas de sol", "Fotoperíodo (h)", "Fazenda"],
   BALANCO: ["Pivô", "Data", "DAS", "Estádio", "Kc", "ET0", "ETc", "Chuva", "Irrigação", "Raiz (cm)", "CAD (mm)", "f", "AFD (mm)", "Déficit (mm)", "Medição", "Decisão", "Alertas", "Fazenda"],
@@ -178,6 +180,7 @@ function onOpen() {
     .addItem("🌧 Atualizar previsão do tempo", "menuPrevisao")
     .addItem("🌧 Estações INMET próximas", "menuEstacoesInmet")
     .addItem("🌧 Baixar medições do INMET", "menuClimaInmet")
+    .addItem("🌧 Sinais da estação (vento de oeste, pressão)", "menuSinais")
     .addItem("📄 Relatório de hoje em PDF", "menuPdf")
     .addSeparator()
     .addItem("📲 Telegram: configurar bot", "menuTelegramToken")
@@ -230,6 +233,7 @@ function instalar() {
   criarAbaSeFaltar_(ss, ABA.PREVISAO_MODELOS, CABECALHOS.PREVISAO_MODELOS);
   criarAbaSeFaltar_(ss, ABA.PESOS, CABECALHOS.PESOS);
   criarAbaSeFaltar_(ss, ABA.CLIMA_INMET, CABECALHOS.CLIMA_INMET);
+  criarAbaSeFaltar_(ss, ABA.SINAIS, CABECALHOS.SINAIS);
   var cache = criarAbaSeFaltar_(ss, ABA.CACHE, null);
   cache.hideSheet();
   abaUsuarios_();
@@ -1347,6 +1351,16 @@ function atualizarPrevisao(fornecidos) {
       r.previsao.pesos = pesos;
       if (pesos && pesos.suficiente) { r.previsao.dias = Motor.aplicarPesos(r.previsao.dias, pesos); if (r.previsao.fontes.indexOf("consenso ponderado") < 0) r.previsao.fontes.push("consenso ponderado"); }
     } catch (eP) { r.erros.push("placar: " + eP.message); }
+    // sinais da estação (vento de oeste, pressão caindo): o que ela aprendeu corrige a chance de amanhã e depois
+    try {
+      var sin = sinaisEstacao_(cfg);
+      if (sin) {
+        r.previsao.sinais = sin;
+        var antes = r.previsao.dias;
+        r.previsao.dias = Motor.aplicarSinais(antes, sin.hoje, sin.aprendizado, String(r.previsao.atualizadoEm).slice(0, 10), Motor.somarDias);
+        if (r.previsao.dias !== antes && r.previsao.fontes.indexOf("sinal da estação") < 0) r.previsao.fontes.push("sinal da estação");
+      }
+    } catch (eS) { r.erros.push("sinais: " + eS.message); }
     mapa[cfg.chave] = r.previsao;
     resumoLog.push(cfg.nome + ": " + r.previsao.fontes.join(", ") + (r.erros.length ? " | " + r.erros.join(" | ") : ""));
     var v = function (x) { return x === null || x === undefined ? "" : x; };
@@ -1524,6 +1538,99 @@ function menuClimaInmet() {
   aviso_(r.ok.concat(r.erros).join("\n"));
 }
 
+/* ------------------------------ sinais da estação ------------------------------ */
+
+var DIAS_SINAIS = 120;         // quantos dias de leituras entram no aprendizado (e no preenchimento inicial)
+
+function limiaresSinais_() {
+  var n = function (chave, padrao) { var x = Motor.numero(configApp_(chave)); return x === null || x <= 0 ? padrao : x; };
+  return { oesteMinPct: n("SINAL VENTO OESTE %", Motor.LIMIARES_SINAIS.oesteMinPct), quedaPressaoHpa: n("SINAL QUEDA PRESSAO HPA", Motor.LIMIARES_SINAIS.quedaPressaoHpa), chuvaContaMm: Motor.LIMIARES_SINAIS.chuvaContaMm };
+}
+function leituraParaSinal_(l) {
+  var e = l.extras || {};
+  var dir = Motor.numero(e["wind.wind_direction"]), p = Motor.numero(e["pressure.relative"]);
+  if (p === null) p = Motor.numero(e["pressure.absolute"]);
+  return { quando: l.quando, ventoMs: l.ventoMs, direcaoGraus: dir, pressaoHpa: p };
+}
+/** Lê a aba SINAIS ESTACAO da fazenda (ordem por data). */
+function lerSinais_(cfg) {
+  var aba = SpreadsheetApp.getActive().getSheetByName(ABA.SINAIS);
+  if (!aba || aba.getLastRow() < 2) return [];
+  var iso = function (x) { return x instanceof Date ? Motor.paraLocal(x.getTime(), cfg.fuso).slice(0, 10) : String(x).slice(0, 10); };
+  var n = function (x) { return x === "" || x === null || x === undefined ? null : Number(x); };
+  var out = [];
+  aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.SINAIS.length).getValues().forEach(function (l) {
+    if (!l[0] || !l[1] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
+    out.push({ data: iso(l[1]), oestePct: n(l[2]), direcao: l[3] ? String(l[3]) : null, pressaoMediaHpa: n(l[4]), pressao24hHpa: n(l[5]), leituras: n(l[6]) || 0, chuvaDepoisMm: n(l[7]) });
+  });
+  out.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+  return out;
+}
+/**
+ * Atualiza a aba SINAIS ESTACAO da fazenda: resume os dias que faltam a partir das leituras (direção do vento
+ * e pressão ficam no JSON de extras) e preenche "chuva 2 dias depois" com a aba CLIMA. Devolve as linhas da fazenda.
+ */
+function atualizarSinais_(cfg) {
+  var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
+  var atuais = lerSinais_(cfg);
+  var tem = {};
+  atuais.forEach(function (s) { tem[s.data] = true; });
+  var faltam = [];
+  for (var i = DIAS_SINAIS; i >= 0; i--) { var d = Motor.somarDias(hoje, -i); if (!tem[d] || d === hoje) faltam.push(d); }
+  if (faltam.length) {
+    var ini = Motor.somarDias(faltam[0], -1) + "T00:00", fim = faltam[faltam.length - 1] + "T23:59";
+    var porDia = {};
+    lerLeituras_(ini, fim, cfg.chave).forEach(function (l) {
+      if (!l.extras) return;
+      var d = String(l.quando).slice(0, 10);
+      (porDia[d] = porDia[d] || []).push(leituraParaSinal_(l));
+    });
+    faltam.forEach(function (d) {
+      var ls = porDia[d] || [];
+      if (!ls.length) return;
+      var s = Motor.sinalDoDia(d, ls, porDia[Motor.somarDias(d, -1)] || []);
+      if (!s.leituras) return;
+      atuais = atuais.filter(function (x) { return x.data !== d; });
+      atuais.push(s);
+    });
+    atuais.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+  }
+  // chuva dos 2 dias seguintes, pela aba CLIMA (só dias já fechados: até ontem)
+  var chuva = new Map();
+  climaHistorico_(DIAS_SINAIS + 3, cfg.fuso, cfg.chave).forEach(function (c) { if (c.data < hoje) chuva.set(c.data, c.chuva); });
+  atuais = Motor.completarChuvaDepois(atuais, chuva, Motor.somarDias);
+  // grava: as outras fazendas ficam como estão
+  var ss = SpreadsheetApp.getActive();
+  var aba = criarAbaSeFaltar_(ss, ABA.SINAIS, CABECALHOS.SINAIS);
+  var outras = aba.getLastRow() < 2 ? [] : aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.SINAIS.length).getValues().filter(function (l) { return l[0] && chaveFazenda_(String(l[0])) !== cfg.chave; });
+  var v = function (x) { return x === null || x === undefined ? "" : x; };
+  var minhas = atuais.map(function (s) { return [cfg.nome, s.data, v(s.oestePct), s.direcao || "", v(s.pressaoMediaHpa), v(s.pressao24hHpa), s.leituras, v(s.chuvaDepoisMm)]; });
+  escreverTabela_(ABA.SINAIS, CABECALHOS.SINAIS, outras.concat(minhas));
+  MEMO_.sinais = null;
+  return atuais;
+}
+/** Sinal de hoje + o que a estação aprendeu, para a previsão e para o app. `null` sem leitura com direção/pressão. */
+function sinaisEstacao_(cfg) {
+  var hist = atualizarSinais_(cfg);
+  if (!hist || !hist.length) return null;
+  var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
+  var lim = limiaresSinais_();
+  var deHoje = hist.filter(function (s) { return s.data === hoje; })[0] || null;
+  var ap = Motor.aprenderSinais(hist.filter(function (s) { return s.data < hoje; }), lim);
+  return { hoje: deHoje, aprendizado: ap, texto: Motor.textoSinalHoje(deHoje, lim), aprendido: Motor.textoAprendizado(ap) };
+}
+function menuSinais() {
+  var out = [];
+  lerFazendas_().forEach(function (cfg) {
+    var s = sinaisEstacao_(cfg);
+    if (!s) { out.push(cfg.nome + ": nenhuma leitura com direção do vento ou pressão (só a coleta ao vivo grava isso)"); return; }
+    var comDir = s.aprendizado.dias;
+    out.push(cfg.nome + ": " + comDir + " dias com resultado conhecido · hoje: " + (s.texto || "sem sinal") + "\n  " + s.aprendido +
+      "\n  fator vento de oeste ×" + s.aprendizado.oeste.fator + " · pressão caindo ×" + s.aprendizado.pressao.fator + (s.aprendizado.pesoDado < 1 ? " (palpite inicial ainda pesa " + Math.round((1 - s.aprendizado.pesoDado) * 100) + "%)" : ""));
+  });
+  aviso_(out.join("\n\n"));
+}
+
 /* ------------------------------ placar dos modelos ------------------------------ */
 
 var DIAS_PLACAR = 30;          // quantos dias de comparação entram no placar
@@ -1604,7 +1711,7 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
     if (!l[0] || !l[1] || !l[2]) return;
     var k = chaveFazenda_(String(l[0])) + "|" + iso(l[1]) + "|" + iso(l[2]);
     if (!porChave[k]) ordem.push(k);
-    porChave[k] = [String(l[0]), iso(l[1]), iso(l[2]), n(l[3]), n(l[4]), n(l[5]), n(l[6]), n(l[7]), n(l[8]), n(l[9]), n(l[10]), n(l[11])];
+    porChave[k] = [String(l[0]), iso(l[1]), iso(l[2]), n(l[3]), n(l[4]), n(l[5]), n(l[6]), n(l[7]), n(l[8]), n(l[9]), n(l[10]), n(l[11]), l.length > 12 ? n(l[12]) : null];
   });
   var limite = null;
   fazendas.forEach(function (cfg) {
@@ -1618,7 +1725,7 @@ function guardarHistoricoPrevisao_(fazendas, mapa) {
       var f = d.faixaChuva || null;
       var k = cfg.chave + "|" + emissao + "|" + d.data;
       if (!porChave[k]) ordem.push(k);
-      porChave[k] = [cfg.nome, emissao, d.data, v(d.chuvaMm), v(d.probPct), f ? f.comChuva : "", f ? f.modelos : "", f ? f.minMm : "", f ? f.maxMm : "", v(d.tmin), v(d.tmax), v(d.et0Mm)];
+      porChave[k] = [cfg.nome, emissao, d.data, v(d.chuvaMm), v(d.probPct), f ? f.comChuva : "", f ? f.modelos : "", f ? f.minMm : "", f ? f.maxMm : "", v(d.tmin), v(d.tmax), v(d.et0Mm), d.sinalEstacao ? v(d.sinalEstacao.probModelosPct) : ""];
     });
   });
   // tendência de cada dia: todas as rodadas guardadas daquele dia-alvo, da fazenda
@@ -2073,7 +2180,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-20";
+var VERSAO_SERVIDOR = "2026.10.16-21";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2420,7 +2527,7 @@ function linhasHistoricoFazenda_(cfg) {
   if (aba && aba.getLastRow() >= 2) {
     aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.PREVISAO_HIST.length).getValues().forEach(function (l) {
       if (!l[0] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
-      out.push({ emissao: iso(l[1]), alvo: iso(l[2]), previstoMm: n(l[3]), probPct: n(l[4]) });
+      out.push({ emissao: iso(l[1]), alvo: iso(l[2]), previstoMm: n(l[3]), probPct: n(l[4]), probModelosPct: l.length > 12 ? n(l[12]) : null });
     });
   }
   memo[cfg.chave] = out;
@@ -3088,6 +3195,8 @@ var CONFIG_APP_PADRAO = [
   ["COPERNICUS CAMADA NDMI", "MOISTURE_INDEX", "ID da camada de umidade da vegetação (NDMI)."],
   ["COPERNICUS CAMADA INFRAVERMELHO", "COLOR_INFRARED", "ID da camada infravermelho colorido (vegetação em vermelho)."],
   ["COPERNICUS CAMADA COR NATURAL", "TRUE_COLOR", "ID da camada de cor natural."],
+  ["SINAL VENTO OESTE %", "40", "Sinais da estação: a partir de quantos % do dia com vento de oeste (SW a NW) o dia conta como \"vento de oeste\"."],
+  ["SINAL QUEDA PRESSAO HPA", "2", "Sinais da estação: queda mínima da pressão em 24 h (hPa) para contar como \"pressão caindo\"."],
 ];
 
 /** Valor de uma chave da CONFIG APP (texto, "" se não existe). */

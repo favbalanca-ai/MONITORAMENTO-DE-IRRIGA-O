@@ -12,6 +12,12 @@ function br_(x: number, casas: number): string {
   return `${x < 0 && Number(x.toFixed(casas)) !== 0 ? "-" : ""}${milhar}${dec ? "," + dec : ""}`;
 }
 const n1 = (x: number) => br_(x, 1);
+/** "vento de oeste + pressão caindo (×2,1)": o que a estação viu hoje e quanto isso mudou as chances. */
+function textoSinalAplicado(sa: { oeste: boolean; pressaoCai: boolean; fator: number }): string {
+  const partes = [sa.oeste ? "vento de oeste" : "", sa.pressaoCai ? "pressão caindo" : ""].filter(Boolean);
+  return `${partes.join(" + ")} (×${String(sa.fator).replace(".", ",")})`;
+}
+
 /** "5 de 6 preveem chuva (6,2 a 18,6 mm)": a faixa é só dos modelos que veem chuva — 0 mm não é chuva. */
 function textoFaixaModelos(f: { comChuva: number; modelos: number; minMm: number; maxMm: number; minComChuvaMm?: number | null }): string {
   if (!f.comChuva) return `nenhum dos ${f.modelos} prevê chuva`;
@@ -139,6 +145,8 @@ export function montarMensagem(
     if (f) l.push(`   Modelos amanhã: ${textoFaixaModelos(f)}`);
     const t = prox[0]?.tendencia;
     if (t && t.emissoes >= 2) l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
+    const sa = prox[0]?.sinalEstacao;
+    if (sa && sa.probModelosPct !== null && prox[0]!.probPct !== null) l.push(`   Sinal da estação: ${textoSinalAplicado(sa)} → chance de amanhã ${n0(sa.probModelosPct)}% → ${n0(prox[0]!.probPct)}%`);
     const r7 = resumoPrevisao(previsao, data, 7);
     if (r7.et0Mm !== null && r7.dias >= 3) l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm`);
   }
@@ -224,6 +232,8 @@ export function montarMensagemHtml(
   if (f1) html += `<br><span style="color:#64757d">Modelos amanhã: ${h(textoFaixaModelos(f1))}</span>`;
   const t1 = prox[0]?.tendencia;
   if (t1 && t1.emissoes >= 2) html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;
+  const sa1 = prox[0]?.sinalEstacao;
+  if (sa1 && sa1.probModelosPct !== null && prox[0]!.probPct !== null) html += `<br><span style="color:#64757d">Sinal da estação: ${h(textoSinalAplicado(sa1))} → chance de amanhã ${n0(sa1.probModelosPct)}% → <b>${n0(prox[0]!.probPct)}%</b></span>`;
   const r7 = resumoPrevisao(previsao, data, 7);
   if (r7.et0Mm !== null && r7.dias >= 3) html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm! >= 0 ? "+" : ""}${n1(r7.saldoMm!)} mm</span>`;
   html += `</div>`;

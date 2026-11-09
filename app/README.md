@@ -19,7 +19,11 @@ feitos sem internet.
   mediu e dá peso a quem acerta mais nos últimos 30 dias (erros recentes pesam mais); com 5 dias medidos, a
   chuva, a chance e a temperatura de cada dia passam a ser o **consenso ponderado** (o "melhor ajuste" fica entre
   parênteses nos detalhes) e a tabela do placar mostra peso, erro de chuva, erro de temperatura e acerto
-  chove/não chove por modelo. Cartão **Chuva confirmada pelo INMET** (quando a fazenda tem o código da estação
+  chove/não chove por modelo. **Sinal da estação** (saber local da fazenda: vento de oeste e pressão caindo avisam
+  chuva): quando a estação vê um dos dois hoje, a linha "Sinal da estação: 💨 vento de oeste (62% do dia) ·
+  📉 pressão (−3 hPa em 24 h) → chance de amanhã 54% → 71%" aparece; a chance ajustada leva a marca 💨 na tabela
+  e os detalhes dizem o que a planilha aprendeu (em quantos % dos dias com o sinal choveu nos 2 dias seguintes,
+  contra os dias sem ele). Cartão **Chuva confirmada pelo INMET** (quando a fazenda tem o código da estação
   automática do INMET na aba FAZENDAS): últimos 7 dias, chuva da fazenda × chuva do INMET, diferença e
   temperaturas; o INMET preenche o placar nos dias em que a estação da fazenda falhou. Totais de chuva × ET₀ (saldo) em 7 e 14 dias, com a **chuva útil** (acima da chuva mínima da
   fazenda); fichas de **dias críticos** (máxima ≥ 35 °C, mínima ≤ 5 °C, chuva ≥ 25 mm, rajadas ≥ 40 km/h);

@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-32';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-33';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -793,6 +793,30 @@ function seloTendencia(t, curto) {
   if (curto) return '<span class="' + cls + '" title="' + esc(t.texto + ' · confiança ' + CONF_ROTULO[t.nivel].toLowerCase() + ' (' + t.confianca + ')') + '">' + TEND_SETA[t.direcao] + ' ' + t.confianca + '</span>';
   return '<span class="' + cls + '">' + TEND_SETA[t.direcao] + ' ' + esc(TEND_ROTULO[t.direcao]) + '</span> · confiança <b>' + esc(CONF_ROTULO[t.nivel].toLowerCase()) + '</b> (' + t.confianca + ')';
 }
+/**
+ * Sinal da estação (saber local: vento de oeste e pressão caindo avisam chuva). Mostra o que a estação viu hoje
+ * e como isso mexeu na chance de amanhã; a explicação do que ela aprendeu fica nos detalhes (textoSinais).
+ */
+function linhaSinal(pv, amanha) {
+  const sn = pv.sinais; if (!sn || !sn.hoje) return '';
+  const sa = amanha && amanha.sinalEstacao;
+  const lim = (sn.aprendizado && sn.aprendizado.limiares) || { oesteMinPct: 40, quedaPressaoHpa: 2 };
+  const h = sn.hoje;
+  const oeste = h.oestePct != null && h.oestePct >= lim.oesteMinPct, cai = h.pressao24hHpa != null && h.pressao24hHpa <= -lim.quedaPressaoHpa;
+  if (!oeste && !cai) return '';
+  const partes = [];
+  if (oeste) partes.push('💨 vento de oeste <em>(' + br(h.oestePct, 0) + '% do dia)</em>');
+  if (cai) partes.push('📉 pressão <em>(' + br(h.pressao24hHpa, 1) + ' hPa em 24 h)</em>');
+  const efeito = sa && sa.probModelosPct != null ? ' → chance de amanhã ' + br(sa.probModelosPct, 0) + '% → <b>' + br(amanha.probPct, 0) + '%</b>' : '';
+  return '<span class="prev-sinal" title="' + esc('Saber local da fazenda, conferido pela estação: ' + (sn.aprendido || '')) + '"><b>Sinal da estação:</b> ' + partes.join(' · ') + efeito + '</span>';
+}
+function textoSinais(pv) {
+  const sn = pv.sinais; if (!sn || !sn.aprendizado) return '';
+  const ap = sn.aprendizado;
+  return '<p class="muted"><b>Sinal da estação:</b> o saber local diz que vento de oeste (de sudoeste a noroeste) e pressão caindo avisam chuva. A planilha anota todo dia o que a estação viu e se choveu nos 2 dias seguintes, e aprende quanto cada sinal vale aqui. ' + esc(sn.aprendido || '') +
+    '. Fatores de hoje: vento de oeste ×' + br(ap.oeste.fator, 2) + ' · pressão caindo ×' + br(ap.pressao.fator, 2) + (ap.pesoDado < 1 ? ' (com poucos dias medidos, o palpite inicial ainda pesa ' + Math.round((1 - ap.pesoDado) * 100) + '%)' : '') +
+    '. O fator multiplica as chances de amanhã e depois de amanhã; a chuva em mm dos modelos não muda.</p>';
+}
 /** Texto curto sobre a concordância dos modelos num dia. */
 function textoModelos(f) {
   if (!f) return '';
@@ -914,7 +938,7 @@ function cardPrevisao(dia) {
     '<small>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</small>' +
     '<span class="prev-ico" aria-label="' + esc(d.tempo || '') + '">' + (iconeTempo(d.codigoTempo) || '·') + '</span>' +
     '<b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
-    '<span' + (d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%') + '</span>' +
+    '<span' + (d.sinalEstacao ? ' class="prev-ens prev-sinal-dia" title="Chance dos modelos ' + br(d.sinalEstacao.probModelosPct, 0) + '%, ajustada pelo sinal da estação (×' + br(d.sinalEstacao.fator, 2) + ')"' : d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%' + (d.sinalEstacao ? '<i class="sinal-marca">💨</i>' : '')) + '</span>' +
     (faixaDia(d) ? '<span class="prev-faixa">' + br(faixaDia(d)[0], 0) + '–' + br(faixaDia(d)[1], 0) + ' mm</span>' : '') +
     (d.chuvaMm != null ? '<span class="prev-util">útil ' + br(chuvaUtil(d, pv), 1) + '</span>' : '') +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +
@@ -931,7 +955,8 @@ function cardPrevisao(dia) {
   const avisoPlacar = comPlacar ? '<span class="prev-placar" title="A chuva e a temperatura de cada dia são a média dos ' + esc(pesos.modelos.length) + ' modelos pesada pelo acerto deles na sua estação nos últimos ' + esc(pesos.diasComparados) + ' dias.">' + ico('historico') + ' Consenso de ' + esc(pesos.modelos.length) + ' modelos · melhor: <b>' + esc(pesos.modelos[0].modelo) + '</b> (' + br(pesos.modelos[0].peso * 100, 0) + '%)</span>' :
     (pesos ? '<span class="prev-placar" title="Quando chegar a 5 dias medidos, a previsão passa a dar mais peso a quem acerta mais na sua estação.">Placar dos modelos: ' + esc(pesos.diasComparados) + ' de 5 dias medidos</span>' : '');
   const linhaAmanha = avisoInmet + '<div class="muted prev-linha">' + [avisoPlacar, (amanha.tempo || amanha.faixaChuva ? '<span class="prev-amanha"><b>Amanhã:</b> ' + esc([amanha.tempo, amanha.faixaChuva ? textoModelos(amanha.faixaChuva) : ''].filter(Boolean).join(' · ')) + '</span>' : ''),
-    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend"><b>Tendência pra ' + esc(diaSemana(amanha.data)) + ' ' + esc(dataBr(amanha.data)) + ':</b> ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : '')].filter(Boolean).join('') + '</div>';
+    (amanha.tendencia && amanha.tendencia.emissoes >= 2 && amanha.chuvaMm != null ? '<span class="prev-amanha-tend"><b>Tendência pra ' + esc(diaSemana(amanha.data)) + ' ' + esc(dataBr(amanha.data)) + ':</b> ' + esc(amanha.tendencia.texto.split(' · ')[0]) + ' ' + seloTendencia(amanha.tendencia) + '</span>' : ''),
+    linhaSinal(pv, amanha)].filter(Boolean).join('') + '</div>';
   const inmetTexto = amanha.resumo ? '<p class="muted" style="margin-top:8px"><b>INMET amanhã</b> — ' + esc(amanha.resumo) + '</p>' : '';
   const n = (x, c) => (x == null ? '–' : br(x, c));
   const tabela = '<div class="tbl-wrap"><table class="prev-tab"><thead><tr><th>Dia</th><th>Tempo</th><th>Chuva</th><th>Chance</th><th>Ensemble</th><th>Tendência</th><th>Modelos</th><th>Temp.</th><th>UR</th><th>Vento</th><th>ET₀</th><th>Sol</th><th>UV</th></tr></thead><tbody>' +
@@ -965,6 +990,7 @@ function cardPrevisao(dia) {
     '<p class="muted" style="margin-top:8px">Vento: máximo do dia (rajada entre parênteses). ET₀: evapotranspiração de referência prevista. "Modelos": quantos preveem chuva de pelo menos 1 mm e a faixa entre o menor e o maior.</p>' +
     (todos.some((d) => d.ensemble) ? '<p class="muted"><b>Chance e Ensemble:</b> o centro europeu (ECMWF) roda o modelo 51 vezes com pequenas variações. A chance mostrada é quantas dessas rodadas dão pelo menos 1 mm (a chance do modelo "melhor ajuste" fica entre parênteses). A faixa vai da 10ª à 90ª rodada mais chuvosa: fora dela é improvável.</p>' : '') +
     '<p class="muted"><b>Tendência:</b> o que cada rodada da previsão (uma por dia) disse sobre a chance de chuva daquele dia — 89% → 60% → 50% é uma chuva que foi perdendo força. A seta compara com a rodada anterior (muda 10 pontos ou mais = sobe/cai). <b>Confiança</b> (0–100): metade é a chance atual, 30% a concordância dos modelos e 20% a estabilidade entre as últimas rodadas. Alta ≥ 70 · média ≥ 45 · baixa abaixo disso.</p>' +
+    textoSinais(pv) +
     '<p class="muted"><b>Fonte:</b> ' + esc((pv.fontes || []).join(' + ')) + (pv.diasDe ? ' (números da rodada ' + esc(dataBr(pv.diasDe)) + ' ' + esc(String(pv.diasDe).slice(11, 16)) + '; o Open-Meteo não respondeu depois)' : '') + '.</p></details>';
   return '<div class="card prev-card"><div class="row"><h2>' + ico('chuva') + ' Próximos dias</h2><span class="muted">' + br(soma2, 1) + ' mm em 2 dias</span>' + botaoPrevisao() + '</div>' +
     resumo + grafico14(todos, pv) + tira + cardOntem(pv) +

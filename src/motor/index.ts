@@ -12,5 +12,6 @@ export * from "./previsao.ts";
 export * from "./sol.ts";
 export * from "./pesos.ts";
 export * from "./inmet.ts";
+export * from "./sinais.ts";
 export * from "./ciclo.ts";
 export * from "./reservatorio.ts";

@@ -1088,3 +1088,63 @@ test("cadastro do pivô pela placa: lâmina a 100% e tempo da volta bastam, sem 
   assert.equal(r.ok, true, r.erro);
   assert.equal(amb.aba("IRRIGACOES").objetos().find((l) => l["ID"] === "LP1")!["Lâmina líquida aplicada (mm)"], 10.2);
 });
+
+test("sinais da estação: vento de oeste e pressão caindo viram aba SINAIS ESTACAO, a planilha aprende e corrige a chance de amanhã", () => {
+  const amb = pronto();   // 08/02 19:00
+  const om = JSON.parse(readFileSync(new URL("./fixtures/previsao_openmeteo_modelos.json", import.meta.url), "utf8"));
+  amb.respostaHttp = (url) => (url.includes("hourly=") ? { code: 500, corpo: {} } : url.includes("open-meteo") ? { code: 200, corpo: om } : { code: 500, corpo: {} });
+  // leituras ao vivo de 01 a 08/02 (6 por dia): dias 01, 02, 05 e 06 com vento de oeste e pressão baixa; os outros com vento leste
+  const base = { chuvaAcumDia: 0, tempC: 25, urPct: 60, radWm2: 300, intervaloMin: 10, fonte: "ecowitt" };
+  const leituras: Record<string, unknown>[] = [];
+  for (let d = 1; d <= 8; d++) {
+    const oeste = d % 4 === 1 || d % 4 === 2;
+    for (let h = 6; h <= 16; h += 2) leituras.push({ ...base, quando: "2026-02-" + String(d).padStart(2, "0") + "T" + String(h).padStart(2, "0") + ":01:00", ventoMs: 3, extras: { "wind.wind_direction": oeste ? 265 + h : 85 + h, "pressure.relative": oeste ? 1006 - h / 10 : 1013 } });
+  }
+  amb.chamar("gravarLeituras_", leituras);
+  // a estação mediu: choveu em 03 e 07/02 (depois dos dias de oeste), seco nos outros
+  const clima = amb.aba("CLIMA");
+  for (let d = 1; d <= 7; d++) clima.appendRow(["2026-02-" + String(d).padStart(2, "0"), 30, 20, 25, 60, 2, 20, d === 3 || d === 7 ? 12 : 0, 144, "", 4.5, 4.2, 8, 12.5, "Água Viva"]);
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; probPct: number | null; sinalEstacao?: { oeste: boolean; pressaoCai: boolean; fator: number; probModelosPct: number | null } }[]; fontes: string[]; sinais: { hoje: { oestePct: number; pressao24hHpa: number }; aprendizado: { dias: number; oeste: { fator: number } }; texto: string } };
+  // aba SINAIS ESTACAO: um dia por linha; "chuva 2 dias depois" só quando os dois dias já fecharam (até 05/02 → 06 e 07)
+  const sinais = amb.aba("SINAIS ESTACAO").objetos();
+  assert.equal(sinais.length, 8);
+  const dia5 = sinais.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-05")!;
+  assert.equal(dia5["Vento oeste (% do dia)"], 100);
+  assert.equal(dia5["Direção predominante"], "W");
+  assert.equal(Number(dia5["Pressão 24 h (hPa)"]) < -2, true, String(dia5["Pressão 24 h (hPa)"]));   // 04/02 estava em 1013
+  assert.equal(dia5["Chuva 2 dias depois (mm)"], 12);   // 06/02 (0) + 07/02 (12)
+  assert.equal(sinais.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-07")!["Chuva 2 dias depois (mm)"], "");   // 09/02 ainda não fechou
+  assert.equal(sinais.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-01")!["Chuva 2 dias depois (mm)"], 12);   // 02/02 (0) + 03/02 (12)
+  assert.equal(sinais.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-04")!["Vento oeste (% do dia)"], 0);
+  // hoje (08/02): vento leste e pressão estável → sem sinal, nada muda
+  assert.equal(p.sinais.hoje.oestePct, 0);
+  assert.equal(p.sinais.texto, "");
+  assert.ok(p.dias.every((d) => !d.sinalEstacao));
+  assert.ok(!p.fontes.includes("sinal da estação"));
+  assert.equal(p.sinais.aprendizado.dias, 5);   // 01 a 05/02 com resultado conhecido
+  assert.ok(p.sinais.aprendizado.oeste.fator > 1.5, "oeste " + p.sinais.aprendizado.oeste.fator);   // o dado puxa o palpite pra cima
+  // amanhã (09/02): a estação vê oeste e pressão caindo (1006 contra 1013 de hoje); a chance de 10/02 sobe e a dos modelos fica guardada
+  for (let h = 6; h <= 16; h += 2) leituras.length = 0, leituras.push({ ...base, quando: "2026-02-09T" + String(h).padStart(2, "0") + ":01:00", ventoMs: 3, extras: { "wind.wind_direction": 270, "pressure.relative": 1006 } }), amb.chamar("gravarLeituras_", leituras);
+  amb.agoraMs = deLocal("2026-02-09T19:00:00", "America/Sao_Paulo");
+  const p2 = amb.chamar("atualizarPrevisao") as typeof p;
+  assert.match(p2.sinais.texto, /^vento de oeste \(100% do dia\) · pressão -\d+(,\d)? hPa em 24 h$/);
+  assert.ok(p2.fontes.includes("sinal da estação"));
+  const d10 = p2.dias.find((d) => d.data === "2026-02-10")!, d11 = p2.dias.find((d) => d.data === "2026-02-11")!, d12 = p2.dias.find((d) => d.data === "2026-02-12")!;
+  assert.deepEqual([d10.sinalEstacao!.oeste, d10.sinalEstacao!.pressaoCai, d10.sinalEstacao!.probModelosPct], [true, true, 65]);
+  assert.ok(d10.probPct! > 65 && d10.probPct! <= 98, "10/02 " + d10.probPct);
+  assert.ok(d11.sinalEstacao && d11.probPct! > 20, "11/02 " + d11.probPct);
+  assert.equal(d12.sinalEstacao, undefined);
+  // o histórico guarda a chance dos modelos ao lado da ajustada
+  const hist = amb.aba("PREVISAO HISTORICO").objetos().find((l) => String(l["Emitida em"]).slice(0, 10) === "2026-02-09" && String(l["Dia previsto"]).slice(0, 10) === "2026-02-10")!;
+  assert.equal(hist["Probabilidade modelos (%)"], 65);
+  assert.equal(hist["Probabilidade (%)"], d10.probPct);
+  // o app recebe o sinal e o relatório conta
+  const adm = entrar(amb, "fabiana", "1234").token;
+  const dados = amb.get({ acao: "dados", s: adm });
+  assert.equal(dados.previsao.sinais.hoje.oestePct, 100);
+  assert.match(dados.previsao.sinais.aprendido, /dias medidos · vento de oeste/);
+  const rel = amb.chamar("calcular_", "2026-02-09") as { fazendas: { texto: string }[] };
+  assert.match(rel.fazendas[0]!.texto, /Sinal da estação: vento de oeste \+ pressão caindo \(×\d,\d+\) → chance de amanhã 65% → \d+%/);
+  // menu: resumo sem erro
+  amb.chamar("menuSinais");
+});

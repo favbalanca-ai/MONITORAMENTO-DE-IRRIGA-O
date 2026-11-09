@@ -64,7 +64,16 @@ Tudo roda no Google, sem servidor nem PC ligado: a planilha guarda os dados e o 
      estações automáticas mais perto de cada fazenda (apitempo.inmet.gov.br) e **🌧 Baixar medições do INMET**
      grava chuva, Tmax e Tmin por dia local na aba **CLIMA INMET** (40 dias; a rodada da previsão baixa sozinha uma
      vez por dia). No placar, a estação da fazenda manda e o INMET preenche os dias em que ela falhou; o app mostra
-     a tabela "Chuva confirmada pelo INMET" (fazenda × INMET, últimos 7 dias). O app manda também a
+     a tabela "Chuva confirmada pelo INMET" (fazenda × INMET, últimos 7 dias). **Sinais da estação** (saber local:
+     vento de oeste e pressão caindo avisam chuva): a cada rodada, `atualizarSinais_` resume por dia as leituras
+     ao vivo (direção do vento e pressão ficam no JSON de extras) na aba **SINAIS ESTACAO** — % do dia com vento de
+     SW a NW, setor predominante, pressão média, variação em 24 h e, quando os dois dias já fecharam, a chuva dos
+     2 dias seguintes (aba CLIMA; 120 dias para trás na primeira vez). `Motor.aprenderSinais` mede quanto cada
+     sinal muda a chance de chover nos 2 dias seguintes (razão de verossimilhança suavizada; sem histórico vale um
+     palpite ×1,5 oeste e ×1,3 pressão, que perde peso até 40 dias) e `Motor.aplicarSinais` corrige a chance de
+     amanhã e depois de amanhã (a dos modelos fica em `sinalEstacao.probModelosPct` e na coluna "Probabilidade
+     modelos (%)" do PREVISAO HISTORICO). Limiares na CONFIG APP: **SINAL VENTO OESTE %** (40) e **SINAL QUEDA
+     PRESSAO HPA** (2). Menu **🌧 Sinais da estação** mostra o resumo. O app manda também a
      **previsão sazonal do NCEP CFSv2** (61 dias, média de 4 rodadas): a aba **PREVISAO 60 DIAS** junta os dias
      dos modelos com o sazonal; sem sazonal na rodada, fica o da rodada anterior. Por dia: chuva, chance,
      tempo, faixa mín–máx entre os modelos e quantos veem chuva, Tmin/Tmax, UR, vento, rajada, ET₀, radiação,

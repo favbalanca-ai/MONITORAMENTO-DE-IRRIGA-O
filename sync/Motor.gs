@@ -1827,6 +1827,160 @@ var Motor = (function () {
       }
       return [...porDia.values()].sort((a, b) => (a.data < b.data ? -1 : 1));
   }
+  // ---- src/motor/sinais.ts ----
+  const LIMIARES_SINAIS = { oesteMinPct: 40, quedaPressaoHpa: 2, chuvaContaMm: 1 };
+  const SETORES = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  /** Oeste "com uma variação pequena": de sudoeste a noroeste (SW, WSW, W, WNW, NW). */
+  const OESTE = new Set(["SW", "WSW", "W", "WNW", "NW"]);
+  const PALPITE = { oeste: 1.5, pressao: 1.3 };
+  const DIAS_PARA_CONFIAR = 40;
+  const FATOR_MIN = 0.4, FATOR_MAX = 3;
+  const umaCasaSinal_ = (x) => Math.round(x * 10) / 10;
+  function setorDoVento(graus) {
+      return SETORES[Math.round((((graus % 360) + 360) % 360) / 22.5) % 16];
+  }
+  /** Resume as leituras de um dia (e as de ontem, para a variação da pressão). */
+  function sinalDoDia(data, hoje, ontem = []) {
+      const cont = new Array(16).fill(0);
+      let comVento = 0, oeste = 0, leituras = 0;
+      const pressoes = [];
+      for (const l of hoje) {
+          const temDir = l.direcaoGraus !== null && Number.isFinite(l.direcaoGraus);
+          const temP = l.pressaoHpa !== null && Number.isFinite(l.pressaoHpa);
+          if (!temDir && !temP)
+              continue;
+          leituras++;
+          if (temP)
+              pressoes.push(l.pressaoHpa);
+          if (temDir && (l.ventoMs ?? 0) * 3.6 >= 3) {
+              comVento++;
+              const s = setorDoVento(l.direcaoGraus);
+              cont[SETORES.indexOf(s)]++;
+              if (OESTE.has(s))
+                  oeste++;
+          }
+      }
+      const media = (v) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+      const pHoje = media(pressoes);
+      const pOntem = media(ontem.map((l) => l.pressaoHpa).filter((x) => x !== null && Number.isFinite(x)));
+      let idx = -1, maior = 0;
+      cont.forEach((n, i) => { if (n > maior) {
+          maior = n;
+          idx = i;
+      } });
+      return {
+          data,
+          oestePct: comVento ? Math.round((100 * oeste) / comVento) : null,
+          direcao: idx >= 0 ? SETORES[idx] : null,
+          pressaoMediaHpa: pHoje === null ? null : umaCasaSinal_(pHoje),
+          pressao24hHpa: pHoje === null || pOntem === null ? null : umaCasaSinal_(pHoje - pOntem),
+          leituras,
+          chuvaDepoisMm: null,
+      };
+  }
+  function temOeste(s, lim = LIMIARES_SINAIS) {
+      return s.oestePct === null ? null : s.oestePct >= lim.oesteMinPct;
+  }
+  function temPressaoCaindo(s, lim = LIMIARES_SINAIS) {
+      return s.pressao24hHpa === null ? null : s.pressao24hHpa <= -lim.quedaPressaoHpa;
+  }
+  function aprenderUm(hist, presente, palpite, pesoDado, lim) {
+      let com = 0, comChuva = 0, sem = 0, semChuva = 0;
+      for (const s of hist) {
+          const p = presente(s);
+          if (p === null || s.chuvaDepoisMm === null)
+              continue;
+          const choveu = s.chuvaDepoisMm >= lim.chuvaContaMm;
+          if (p) {
+              com++;
+              if (choveu)
+                  comChuva++;
+          }
+          else {
+              sem++;
+              if (choveu)
+                  semChuva++;
+          }
+      }
+      // razão de verossimilhança P(sinal | chuva) / P(sinal | seca), suavizada (+1 em cada conta) para não explodir com poucos dias
+      const chuva = comChuva + semChuva, seca = com + sem - chuva;
+      const pSinalChuva = (comChuva + 1) / (chuva + 2), pSinalSeca = (com - comChuva + 1) / (seca + 2);
+      const doDado = Math.min(FATOR_MAX, Math.max(FATOR_MIN, pSinalChuva / pSinalSeca));
+      // mistura (em log) o palpite inicial com o que o dado diz, conforme o histórico cresce
+      const fator = Math.exp((1 - pesoDado) * Math.log(palpite) + pesoDado * Math.log(doDado));
+      return {
+          com, comChuva, sem, semChuva,
+          chuvaComPct: com >= 3 ? Math.round((100 * comChuva) / com) : null,
+          chuvaSemPct: sem >= 3 ? Math.round((100 * semChuva) / sem) : null,
+          fator: Math.round(fator * 100) / 100,
+      };
+  }
+  /** Aprende com o histórico (dias com `chuvaDepoisMm` conhecido). */
+  function aprenderSinais(hist, lim = LIMIARES_SINAIS) {
+      const validos = hist.filter((s) => s.chuvaDepoisMm !== null && (s.oestePct !== null || s.pressao24hHpa !== null));
+      const pesoDado = Math.min(1, validos.length / DIAS_PARA_CONFIAR);
+      const comChuva = validos.filter((s) => s.chuvaDepoisMm >= lim.chuvaContaMm).length;
+      return {
+          dias: validos.length,
+          basePct: validos.length >= 3 ? Math.round((100 * comChuva) / validos.length) : null,
+          oeste: aprenderUm(validos, (s) => temOeste(s, lim), PALPITE.oeste, pesoDado, lim),
+          pressao: aprenderUm(validos, (s) => temPressaoCaindo(s, lim), PALPITE.pressao, pesoDado, lim),
+          pesoDado: Math.round(pesoDado * 100) / 100,
+          limiares: lim,
+      };
+  }
+  /** Preenche `chuvaDepoisMm` (chuva de D+1 e D+2) com o que a estação mediu. */
+  function completarChuvaDepois(hist, chuvaPorDia, proximoDia) {
+      return hist.map((s) => {
+          if (s.chuvaDepoisMm !== null)
+              return s;
+          const a = chuvaPorDia.get(proximoDia(s.data, 1)), b = chuvaPorDia.get(proximoDia(s.data, 2));
+          if (a === undefined || a === null || b === undefined || b === null)
+              return s;
+          return { ...s, chuvaDepoisMm: umaCasaSinal_(a + b) };
+      });
+  }
+  /**
+   * Aplica o sinal de hoje à chance de amanhã e depois de amanhã. Só mexe na `probPct` (guarda a dos modelos em
+   * `sinalEstacao.probModelosPct`); a chuva em mm dos modelos fica como está.
+   */
+  function aplicarSinais(dias, hojeSinal, ap, hoje, proximoDia) {
+      if (!hojeSinal)
+          return dias;
+      const oeste = temOeste(hojeSinal, ap.limiares) === true;
+      const cai = temPressaoCaindo(hojeSinal, ap.limiares) === true;
+      if (!oeste && !cai)
+          return dias;
+      const fator = (oeste ? ap.oeste.fator : 1) * (cai ? ap.pressao.fator : 1);
+      const alvos = new Set([proximoDia(hoje, 1), proximoDia(hoje, 2)]);
+      return dias.map((d) => {
+          if (!alvos.has(d.data) || d.probPct === null || d.probPct === undefined)
+              return d;
+          const p = Math.min(0.98, Math.max(0.02, d.probPct / 100));
+          const odds = (p / (1 - p)) * fator;
+          const novo = Math.round((100 * odds) / (1 + odds));
+          const aplicado = { oeste, pressaoCai: cai, fator: Math.round(fator * 100) / 100, probModelosPct: d.probPct };
+          return { ...d, probPct: novo, sinalEstacao: aplicado };
+      });
+  }
+  /** Frase curta do sinal de hoje: "vento de oeste (62% do dia) · pressão −3,1 hPa em 24 h". Vazia sem sinal. */
+  function textoSinalHoje(s, lim = LIMIARES_SINAIS) {
+      if (!s)
+          return "";
+      const partes = [];
+      if (temOeste(s, lim))
+          partes.push(`vento de oeste (${s.oestePct}% do dia)`);
+      if (temPressaoCaindo(s, lim))
+          partes.push(`pressão ${String(s.pressao24hHpa).replace(".", ",")} hPa em 24 h`);
+      return partes.join(" · ");
+  }
+  /** O que a estação aprendeu, em uma frase. */
+  function textoAprendizado(ap) {
+      if (ap.dias < 3)
+          return "a estação ainda não tem dias suficientes para medir esses sinais";
+      const um = (nome, a) => a.chuvaComPct === null ? `${nome}: poucos dias com o sinal` : `${nome}: choveu nos 2 dias seguintes em ${a.chuvaComPct}% dos ${a.com} dias com o sinal` + (a.chuvaSemPct === null ? "" : ` (${a.chuvaSemPct}% sem ele)`);
+      return `${ap.dias} dias medidos · ${um("vento de oeste", ap.oeste)} · ${um("pressão caindo", ap.pressao)}`;
+  }
   // ---- src/motor/ciclo.ts ----
   /**
    * Resumo meteorológico do ciclo de uma área (pivô ou talhão): graus-dia, horas de luz, chuva, ET₀ e extremos
@@ -2383,6 +2537,11 @@ var Motor = (function () {
       return `${x < 0 && Number(x.toFixed(casas)) !== 0 ? "-" : ""}${milhar}${dec ? "," + dec : ""}`;
   }
   const n1 = (x) => br_(x, 1);
+  /** "vento de oeste + pressão caindo (×2,1)": o que a estação viu hoje e quanto isso mudou as chances. */
+  function textoSinalAplicado(sa) {
+      const partes = [sa.oeste ? "vento de oeste" : "", sa.pressaoCai ? "pressão caindo" : ""].filter(Boolean);
+      return `${partes.join(" + ")} (×${String(sa.fator).replace(".", ",")})`;
+  }
   /** "5 de 6 preveem chuva (6,2 a 18,6 mm)": a faixa é só dos modelos que veem chuva — 0 mm não é chuva. */
   function textoFaixaModelos(f) {
       if (!f.comChuva)
@@ -2489,6 +2648,9 @@ var Motor = (function () {
           const t = prox[0]?.tendencia;
           if (t && t.emissoes >= 2)
               l.push(`   Tendência amanhã: ${t.texto} · confiança ${t.nivel} (${t.confianca})`);
+          const sa = prox[0]?.sinalEstacao;
+          if (sa && sa.probModelosPct !== null && prox[0].probPct !== null)
+              l.push(`   Sinal da estação: ${textoSinalAplicado(sa)} → chance de amanhã ${n0(sa.probModelosPct)}% → ${n0(prox[0].probPct)}%`);
           const r7 = resumoPrevisao(previsao, data, 7);
           if (r7.et0Mm !== null && r7.dias >= 3)
               l.push(`   ${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm`);
@@ -2585,6 +2747,9 @@ var Motor = (function () {
       const t1 = prox[0]?.tendencia;
       if (t1 && t1.emissoes >= 2)
           html += `<br><span style="color:#64757d">Tendência amanhã: ${h(t1.texto)} · confiança ${t1.nivel} (${t1.confianca})</span>`;
+      const sa1 = prox[0]?.sinalEstacao;
+      if (sa1 && sa1.probModelosPct !== null && prox[0].probPct !== null)
+          html += `<br><span style="color:#64757d">Sinal da estação: ${h(textoSinalAplicado(sa1))} → chance de amanhã ${n0(sa1.probModelosPct)}% → <b>${n0(prox[0].probPct)}%</b></span>`;
       const r7 = resumoPrevisao(previsao, data, 7);
       if (r7.et0Mm !== null && r7.dias >= 3)
           html += `<br><span style="color:#64757d">${r7.dias} dias: chuva ${n1(r7.chuvaMm)} mm · ET₀ ${n1(r7.et0Mm)} mm · saldo ${r7.saldoMm >= 0 ? "+" : ""}${n1(r7.saldoMm)} mm</span>`;
@@ -2689,5 +2854,5 @@ var Motor = (function () {
     };
   }
 
-  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, CHANCE_SECO_PCT, CHANCE_CHUVA_PCT, CHUVA_CONTA_MM, vereditoPrevisao, INMET_ESTACOES_URL, lerEstacoesInmet, distanciaKm, estacoesProximas, urlInmetEstacao, lerInmetEstacao, juntarObservacoes, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
+  return { numero, UnidadeDesconhecida, paraCelsius, paraMm, paraMs, paraWm2, paraSI, wm2ParaMJDia, HORA_FECHAMENTO, diaAnterior, somarDias, agregarDia, RAD_SOL_WM2, horasDeSol, fatiasCobertas, proximoDia, datasEntre, climaCompleto, eSat, diaDoAno, radiacaoExtraterrestre, fotoperiodoH, ventoA2m, et0PenmanMonteith, et0Hargreaves, LIMITE_DIVERGENCIA_HS, divergenciaHargreaves, SOJA, SOJA_PRECOCE, MILHO, SORGO, FEIJAO, FEIJAO_PD, TRIGO, ALGODAO, das, comCiclo, fimDoCicloDas, curvaKc, dae, fracaoCiclo, grausDiaDoDia, estadioPorDas, kcDoDia, CULTURAS, profundidadeRaiz, cad, fatorDeplecaoPorEt0, fatorDeplecao, deficitDaUmidade, capacidade, vazaoM3h, PONTA_PADRAO, horasNaPonta, laminaDoPercentimetro, recomendar, CHUVA_MINIMA_EFETIVA_MM, MIN_LEITURAS, RAD_SUSPEITA_MJ, DIAS_MEDICAO_VELHA, chuvaEfetiva, simularBalanco, projetar, DATA, validarCadastro, paraLocal, deLocal, minutosEntre, somarMinutos, MODELOS_PREVISAO, INMET_URL, urlOpenMeteo, urlOpenMeteoEnsemble, lerEnsemble, aplicarEnsemble, faixaChuva, descricaoTempo, iconeTempo, resumoPrevisao, lerOpenMeteo, lerInmet, juntarPrevisao, chuvaPrevista, avisoChuva, urlOpenMeteoHoras, lerOpenMeteoHoras, bulboUmido, deltaT, FAIXAS_APLICACAO, condicoesAplicacao, aplicacaoPorHora, janelasBoas, horaMenosRuim, tendenciaPrevisao, urlOpenMeteoSazonal, lerSazonal, montarLongoPrazo, luzDoDia, marcadorDeLuz, calcularPesos, consensoPonderado, aplicarPesos, CHANCE_SECO_PCT, CHANCE_CHUVA_PCT, CHUVA_CONTA_MM, vereditoPrevisao, INMET_ESTACOES_URL, lerEstacoesInmet, distanciaKm, estacoesProximas, urlInmetEstacao, lerInmetEstacao, juntarObservacoes, LIMIARES_SINAIS, setorDoVento, sinalDoDia, temOeste, temPressaoCaindo, aprenderSinais, completarChuvaDepois, aplicarSinais, textoSinalHoje, textoAprendizado, TEMP_DIA_QUENTE, TEMP_DIA_FRIO, resumoCiclo, DIAS_NIVEL_VELHO, DIAS_AUTONOMIA_ATENCAO, retiradaM3, balancoReservatorio, naCurva, bytesParaBigInt, bigIntParaBytes, chavePublica, chavePrivadaDe, assinar, base64url, deBase64url, utf8, origemDe, cabecalhoVapid, URL_BASE, ErroEcowitt, MINUTOS_DO_CICLO, cicloParaIdade, leituraDoTempoReal, extrasDoTempoReal, leiturasDoHistorico, ClienteEcowitt, encontrarLacunas, semaforoDoItem, resumoDoDia, linhaCiclo, linhasReservatorio, montarMensagem, montarMensagemHtml, montarAlerta };
 })();

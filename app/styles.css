@@ -590,3 +590,5 @@ body[data-view="login"] .sidebar,body[data-view="login"] .topbar{display:none!im
 .gc-cursor{position:absolute;top:0;bottom:18px;width:1px;background:var(--ink);opacity:.5;pointer-events:none}
 .gc-tip{position:absolute;top:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.35;box-shadow:0 2px 8px rgba(0,0,0,.12);pointer-events:none;min-width:160px}
 .prev-rodape{margin-top:8px;font-size:12px}
+.prev-sinal em{font-style:normal;color:var(--muted)}
+.sinal-marca{font-style:normal;font-size:10px;margin-left:2px}
