@@ -2180,7 +2180,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-21";
+var VERSAO_SERVIDOR = "2026.10.16-22";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -2213,7 +2213,7 @@ function doGet_(p) {
     if (h.fazenda) exigirFazenda_(u, h.fazenda, h.fazenda);
     return { ok: true, historico: h };
   }
-  if (acao === "rosa") { exigirFazenda_(u, faz, faz); return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || ""), faz) }; }
+  if (acao === "rosa") { exigirFazenda_(u, faz, faz); return { ok: true, rosa: rosaVentosPeriodo_(String(p.de || ""), String(p.ate || ""), faz, String(p.hDe || ""), String(p.hAte || "")) }; }
   if (acao === "fis") {
     try { return { ok: true, fis: estatisticasIndice_(String(p.pivo || ""), String(p.indice || "ndvi"), String(p.fim || "")) }; }
     catch (eF) { log_("satélite FIS", "erro", String(p.pivo || "") + " / " + String(p.indice || "ndvi") + ": " + eF.message); throw eF; }
@@ -2368,12 +2368,26 @@ function rosaVentos24h_(chave) {
 }
 
 /** Rosa dos ventos de um período escolhido no app (datas AAAA-MM-DD, no máximo 120 dias). */
-function rosaVentosPeriodo_(de, ate, chave) {
+/**
+ * Rosa dos ventos de um período; `hDe`/`hAte` (HH:MM) limitam a hora do dia, todo dia — "das 06:00 às 18:00"
+ * pega só o dia; "das 18:00 às 06:00" pega a noite (vira a meia-noite).
+ */
+function rosaVentosPeriodo_(de, ate, chave, hDe, hAte) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate)) throw new Error("Datas no formato AAAA-MM-DD.");
   if (ate < de) throw new Error("A data final vem antes da inicial.");
   if (Motor.das(ate, de) > 120) throw new Error("Período de no máximo 120 dias.");
   var ini = de + "T00:00:00", fim = ate + "T23:59:59";
-  return rosaVentos_(lerLeituras_(ini, fim, chave), ini, fim);
+  var ls = lerLeituras_(ini, fim, chave);
+  if (hDe || hAte) {
+    if (!/^\d{2}:\d{2}$/.test(hDe || "") || !/^\d{2}:\d{2}$/.test(hAte || "")) throw new Error("Horas no formato HH:MM (as duas).");
+    ls = ls.filter(function (l) {
+      var h = String(l.quando).slice(11, 16);
+      return hDe <= hAte ? h >= hDe && h <= hAte : h >= hDe || h <= hAte;
+    });
+  }
+  var r = rosaVentos_(ls, ini, fim);
+  if (hDe || hAte) { r.hDe = hDe; r.hAte = hAte; }
+  return r;
 }
 
 function rosaVentos_(ls, ini, fim) {

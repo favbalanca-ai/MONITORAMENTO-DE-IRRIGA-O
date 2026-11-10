@@ -522,6 +522,13 @@ test("rosa dos ventos por período pelo GET", () => {
   const r2 = amb.get({ acao: "rosa", s, de: "2026-02-05", ate: "2026-02-05" }).rosa;
   assert.equal(r2.total, 1);
   assert.equal(r2.calmaria, 1);
+  // filtro de hora, todo dia: 09:00–11:00 pega as duas leituras das 10h; 18:00–06:00 (vira a meia-noite) não pega nenhuma
+  const r3 = amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03", hDe: "09:00", hAte: "11:00" }).rosa;
+  assert.equal(r3.total, 2); assert.equal(r3.hDe, "09:00"); assert.equal(r3.hAte, "11:00");
+  assert.equal(amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03", hDe: "18:00", hAte: "06:00" }).rosa.total, 0);
+  assert.equal(amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03", hDe: "10:30", hAte: "06:00" }).rosa.total, 0);
+  assert.equal(amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03", hDe: "22:00", hAte: "10:30" }).rosa.total, 2);
+  assert.match(amb.get({ acao: "rosa", s, de: "2026-02-01", ate: "2026-02-03", hDe: "9h" }).erro, /HH:MM/);
   assert.match(amb.get({ acao: "rosa", s, de: "2026-02-05", ate: "2026-02-01" }).erro, /final vem antes/);
   assert.match(amb.get({ acao: "rosa", s, de: "2025-01-01", ate: "2026-02-01" }).erro, /120 dias/);
 });

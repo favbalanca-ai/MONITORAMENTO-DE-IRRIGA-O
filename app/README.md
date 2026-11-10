@@ -67,7 +67,8 @@ feitos sem internet.
   chuva de hoje e taxa, pressão com tendência de 3 h, raios e sensores de solo (o que a estação mandar). Avisos
   pra quem vai ligar o pivô: chovendo agora, vento forte (≥ 4 m/s, deriva), raios, estação sem leitura nova.
   Cartão **Vento nas últimas 24 h**: rosa dos ventos com 16 setores (de onde o vento veio, por faixa de
-  velocidade), direção predominante e % de calmaria. Filtro por período (datas) — sem escolher, últimas 24 h.
+  velocidade), direção predominante e % de calmaria. Filtro por período (datas) e, opcional, por hora do dia
+  ("das 06:00 às 18:00" pega só o dia de cada data; "das 18:00 às 06:00" só a noite) — sem escolher, últimas 24 h.
   Bloco **Pulverização agora**: Delta T (bulbo seco − bulbo úmido, fórmula de Stull) e um semáforo único de
   aplicação com os motivos — faixas usuais Embrapa/ANDEF: Delta T 2–8 °C, vento 3–10 km/h (até 15 com atenção),
   UR > 55 %, temperatura < 30 °C, sem chuva. Abaixo, as **próximas 48 h** hora a hora (previsão horária do

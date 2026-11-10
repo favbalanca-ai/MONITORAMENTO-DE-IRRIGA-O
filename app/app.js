@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-33';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-34';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -414,8 +414,10 @@ let ROSA = null; // período escolhido pelo usuário: { de, ate, dados } (null =
 function cardRosa24h() {
   const r = ROSA ? ROSA.dados : estacao().vento24h; if (!r) return '';
   const filtro = '<div class="rosa-filtro"><div class="grid2"><div><label for="r-de">De</label><input type="date" id="r-de" value="' + esc(ROSA ? ROSA.de : '') + '" max="' + hojeIso() + '"></div><div><label for="r-ate">Até</label><input type="date" id="r-ate" value="' + esc(ROSA ? ROSA.ate : '') + '" max="' + hojeIso() + '"></div></div>' +
+    '<div class="grid2" style="margin-top:6px"><div><label for="r-hde">Das (hora, opcional)</label><input type="time" id="r-hde" value="' + esc(ROSA && ROSA.hDe ? ROSA.hDe : '') + '"></div><div><label for="r-hate">Às</label><input type="time" id="r-hate" value="' + esc(ROSA && ROSA.hAte ? ROSA.hAte : '') + '"></div></div>' +
+    '<p class="muted" style="margin:4px 0 0;font-size:12px">A hora vale pra todo dia do período: das 06:00 às 18:00 pega só o dia; das 18:00 às 06:00, só a noite.</p>' +
     '<div class="toolbar" style="margin:8px 0 0"><button type="button" class="btn btn-outline btn-sm" data-act="rosa-periodo">Ver período</button>' + (ROSA ? '<button type="button" class="btn btn-outline btn-sm" data-act="rosa-24h">Últimas 24 h</button>' : '') + '</div></div>';
-  const titulo = ROSA ? 'Vento de ' + dataBr(ROSA.de) + ' a ' + dataBr(ROSA.ate) : 'Vento nas últimas 24 h';
+  const titulo = ROSA ? 'Vento de ' + dataBr(ROSA.de) + ' a ' + dataBr(ROSA.ate) + (ROSA.hDe ? ', das ' + ROSA.hDe + ' às ' + ROSA.hAte : '') : 'Vento nas últimas 24 h';
   if (!r.total) return '<div class="card rosa24"><div class="row"><h2>' + ico('vento') + ' ' + esc(titulo) + '</h2></div><p class="muted">Nenhuma leitura com direção do vento nesse período.</p>' + filtro + '</div>';
   const c = 110, R = 92, maxN = Math.max(1, ...r.setores.map((s) => s.n));
   const pt = (ang, rad) => [c + rad * Math.sin((ang * Math.PI) / 180), c - rad * Math.cos((ang * Math.PI) / 180)];
@@ -441,14 +443,15 @@ function cardRosa24h() {
     '<div class="legenda" style="margin-top:6px">' + FAIXAS_VENTO.map((f) => '<span style="--c:' + f[1] + '">' + f[0] + '</span>').join('') + '</div>' +
     '<p class="muted">Cada fatia aponta de onde o vento veio; quanto mais comprida, mais vezes veio dali. Serve pra saber pra que lado a deriva vai e de onde a chuva costuma chegar.</p></div></div>' + filtro + '</div>';
 }
-async function rosaPeriodo(de, ate) {
+async function rosaPeriodo(de, ate, hDe, hAte) {
   if (!de || !ate) return toast('Escolha as duas datas.', true);
   if (ate < de) return toast('A data final vem antes da inicial.', true);
+  if ((hDe && !hAte) || (!hDe && hAte)) return toast('Pra filtrar por hora, preencha as duas horas.', true);
   const btn = $('[data-act="rosa-periodo"]'); if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
   try {
-    const r = await chamar('GET', { acao: 'rosa', de, ate, fazenda: chaveAtual() });
+    const r = await chamar('GET', Object.assign({ acao: 'rosa', de, ate, fazenda: chaveAtual() }, hDe ? { hDe, hAte } : {}));
     if (!r || !r.ok) throw new Error((r && r.erro) || 'A planilha não respondeu.');
-    ROSA = { de, ate, dados: r.rosa }; route({ manterRolagem: true });
+    ROSA = { de, ate, hDe: hDe || '', hAte: hAte || '', dados: r.rosa }; route({ manterRolagem: true });
   } catch (e) { toast(e.message, true); if (btn) { btn.disabled = false; btn.textContent = 'Ver período'; } }
 }
 
@@ -2255,7 +2258,7 @@ document.addEventListener('click', async (ev) => {
   else if (act === 'ndvi-indice') { grava(NDVI_KEY, Object.assign(ndviCfg(), { indice: a.dataset.indice })); $$('[data-act="ndvi-indice"]').forEach((b) => b.classList.toggle('on', b === a)); if (window.aplicarNdvi) window.aplicarNdvi(); }
   else if (act === 'modo-lanc') { modoLanc = a.dataset.modo; route({ manterRolagem: true }); }
   else if (act === 'tema') { aplicarTema(a.dataset.tema); route({ manterRolagem: true }); }
-  else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value);
+  else if (act === 'rosa-periodo') rosaPeriodo($('#r-de').value, $('#r-ate').value, $('#r-hde').value, $('#r-hate').value);
   else if (act === 'rosa-24h') { ROSA = null; route({ manterRolagem: true }); }
   else if (act === 'hist-csv') { if (HIST) csvHist(HIST); }
   else if (act === 'pdf') {
