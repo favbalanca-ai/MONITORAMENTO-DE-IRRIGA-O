@@ -148,7 +148,7 @@ var CABECALHOS = {
   PUSH: ["Endpoint", "p256dh", "auth", "Login", "Criado em", "Último envio", "Falhas"],
   PREVISAO_MODELOS: ["Fazenda", "Emitida em", "Dia previsto", "Modelo", "Chuva (mm)", "Tmax", "Tmin"],
   CLIMA_INMET: ["Data", "Chuva (mm)", "Tmax", "Tmin", "Horas medidas", "Estação", "Fazenda", "Baixado em"],
-  SINAIS: ["Fazenda", "Data", "Vento oeste (% do dia)", "Direção predominante", "Pressão média (hPa)", "Pressão 24 h (hPa)", "Leituras", "Chuva 2 dias depois (mm)"],
+  SINAIS: ["Fazenda", "Data", "Vento oeste (% do dia)", "Direção predominante", "Pressão média (hPa)", "Pressão 24 h (hPa)", "Leituras", "Chuva 2 dias depois (mm)", "Vento norte (% do dia)"],
   PESOS: ["Fazenda", "Modelo", "Peso (%)", "Erro chuva (mm)", "Erro temperatura (°C)", "Acerto chove/não chove (%)", "Comparações", "Dias comparados", "Calculado em", "Vale?"],
   PREVISAO_60: ["Data", "Fonte", "Chuva (mm)", "Chance (%)", "Tmin", "Tmax", "Radiação (MJ/m²)", "Atualizado em", "Fazenda"],
   PREVISAO_HIST: ["Fazenda", "Emitida em", "Dia previsto", "Chuva prevista (mm)", "Probabilidade (%)", "Modelos com chuva", "Modelos", "Chuva mín. modelos (mm)", "Chuva máx. modelos (mm)", "Tmin", "Tmax", "ET₀ (mm)", "Probabilidade modelos (%)"],
@@ -1544,7 +1544,7 @@ var DIAS_SINAIS = 120;         // quantos dias de leituras entram no aprendizado
 
 function limiaresSinais_() {
   var n = function (chave, padrao) { var x = Motor.numero(configApp_(chave)); return x === null || x <= 0 ? padrao : x; };
-  return { oesteMinPct: n("SINAL VENTO OESTE %", Motor.LIMIARES_SINAIS.oesteMinPct), quedaPressaoHpa: n("SINAL QUEDA PRESSAO HPA", Motor.LIMIARES_SINAIS.quedaPressaoHpa), chuvaContaMm: Motor.LIMIARES_SINAIS.chuvaContaMm };
+  return { oesteMinPct: n("SINAL VENTO OESTE %", Motor.LIMIARES_SINAIS.oesteMinPct), norteMinPct: n("SINAL VENTO NORTE %", Motor.LIMIARES_SINAIS.norteMinPct), quedaPressaoHpa: n("SINAL QUEDA PRESSAO HPA", Motor.LIMIARES_SINAIS.quedaPressaoHpa), chuvaContaMm: Motor.LIMIARES_SINAIS.chuvaContaMm };
 }
 function leituraParaSinal_(l) {
   var e = l.extras || {};
@@ -1561,7 +1561,7 @@ function lerSinais_(cfg) {
   var out = [];
   aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.SINAIS.length).getValues().forEach(function (l) {
     if (!l[0] || !l[1] || chaveFazenda_(String(l[0])) !== cfg.chave) return;
-    out.push({ data: iso(l[1]), oestePct: n(l[2]), direcao: l[3] ? String(l[3]) : null, pressaoMediaHpa: n(l[4]), pressao24hHpa: n(l[5]), leituras: n(l[6]) || 0, chuvaDepoisMm: n(l[7]) });
+    out.push({ data: iso(l[1]), oestePct: n(l[2]), nortePct: l.length > 8 ? n(l[8]) : null, direcao: l[3] ? String(l[3]) : null, pressaoMediaHpa: n(l[4]), pressao24hHpa: n(l[5]), leituras: n(l[6]) || 0, chuvaDepoisMm: n(l[7]) });
   });
   out.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
   return out;
@@ -1574,7 +1574,8 @@ function atualizarSinais_(cfg) {
   var hoje = Motor.paraLocal(Date.now(), cfg.fuso).slice(0, 10);
   var atuais = lerSinais_(cfg);
   var tem = {};
-  atuais.forEach(function (s) { tem[s.data] = true; });
+  // dias gravados por uma versão sem a coluna "vento norte" entram de novo
+  atuais.forEach(function (s) { if (s.nortePct !== null || s.oestePct === null) tem[s.data] = true; });
   var faltam = [];
   for (var i = DIAS_SINAIS; i >= 0; i--) { var d = Motor.somarDias(hoje, -i); if (!tem[d] || d === hoje) faltam.push(d); }
   if (faltam.length) {
@@ -1604,7 +1605,7 @@ function atualizarSinais_(cfg) {
   var aba = criarAbaSeFaltar_(ss, ABA.SINAIS, CABECALHOS.SINAIS);
   var outras = aba.getLastRow() < 2 ? [] : aba.getRange(2, 1, aba.getLastRow() - 1, CABECALHOS.SINAIS.length).getValues().filter(function (l) { return l[0] && chaveFazenda_(String(l[0])) !== cfg.chave; });
   var v = function (x) { return x === null || x === undefined ? "" : x; };
-  var minhas = atuais.map(function (s) { return [cfg.nome, s.data, v(s.oestePct), s.direcao || "", v(s.pressaoMediaHpa), v(s.pressao24hHpa), s.leituras, v(s.chuvaDepoisMm)]; });
+  var minhas = atuais.map(function (s) { return [cfg.nome, s.data, v(s.oestePct), s.direcao || "", v(s.pressaoMediaHpa), v(s.pressao24hHpa), s.leituras, v(s.chuvaDepoisMm), v(s.nortePct)]; });
   escreverTabela_(ABA.SINAIS, CABECALHOS.SINAIS, outras.concat(minhas));
   MEMO_.sinais = null;
   return atuais;
@@ -1626,7 +1627,7 @@ function menuSinais() {
     if (!s) { out.push(cfg.nome + ": nenhuma leitura com direção do vento ou pressão (só a coleta ao vivo grava isso)"); return; }
     var comDir = s.aprendizado.dias;
     out.push(cfg.nome + ": " + comDir + " dias com resultado conhecido · hoje: " + (s.texto || "sem sinal") + "\n  " + s.aprendido +
-      "\n  fator vento de oeste ×" + s.aprendizado.oeste.fator + " · pressão caindo ×" + s.aprendizado.pressao.fator + (s.aprendizado.pesoDado < 1 ? " (palpite inicial ainda pesa " + Math.round((1 - s.aprendizado.pesoDado) * 100) + "%)" : ""));
+      "\n  fator vento de oeste ×" + s.aprendizado.oeste.fator + " · pressão caindo ×" + s.aprendizado.pressao.fator + " · vento norte ×" + s.aprendizado.norte.fator + (s.aprendizado.pesoDado < 1 ? " (palpite inicial ainda pesa " + Math.round((1 - s.aprendizado.pesoDado) * 100) + "%)" : ""));
   });
   aviso_(out.join("\n\n"));
 }
@@ -2180,7 +2181,7 @@ function aviso_(texto) {
  *        — um tipo por pedido, com a sessão em "s". Content-Type text/plain (sem preflight).
  * =================================================================================== */
 
-var VERSAO_SERVIDOR = "2026.10.16-22";
+var VERSAO_SERVIDOR = "2026.10.16-23";
 var LOGIN_TENTATIVAS = 5;
 var LOGIN_BLOQUEIO_MIN = 10;
 var SESSAO_DIAS = 30;
@@ -3211,6 +3212,7 @@ var CONFIG_APP_PADRAO = [
   ["COPERNICUS CAMADA COR NATURAL", "TRUE_COLOR", "ID da camada de cor natural."],
   ["SINAL VENTO OESTE %", "40", "Sinais da estação: a partir de quantos % do dia com vento de oeste (SW a NW) o dia conta como \"vento de oeste\"."],
   ["SINAL QUEDA PRESSAO HPA", "2", "Sinais da estação: queda mínima da pressão em 24 h (hPa) para contar como \"pressão caindo\"."],
+  ["SINAL VENTO NORTE %", "40", "Sinais da estação: a partir de quantos % do dia com vento do norte (NNW a NNE) o dia conta como \"vento norte\" (sinal de seca)."],
 ];
 
 /** Valor de uma chave da CONFIG APP (texto, "" se não existe). */

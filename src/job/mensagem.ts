@@ -13,8 +13,8 @@ function br_(x: number, casas: number): string {
 }
 const n1 = (x: number) => br_(x, 1);
 /** "vento de oeste + pressão caindo (×2,1)": o que a estação viu hoje e quanto isso mudou as chances. */
-function textoSinalAplicado(sa: { oeste: boolean; pressaoCai: boolean; fator: number }): string {
-  const partes = [sa.oeste ? "vento de oeste" : "", sa.pressaoCai ? "pressão caindo" : ""].filter(Boolean);
+function textoSinalAplicado(sa: { oeste: boolean; pressaoCai: boolean; norte?: boolean; fator: number }): string {
+  const partes = [sa.oeste ? "vento de oeste" : "", sa.pressaoCai ? "pressão caindo" : "", sa.norte ? "vento norte" : ""].filter(Boolean);
   return `${partes.join(" + ")} (×${String(sa.fator).replace(".", ",")})`;
 }
 

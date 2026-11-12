@@ -1111,7 +1111,7 @@ test("sinais da estação: vento de oeste e pressão caindo viram aba SINAIS EST
   // a estação mediu: choveu em 03 e 07/02 (depois dos dias de oeste), seco nos outros
   const clima = amb.aba("CLIMA");
   for (let d = 1; d <= 7; d++) clima.appendRow(["2026-02-" + String(d).padStart(2, "0"), 30, 20, 25, 60, 2, 20, d === 3 || d === 7 ? 12 : 0, 144, "", 4.5, 4.2, 8, 12.5, "Água Viva"]);
-  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; probPct: number | null; sinalEstacao?: { oeste: boolean; pressaoCai: boolean; fator: number; probModelosPct: number | null } }[]; fontes: string[]; sinais: { hoje: { oestePct: number; pressao24hHpa: number }; aprendizado: { dias: number; oeste: { fator: number } }; texto: string } };
+  const p = amb.chamar("atualizarPrevisao") as { dias: { data: string; probPct: number | null; sinalEstacao?: { oeste: boolean; pressaoCai: boolean; norte: boolean; fator: number; probModelosPct: number | null } }[]; fontes: string[]; sinais: { hoje: { oestePct: number; pressao24hHpa: number }; aprendizado: { dias: number; oeste: { fator: number } }; texto: string } };
   // aba SINAIS ESTACAO: um dia por linha; "chuva 2 dias depois" só quando os dois dias já fecharam (até 05/02 → 06 e 07)
   const sinais = amb.aba("SINAIS ESTACAO").objetos();
   assert.equal(sinais.length, 8);
@@ -1137,7 +1137,8 @@ test("sinais da estação: vento de oeste e pressão caindo viram aba SINAIS EST
   assert.match(p2.sinais.texto, /^vento de oeste \(100% do dia\) · pressão -\d+(,\d)? hPa em 24 h$/);
   assert.ok(p2.fontes.includes("sinal da estação"));
   const d10 = p2.dias.find((d) => d.data === "2026-02-10")!, d11 = p2.dias.find((d) => d.data === "2026-02-11")!, d12 = p2.dias.find((d) => d.data === "2026-02-12")!;
-  assert.deepEqual([d10.sinalEstacao!.oeste, d10.sinalEstacao!.pressaoCai, d10.sinalEstacao!.probModelosPct], [true, true, 65]);
+  assert.deepEqual([d10.sinalEstacao!.oeste, d10.sinalEstacao!.pressaoCai, d10.sinalEstacao!.norte, d10.sinalEstacao!.probModelosPct], [true, true, false, 65]);
+  assert.equal(sinais.find((l) => String(l["Data"]).slice(0, 10) === "2026-02-05")!["Vento norte (% do dia)"], 0);
   assert.ok(d10.probPct! > 65 && d10.probPct! <= 98, "10/02 " + d10.probPct);
   assert.ok(d11.sinalEstacao && d11.probPct! > 20, "11/02 " + d11.probPct);
   assert.equal(d12.sinalEstacao, undefined);

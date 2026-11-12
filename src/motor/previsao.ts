@@ -43,7 +43,7 @@ export interface DiaPrevisao {
   /** Consenso ponderado pelo placar dos modelos (quando há história suficiente): `chuvaMm` passa a ser ele. */
   consenso?: { chuvaMm: number; probPct: number | null; tmax: number | null; tmin: number | null; modelos: number };
   /** Ajuste do sinal da estação (vento de oeste / pressão caindo) na chance deste dia. */
-  sinalEstacao?: { oeste: boolean; pressaoCai: boolean; fator: number; probModelosPct: number | null };
+  sinalEstacao?: { oeste: boolean; pressaoCai: boolean; norte: boolean; fator: number; probModelosPct: number | null };
   /** Chuva do "melhor ajuste", guardada quando o consenso assume `chuvaMm`. */
   modeloMm?: number | null;
   /** Como a previsão deste dia mudou de uma rodada para outra (a planilha anexa, do histórico). */

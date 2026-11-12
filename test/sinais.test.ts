@@ -11,6 +11,7 @@ test("sinal do dia: % de vento de oeste (SW a NW), setor predominante e variaç�
   const s = sinalDoDia("2026-11-08", hoje, ontem);
   // a leitura das 18h está sem vento (1 km/h): a direção não conta; 3 de 4 com vento vieram do oeste
   assert.equal(s.oestePct, 75);
+  assert.equal(s.nortePct, 0);
   assert.equal(s.direcao, "W");           // 260 → W, 275 → W, 300 → WNW, 90 → E
   assert.equal(s.pressaoMediaHpa, 1010);
   assert.equal(s.pressao24hHpa, -3);
@@ -18,7 +19,10 @@ test("sinal do dia: % de vento de oeste (SW a NW), setor predominante e variaç�
   assert.equal(s.chuvaDepoisMm, null);
   // sem direção nem pressão: nada
   const vazio = sinalDoDia("2026-11-08", [leitura("06:00", null, null)]);
-  assert.deepEqual([vazio.oestePct, vazio.direcao, vazio.pressaoMediaHpa, vazio.pressao24hHpa, vazio.leituras], [null, null, null, null, 0]);
+  assert.deepEqual([vazio.oestePct, vazio.nortePct, vazio.direcao, vazio.pressaoMediaHpa, vazio.pressao24hHpa, vazio.leituras], [null, null, null, null, null, 0]);
+  // norte com variação pequena: NNW, N, NNE
+  const n = sinalDoDia("2026-11-08", [leitura("06:00", 350, 1012), leitura("09:00", 5, 1012), leitura("12:00", 20, 1012), leitura("15:00", 45, 1012)]);
+  assert.equal(n.nortePct, 75); assert.equal(n.direcao, "N");
 });
 
 /** 40 dias: com vento de oeste chove depois em 80% das vezes; sem ele, em 20%. Pressão não diz nada. */
@@ -27,7 +31,8 @@ function historico(n = 40): SinalDia[] {
   for (let i = 0; i < n; i++) {
     const oeste = i % 2 === 0;
     const chove = oeste ? i % 10 !== 0 : i % 10 === 1;   // oeste: 16 de 20 (80%); não oeste: 4 de 20 (20%)
-    out.push({ data: somarDias("2026-09-01", i), oestePct: oeste ? 70 : 10, direcao: oeste ? "W" : "E", pressaoMediaHpa: 1010, pressao24hHpa: i % 8 === 0 || i % 8 === 3 ? -3 : 1, leituras: 100, chuvaDepoisMm: chove ? 8 : 0 });
+    // vento norte nos dias 3, 7, 11… (não oeste): nunca chove depois → sinal de seca forte
+    out.push({ data: somarDias("2026-09-01", i), oestePct: oeste ? 70 : 10, nortePct: !oeste && i % 4 === 3 && i % 10 !== 1 ? 80 : 0, direcao: oeste ? "W" : "E", pressaoMediaHpa: 1010, pressao24hHpa: i % 8 === 0 || i % 8 === 3 ? -3 : 1, leituras: 100, chuvaDepoisMm: chove ? 8 : 0 });
   }
   return out;
 }
@@ -40,12 +45,13 @@ test("aprende com a estação: oeste vira fator forte, pressão fica perto de 1;
   assert.ok(ap.pressao.fator > 0.7 && ap.pressao.fator < 1.4, "pressão " + ap.pressao.fator);
   const nada = aprenderSinais([]);
   assert.equal(nada.dias, 0); assert.equal(nada.pesoDado, 0); assert.equal(nada.basePct, null);
-  assert.equal(nada.oeste.fator, 1.5); assert.equal(nada.pressao.fator, 1.3);
+  assert.equal(nada.oeste.fator, 1.5); assert.equal(nada.pressao.fator, 1.3); assert.equal(nada.norte.fator, 0.7);
+  assert.ok(ap.norte.fator < 0.7, "norte " + ap.norte.fator);   // dias de norte sempre secos: o fator cai abaixo do palpite
   // com 10 dias, o palpite ainda pesa 75%
   const pouco = aprenderSinais(historico(10));
   assert.equal(pouco.pesoDado, 0.25);
   assert.ok(pouco.oeste.fator > 1.5 && pouco.oeste.fator < 2.2, "10 dias " + pouco.oeste.fator);
-  assert.match(textoAprendizado(ap), /^40 dias medidos · vento de oeste: choveu nos 2 dias seguintes em 80% dos 20 dias com o sinal \(20% sem ele\) · pressão caindo: /);
+  assert.match(textoAprendizado(ap), /^40 dias medidos · vento de oeste: choveu nos 2 dias seguintes em 80% dos 20 dias com o sinal \(20% sem ele\) · pressão caindo: .* · vento norte: /);
   assert.match(textoAprendizado(nada), /ainda não tem dias suficientes/);
 });
 
@@ -53,7 +59,7 @@ test("aplica o sinal de hoje só a amanhã e depois de amanhã, guardando a chan
   const ap = aprenderSinais(historico());
   const dia = (data: string, prob: number | null): DiaPrevisao => ({ data, chuvaMm: 2, probPct: prob, tmax: 30, tmin: 20 } as DiaPrevisao);
   const dias = [dia("2026-11-08", 30), dia("2026-11-09", 50), dia("2026-11-10", 20), dia("2026-11-11", 60), dia("2026-11-12", null)];
-  const hoje: SinalDia = { data: "2026-11-08", oestePct: 65, direcao: "W", pressaoMediaHpa: 1008, pressao24hHpa: -2.5, leituras: 120, chuvaDepoisMm: null };
+  const hoje: SinalDia = { data: "2026-11-08", oestePct: 65, nortePct: 0, direcao: "W", pressaoMediaHpa: 1008, pressao24hHpa: -2.5, leituras: 120, chuvaDepoisMm: null };
   const r = aplicarSinais(dias, hoje, ap, "2026-11-08", somarDias);
   assert.equal(r[0]!.probPct, 30); assert.equal(r[0]!.sinalEstacao, undefined);   // hoje não muda
   assert.equal(r[3]!.probPct, 60);                                                 // 3 dias à frente também não
@@ -62,7 +68,13 @@ test("aplica o sinal de hoje só a amanhã e depois de amanhã, guardando a chan
   assert.equal(r[1]!.probPct, esperado(0.5));
   assert.equal(r[2]!.probPct, esperado(0.2));
   assert.ok(r[1]!.probPct! > 50 && r[1]!.probPct! <= 98);
-  assert.deepEqual({ ...r[1]!.sinalEstacao }, { oeste: true, pressaoCai: true, fator: Math.round(f * 100) / 100, probModelosPct: 50 });
+  assert.deepEqual({ ...r[1]!.sinalEstacao }, { oeste: true, pressaoCai: true, norte: false, fator: Math.round(f * 100) / 100, probModelosPct: 50 });
+  // vento norte: a chance cai
+  const seco: SinalDia = { ...hoje, oestePct: 5, nortePct: 70, pressao24hHpa: 1 };
+  const rs = aplicarSinais(dias, seco, ap, "2026-11-08", somarDias);
+  assert.ok(rs[1]!.probPct! < 50, "norte " + rs[1]!.probPct);
+  assert.equal(rs[1]!.sinalEstacao!.norte, true);
+  assert.equal(textoSinalHoje(seco), "vento norte (70% do dia)");
   // sem sinal hoje: nada muda
   const calmo: SinalDia = { ...hoje, oestePct: 10, pressao24hHpa: 1 };
   assert.deepEqual(aplicarSinais(dias, calmo, ap, "2026-11-08", somarDias), dias);
@@ -72,8 +84,8 @@ test("aplica o sinal de hoje só a amanhã e depois de amanhã, guardando a chan
 });
 
 test("completa a chuva dos 2 dias seguintes quando a estação já mediu os dois", () => {
-  const hist: SinalDia[] = [{ data: "2026-11-05", oestePct: 50, direcao: "W", pressaoMediaHpa: 1010, pressao24hHpa: 0, leituras: 10, chuvaDepoisMm: null },
-    { data: "2026-11-07", oestePct: 50, direcao: "W", pressaoMediaHpa: 1010, pressao24hHpa: 0, leituras: 10, chuvaDepoisMm: null }];
+  const hist: SinalDia[] = [{ data: "2026-11-05", oestePct: 50, nortePct: 0, direcao: "W", pressaoMediaHpa: 1010, pressao24hHpa: 0, leituras: 10, chuvaDepoisMm: null },
+    { data: "2026-11-07", oestePct: 50, nortePct: 0, direcao: "W", pressaoMediaHpa: 1010, pressao24hHpa: 0, leituras: 10, chuvaDepoisMm: null }];
   const chuva = new Map<string, number | null>([["2026-11-06", 3.2], ["2026-11-07", 0], ["2026-11-08", 5]]);
   const r = completarChuvaDepois(hist, chuva, somarDias);
   assert.equal(r[0]!.chuvaDepoisMm, 3.2);

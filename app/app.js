@@ -3,7 +3,7 @@
    O que precisa aparecer em outros aparelhos sobe para a planilha; aqui fica só cache e fila. */
 'use strict';
 
-const APP_VERSION = '2026.10.16-34';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
+const APP_VERSION = '2026.10.16-35';   // mostrado no rodapé; ajuda a confirmar se a atualização chegou
 const SYNC_KEY = 'irrigacao_sync_url';     // endereço /exec do Apps Script (nunca no GitHub)
 const SESS_KEY = 'irrigacao_sessao';       // {token, usuario}
 const DADOS_KEY = 'irrigacao_dados';       // última leitura da planilha (abre rápido e sem internet)
@@ -803,21 +803,23 @@ function seloTendencia(t, curto) {
 function linhaSinal(pv, amanha) {
   const sn = pv.sinais; if (!sn || !sn.hoje) return '';
   const sa = amanha && amanha.sinalEstacao;
-  const lim = (sn.aprendizado && sn.aprendizado.limiares) || { oesteMinPct: 40, quedaPressaoHpa: 2 };
+  const lim = (sn.aprendizado && sn.aprendizado.limiares) || { oesteMinPct: 40, norteMinPct: 40, quedaPressaoHpa: 2 };
   const h = sn.hoje;
   const oeste = h.oestePct != null && h.oestePct >= lim.oesteMinPct, cai = h.pressao24hHpa != null && h.pressao24hHpa <= -lim.quedaPressaoHpa;
-  if (!oeste && !cai) return '';
+  const norte = h.nortePct != null && h.nortePct >= (lim.norteMinPct || 40);
+  if (!oeste && !cai && !norte) return '';
   const partes = [];
   if (oeste) partes.push('💨 vento de oeste <em>(' + br(h.oestePct, 0) + '% do dia)</em>');
   if (cai) partes.push('📉 pressão <em>(' + br(h.pressao24hHpa, 1) + ' hPa em 24 h)</em>');
+  if (norte) partes.push('🌵 vento norte <em>(' + br(h.nortePct, 0) + '% do dia)</em>');
   const efeito = sa && sa.probModelosPct != null ? ' → chance de amanhã ' + br(sa.probModelosPct, 0) + '% → <b>' + br(amanha.probPct, 0) + '%</b>' : '';
   return '<span class="prev-sinal" title="' + esc('Saber local da fazenda, conferido pela estação: ' + (sn.aprendido || '')) + '"><b>Sinal da estação:</b> ' + partes.join(' · ') + efeito + '</span>';
 }
 function textoSinais(pv) {
   const sn = pv.sinais; if (!sn || !sn.aprendizado) return '';
   const ap = sn.aprendizado;
-  return '<p class="muted"><b>Sinal da estação:</b> o saber local diz que vento de oeste (de sudoeste a noroeste) e pressão caindo avisam chuva. A planilha anota todo dia o que a estação viu e se choveu nos 2 dias seguintes, e aprende quanto cada sinal vale aqui. ' + esc(sn.aprendido || '') +
-    '. Fatores de hoje: vento de oeste ×' + br(ap.oeste.fator, 2) + ' · pressão caindo ×' + br(ap.pressao.fator, 2) + (ap.pesoDado < 1 ? ' (com poucos dias medidos, o palpite inicial ainda pesa ' + Math.round((1 - ap.pesoDado) * 100) + '%)' : '') +
+  return '<p class="muted"><b>Sinal da estação:</b> o saber local diz que vento de oeste (de sudoeste a noroeste) e pressão caindo avisam chuva, e vento do norte avisa seca. A planilha anota todo dia o que a estação viu e se choveu nos 2 dias seguintes, e aprende quanto cada sinal vale aqui. ' + esc(sn.aprendido || '') +
+    '. Fatores de hoje: vento de oeste ×' + br(ap.oeste.fator, 2) + ' · pressão caindo ×' + br(ap.pressao.fator, 2) + (ap.norte ? ' · vento norte ×' + br(ap.norte.fator, 2) : '') + (ap.pesoDado < 1 ? ' (com poucos dias medidos, o palpite inicial ainda pesa ' + Math.round((1 - ap.pesoDado) * 100) + '%)' : '') +
     '. O fator multiplica as chances de amanhã e depois de amanhã; a chuva em mm dos modelos não muda.</p>';
 }
 /** Texto curto sobre a concordância dos modelos num dia. */
@@ -941,7 +943,7 @@ function cardPrevisao(dia) {
     '<small>' + esc(diaSemana(d.data)) + ' ' + esc(dataBr(d.data)) + '</small>' +
     '<span class="prev-ico" aria-label="' + esc(d.tempo || '') + '">' + (iconeTempo(d.codigoTempo) || '·') + '</span>' +
     '<b>' + (d.chuvaMm == null ? '?' : br(d.chuvaMm, 1)) + '<em> mm</em></b>' +
-    '<span' + (d.sinalEstacao ? ' class="prev-ens prev-sinal-dia" title="Chance dos modelos ' + br(d.sinalEstacao.probModelosPct, 0) + '%, ajustada pelo sinal da estação (×' + br(d.sinalEstacao.fator, 2) + ')"' : d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%' + (d.sinalEstacao ? '<i class="sinal-marca">💨</i>' : '')) + '</span>' +
+    '<span' + (d.sinalEstacao ? ' class="prev-ens prev-sinal-dia" title="Chance dos modelos ' + br(d.sinalEstacao.probModelosPct, 0) + '%, ajustada pelo sinal da estação (×' + br(d.sinalEstacao.fator, 2) + ')"' : d.ensemble ? ' class="prev-ens" title="Chance contada nas ' + d.ensemble.membros + ' rodadas do ECMWF; faixa provável ' + br(d.ensemble.p10Mm, 0) + '–' + br(d.ensemble.p90Mm, 0) + ' mm"' : '') + '>' + (d.probPct == null ? '' : br(d.probPct, 0) + '%' + (d.sinalEstacao ? '<i class="sinal-marca">' + (d.sinalEstacao.norte && !d.sinalEstacao.oeste && !d.sinalEstacao.pressaoCai ? '🌵' : '💨') + '</i>' : '')) + '</span>' +
     (faixaDia(d) ? '<span class="prev-faixa">' + br(faixaDia(d)[0], 0) + '–' + br(faixaDia(d)[1], 0) + ' mm</span>' : '') +
     (d.chuvaMm != null ? '<span class="prev-util">útil ' + br(chuvaUtil(d, pv), 1) + '</span>' : '') +
     (d.tmin != null && d.tmax != null ? '<span>' + br(d.tmin, 0) + '–' + br(d.tmax, 0) + '°</span>' : '') +

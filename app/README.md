@@ -20,7 +20,7 @@ feitos sem internet.
   chuva, a chance e a temperatura de cada dia passam a ser o **consenso ponderado** (o "melhor ajuste" fica entre
   parênteses nos detalhes) e a tabela do placar mostra peso, erro de chuva, erro de temperatura e acerto
   chove/não chove por modelo. **Sinal da estação** (saber local da fazenda: vento de oeste e pressão caindo avisam
-  chuva): quando a estação vê um dos dois hoje, a linha "Sinal da estação: 💨 vento de oeste (62% do dia) ·
+  chuva; vento do norte avisa seca e baixa a chance, com a marca 🌵): quando a estação vê um dos dois hoje, a linha "Sinal da estação: 💨 vento de oeste (62% do dia) ·
   📉 pressão (−3 hPa em 24 h) → chance de amanhã 54% → 71%" aparece; a chance ajustada leva a marca 💨 na tabela
   e os detalhes dizem o que a planilha aprendeu (em quantos % dos dias com o sinal choveu nos 2 dias seguintes,
   contra os dias sem ele). Cartão **Chuva confirmada pelo INMET** (quando a fazenda tem o código da estação
